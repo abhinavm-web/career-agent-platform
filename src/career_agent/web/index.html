@@ -20,6 +20,7 @@
       <div class="rail-divider"></div>
       <nav class="navigation" aria-label="Main">
         <button class="nav-item active" id="nav-jobs" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
+        <button class="nav-item" id="nav-tracker" type="button"><span class="nav-glyph" aria-hidden="true">▤</span> Application tracker</button>
         <button class="nav-item" id="nav-activity" type="button"><span class="nav-glyph" aria-hidden="true">☷</span> Review history</button>
         <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
       </nav>
@@ -29,7 +30,7 @@
           <strong>Local-first</strong>
           <p>Private data remains on your computer. No automated applications.</p>
         </div>
-        <span class="version">v0.4 · DEVELOPMENT PREVIEW</span>
+        <span class="version">v0.5 · DEVELOPMENT PREVIEW</span>
       </div>
     </aside>
 
@@ -97,6 +98,23 @@
           </div>
           <div id="detail-panel" class="detail-panel panel" aria-label="Job details">
             <div class="empty-detail"><span class="empty-icon" aria-hidden="true">◎</span><h3>Select an opportunity</h3><p>Inspect the job, review a truthful application draft, and track your decision.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tracker-screen" class="screen" hidden>
+        <div class="section-heading">
+          <div><span class="eyebrow">APPLICATION CRM</span><h2>Application tracker</h2></div>
+        </div>
+        <p class="muted">Track employer conversations, interview stages, recruiter contacts and reminders. CRM updates are manual and do not send emails or applications. Private notes are stored in local, unencrypted SQLite.</p>
+        <div id="crm-summary" class="crm-summary" aria-label="Pipeline overview"></div>
+        <div class="board">
+          <div class="list-panel panel">
+            <div class="list-count"><span>Select an opportunity</span><span>Local records only</span></div>
+            <div id="crm-jobs" class="job-list" aria-label="Tracked opportunities"></div>
+          </div>
+          <div id="crm-detail" class="detail-panel panel" aria-label="Application CRM details">
+            <div class="empty-detail"><span class="empty-icon" aria-hidden="true">▤</span><h3>Select a job to track</h3><p>Manage status, recruiter contacts, and follow-ups independently of application submission.</p></div>
           </div>
         </div>
       </section>
