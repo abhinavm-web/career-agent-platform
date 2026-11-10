@@ -15,3 +15,13 @@ Before hosted deployment, implement encryption, authentication, access boundarie
 ## Phase 2 data boundaries
 
 Candidate `source_note` and verification information remains in the local fact-bank JSON. Packets contain only candidate-approved statements and fact IDs, not private source notes. Do not use these examples as verified real-person records. Treat packet fingerprints as accidental-change detection only, not authentication. A trusted, audited approval API is required before any hosted orchestration or external actions.
+
+
+## Local packet file paths
+
+Packet saves reject symlinks in the destination filename and existing parent directories.
+On platforms with O_NOFOLLOW, the final file descriptor also refuses a symlink.
+These checks protect against accidental redirected local paths; they are **not a
+complete defense against an attacker concurrently replacing parent directories**.
+Before multi-user hosting, replace local path-based writes with an isolated
+private storage service or descriptor-relative, race-resistant file operations.
