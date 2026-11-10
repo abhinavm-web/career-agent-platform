@@ -259,6 +259,39 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertEqual(lost.status_code, 409)
         self.assertEqual(self.api("GET", "/api/workspace").json()["workspace"]["profile"]["name"], "Fictional Candidate")
 
+    def test_largest_supported_fact_bank_is_editable_through_full_save(self):
+        many = [
+            {
+                "id": f"fact-{i:03d}", "section": "projects",
+                "statement": "A" * 1000, "keywords": ["AWS"],
+                "source_note": "B" * 500,
+                "verified_by_candidate": False,
+            }
+            for i in range(100)
+        ]
+        payload = {"expected_revision": 0, "profile": preferences(), "facts": many}
+        self.assertGreater(len(json.dumps(payload)), 128 * 1024)
+        created = self.api("PUT", "/api/workspace", payload)
+        self.assertEqual(created.status_code, 200, created.text[:200])
+        self.assertEqual(len(created.json()["workspace"]["facts"]), 100)
+        changed = dict(preferences(), headline="Revised fictional headline")
+        updated = self.api("PUT", "/api/workspace", {
+            "expected_revision": 1, "profile": changed, "facts": many,
+        })
+        self.assertEqual(updated.status_code, 200, updated.text[:200])
+        self.assertEqual(updated.json()["workspace"]["revision"], 2)
+        self.assertEqual(updated.json()["workspace"]["profile"]["headline"], changed["headline"])
+
+    def test_workspace_limit_is_bounded(self):
+        oversized = {
+            "expected_revision": 0,
+            "profile": dict(preferences(), headline="X" * (2 * 1024 * 1024)),
+            "facts": [],
+        }
+        result = self.api("PUT", "/api/workspace", oversized)
+        self.assertEqual(result.status_code, 413)
+        self.assertEqual(self.api("GET", "/api/workspace").json()["workspace"]["revision"], 0)
+
     def test_ui_contains_profile_editor_and_safe_text_rendering(self):
         html = self.client.get("/").text
         self.assertIn('id="profile-screen"', html)
