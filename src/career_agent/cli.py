@@ -65,6 +65,13 @@ def parser() -> argparse.ArgumentParser:
     flow.add_argument("--filings")
     flow.add_argument("--output", help="Optional local packet destination")
 
+    web = cmd.add_parser("serve", help="Start the loopback-only local web workspace")
+    web.add_argument("--profile", help="Path to local candidate preferences JSON")
+    web.add_argument("--facts", help="Path to candidate-confirmed facts JSON")
+    web.add_argument("--filings", help="Optional manually researched filing evidence CSV")
+    web.add_argument("--packet-dir", default=".local/packets", help="Private packet storage")
+    web.add_argument("--port", type=int, default=8765, help="Local HTTP port (default 8765)")
+
     listing = cmd.add_parser("list", help="List local jobs and application stages")
     listing.add_argument("--limit", type=int, default=100)
     return root
@@ -105,6 +112,19 @@ def _interactive_review(graph, packet: dict, thread_id: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.command == "serve":
+            from .dashboard import DashboardConfig, serve
+            serve(
+                DashboardConfig(
+                    db_path=Path(args.db),
+                    packet_dir=Path(args.packet_dir),
+                    profile_path=Path(args.profile) if args.profile else None,
+                    facts_path=Path(args.facts) if args.facts else None,
+                    filings_path=Path(args.filings) if args.filings else None,
+                ),
+                port=args.port,
+            )
+            return 0
         jobs = None
         if args.command == "ingest":
             jobs = read_csv_jobs(args.csv)
