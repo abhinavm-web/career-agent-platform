@@ -268,8 +268,10 @@ class ApplicationCRM:
     def summary(self) -> dict:
         jobs = self.store.list_jobs(limit=10000)
         counts: dict[str, int] = {}
+        job_stages = []
         for job in jobs:
             stage = self._stage(job.id)
+            job_stages.append({"job_id": job.id, "stage": stage})
             counts[stage] = counts.get(stage, 0) + 1
         rows = self.conn.execute(
             "SELECT f.followup_id,f.job_id,f.title,f.due_date,"
@@ -279,4 +281,7 @@ class ApplicationCRM:
         ).fetchall()
         today = date.today().isoformat()
         upcoming = [{**dict(row), "overdue": row["due_date"] < today} for row in rows]
-        return {"stages": counts, "open_followups": upcoming, "today": today}
+        return {
+            "stages": counts, "job_stages": job_stages,
+            "open_followups": upcoming, "today": today,
+        }
