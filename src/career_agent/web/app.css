@@ -230,7 +230,8 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .crm-due-item .overdue {color:var(--red);}
 .crm-form {display:grid;grid-template-columns:1fr;gap:10px;margin:13px 0 6px;padding:13px;background:#18253a;border:1px solid var(--border);border-radius:10px;}
 .crm-form .field {margin:0;}
-.crm-form .field input,.crm-form .field select {width:100%;background:#0d192a;color:var(--text);border:1px solid #34415b;border-radius:7px;padding:8px;}
+.crm-form .field input,.crm-form .field select,.crm-form .field textarea {width:100%;background:#0d192a;color:var(--text);border:1px solid #34415b;border-radius:7px;padding:8px;}
+.interview-note-text {white-space:pre-wrap;}
 .crm-form .button {justify-self:start;}
 .crm-record {background:#142137;border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin:10px 0;overflow-wrap:anywhere;}
 .crm-record strong {display:block;font-size:12px;}

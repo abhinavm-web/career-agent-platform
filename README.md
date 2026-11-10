@@ -16,6 +16,8 @@ Working name only. Final product branding awaits trademark clearance.
 
 ## Setup (Python 3.11+)
 
+For Windows setup, a separate fictional demo, test commands and a browser smoke-test checklist, see [Local development](docs/LOCAL_DEVELOPMENT.md).
+
 Clone this repo, open its root folder, then run:
 
     python -m pip install -e .

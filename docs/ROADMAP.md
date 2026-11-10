@@ -50,7 +50,10 @@
 - [x] Due-date follow-ups, rescheduling, completion and event history
 - [x] Application tracker tab and due-follow-up summary
 - [x] API and database regression coverage for local candidate-controlled actions
-- [ ] Editable contacts, notes timeline, calendar notifications and richer outcome analytics
+- [x] Editable contacts with preserved follow-up links
+- [x] Tracker search, stage and priority filters, and priority change history
+- [x] Dated, append-only interview notes (local branch; pending merge)
+- [ ] Calendar notifications and richer outcome analytics
 
 ## Phase 4 — Product
 

@@ -111,6 +111,21 @@
         <div class="board">
           <div class="list-panel panel">
             <div class="list-count"><span>Select an opportunity</span><span>Local records only</span></div>
+            <div class="crm-form">
+              <label class="field">Search opportunities<input id="crm-search" type="search" placeholder="Title, company or location"></label>
+              <label class="field">Pipeline stage<select id="crm-stage-filter">
+                <option value="">All stages</option>
+                <option>discovered</option><option>saved</option><option>shortlisted</option><option>archived</option>
+                <option>applied</option><option>screening</option><option>assessment</option><option>interview</option>
+                <option>offer</option><option>accepted</option><option>rejected</option><option>withdrawn</option>
+              </select></label>
+              <label class="field">Priority<select id="crm-priority-filter">
+                <option value="">All priorities</option><option value="high">High</option>
+                <option value="medium">Medium</option><option value="low">Low</option><option value="none">No priority</option>
+              </select></label>
+              <button id="crm-clear-filters" class="button" type="button">Clear filters</button>
+              <span id="crm-result-count" class="muted" role="status"></span>
+            </div>
             <div id="crm-jobs" class="job-list" aria-label="Tracked opportunities"></div>
           </div>
           <div id="crm-detail" class="detail-panel panel" aria-label="Application CRM details">

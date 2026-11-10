@@ -424,6 +424,26 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 job_id, data.get("stage"), data.get("note", ""),
             )
 
+    @app.post("/api/jobs/{job_id}/crm/priority")
+    async def crm_priority(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Priority update must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).set_priority(job_id, data.get("priority"))
+
+    @app.post("/api/jobs/{job_id}/crm/interview-notes", status_code=201)
+    async def crm_interview_note(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Interview note must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).add_interview_note(
+                job_id, data.get("interview_date"), data.get("round"), data.get("notes"),
+            )
+
     @app.post("/api/jobs/{job_id}/crm/contacts", status_code=201)
     async def crm_add_contact(job_id: str, request: Request):
         data = await request.json()
@@ -433,6 +453,18 @@ def create_app(config: DashboardConfig) -> FastAPI:
             _get_job(store, job_id)
             return ApplicationCRM(store).add_contact(
                 job_id, data.get("name"), data.get("role", ""),
+                data.get("email", ""), data.get("notes", ""),
+            )
+
+    @app.post("/api/jobs/{job_id}/crm/contacts/{contact_id}")
+    async def crm_update_contact(job_id: str, contact_id: int, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Contact must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).update_contact(
+                job_id, contact_id, data.get("name"), data.get("role", ""),
                 data.get("email", ""), data.get("notes", ""),
             )
 

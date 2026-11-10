@@ -606,12 +606,22 @@
   function renderCRMJobs() {
     const list = byId("crm-jobs");
     list.replaceChildren();
-    const stages = new Map((state.crmSummary?.job_stages || []).map((item) => [item.job_id, item.stage]));
-    if (!state.jobs.length) {
+    const jobs = state.crmSummary?.job_stages || [];
+    const search = byId("crm-search").value.trim().toLowerCase();
+    const stage = byId("crm-stage-filter").value;
+    const priority = byId("crm-priority-filter").value;
+    const visible = jobs.filter((job) =>
+      (!stage || job.stage === stage) && (!priority || (job.priority || "none") === priority) &&
+      (!search || [job.title, job.company, job.location].join(" ").toLowerCase().includes(search))
+    );
+    byId("crm-result-count").textContent = visible.length + " of " + jobs.length + " opportunities";
+    if (!jobs.length) {
       list.append(node("p", "loading", "No jobs yet. Add a role on the Opportunity board."));
       return;
     }
-    for (const job of state.jobs) {
+    if (!visible.length) list.append(node("p", "loading", "No opportunities match these filters."));
+    for (const tracked of visible) {
+      const job = {...tracked, id: tracked.job_id};
       const item = button("", "job-item" + (state.crmJobId === job.id ? " selected" : ""), () => selectCRMJob(job.id));
       item.setAttribute("aria-pressed", String(state.crmJobId === job.id));
       item.append(
@@ -619,7 +629,8 @@
         node("small", "", job.company + " · " + (job.location || "Location not specified"))
       );
       const chips = node("div", "job-item-bottom");
-      chips.append(chip(stages.get(job.id) || "discovered", "teal"));
+      chips.append(chip(job.stage, "teal"));
+      if (job.priority && job.priority !== "none") chips.append(chip(job.priority + " priority", ""));
       if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
       item.append(chips);
       list.append(item);
@@ -646,9 +657,9 @@
   function renderCRMDetail() {
     const panel = byId("crm-detail");
     panel.replaceChildren();
-    const item = state.jobs.find((job) => job.id === state.crmJobId);
     const data = state.crmDetails;
-    if (!item || !data || data.job_id !== item.id) {
+    const item = data?.job;
+    if (!item || data.job_id !== state.crmJobId || data.job_id !== item.id) {
       const empty = node("div", "empty-detail");
       empty.append(node("h3", "", "Select a tracked opportunity"), node("p", "", "Review its pipeline stage, contacts and follow-up tasks."));
       panel.append(empty);
@@ -691,6 +702,59 @@
     }
     panel.append(statusSection);
 
+    const prioritySection = crmSection("Opportunity priority");
+    const priorityForm = node("form", "crm-form");
+    const priorityLabel = node("label", "field", "Priority");
+    const prioritySelect = node("select");
+    for (const value of ["none", "low", "medium", "high"]) {
+      const option = node("option", "", value === "none" ? "No priority" : value);
+      option.value = value;
+      prioritySelect.append(option);
+    }
+    prioritySelect.value = data.priority || "none";
+    priorityLabel.append(prioritySelect);
+    const prioritySave = button("Save priority", "button");
+    prioritySave.type = "submit";
+    priorityForm.append(priorityLabel, prioritySave);
+    priorityForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await crmPost("/api/jobs/" + item.id + "/crm/priority", {priority: prioritySelect.value}, "Priority saved.");
+    });
+    prioritySection.append(priorityForm);
+    for (const event of data.priority_events || []) {
+      prioritySection.append(node("small", "muted", event.created_at + " · " + event.actor + " · " + event.priority));
+    }
+    panel.append(prioritySection);
+
+    const interviews = crmSection("Interview notes");
+    interviews.append(node("p", "muted", "Private notes stay on this device. Saved notes are retained; add a new note for corrections. Notes do not change the application stage."));
+    for (const note of data.interview_notes || []) {
+      const row = node("div", "crm-record");
+      row.append(node("strong", "", note.round), node("small", "", note.interview_date),
+        node("p", "interview-note-text", note.notes), node("small", "", "Recorded " + note.created_at + " · " + note.actor));
+      interviews.append(row);
+    }
+    const interviewForm = node("form", "crm-form");
+    const interviewDate = crmInput("Interview date", "interview_date", "date", true);
+    const round = crmInput("Round / topic", "round", "text", true, 120);
+    const noteLabel = node("label", "field", "Private interview notes");
+    const noteText = node("textarea");
+    noteText.required = true;
+    noteText.maxLength = 4000;
+    noteText.rows = 4;
+    noteLabel.append(noteText);
+    const noteSave = button("Save interview note", "button button-primary");
+    noteSave.type = "submit";
+    interviewForm.append(interviewDate.field, round.field, noteLabel, noteSave);
+    interviewForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await crmPost("/api/jobs/" + item.id + "/crm/interview-notes", {
+        interview_date: interviewDate.control.value, round: round.control.value, notes: noteText.value
+      }, "Interview note saved locally.");
+    });
+    interviews.append(interviewForm);
+    panel.append(interviews);
+
     const contacts = crmSection("Recruiter and referral contacts");
     if (!data.contacts.length) contacts.append(node("p", "muted", "No contacts saved for this opportunity."));
     for (const contact of data.contacts) {
@@ -698,6 +762,36 @@
       row.append(node("strong", "", contact.name + (contact.role ? " · " + contact.role : "")));
       if (contact.email) row.append(node("small", "", contact.email));
       if (contact.notes) row.append(node("p", "", contact.notes));
+      const edit = button("Edit contact", "button", () => {
+        edit.hidden = true;
+        const form = node("form", "crm-form");
+        const name = crmInput("Name", "name", "text", true, 120);
+        const role = crmInput("Role / relationship", "role", "text", false, 120);
+        const email = crmInput("Email (optional)", "email", "email", false, 254);
+        const notes = crmInput("Context note (private)", "notes", "text", false, 1000);
+        for (const field of [name, role, email, notes]) {
+          field.control.value = contact[field.control.name];
+          form.append(field.field);
+        }
+        const save = button("Save contact", "button button-primary");
+        save.type = "submit";
+        const cancel = button("Cancel", "button", () => {
+          form.remove();
+          edit.hidden = false;
+          edit.focus();
+        });
+        form.append(save, cancel);
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          await crmPost("/api/jobs/" + item.id + "/crm/contacts/" + contact.contact_id, {
+            name: name.control.value, role: role.control.value,
+            email: email.control.value, notes: notes.control.value
+          }, "Contact updated locally.");
+        });
+        row.append(form);
+        name.control.focus();
+      });
+      row.append(edit);
       contacts.append(row);
     }
     const contactForm = node("form", "crm-form");
@@ -790,7 +884,7 @@
       if (state.screen !== "tracker") return;
       renderCRMSummary();
       renderCRMJobs();
-      if (state.crmJobId && state.jobs.some((job) => job.id === state.crmJobId)) {
+      if (state.crmJobId) {
         await selectCRMJob(state.crmJobId);
       } else {
         state.crmJobId = null;
@@ -835,6 +929,13 @@
   byId("nav-activity").addEventListener("click", () => showScreen("activity"));
   byId("nav-profile").addEventListener("click", async () => {showScreen("profile"); await loadWorkspace();});
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});
+  byId("crm-search").addEventListener("input", renderCRMJobs);
+  byId("crm-stage-filter").addEventListener("change", renderCRMJobs);
+  byId("crm-priority-filter").addEventListener("change", renderCRMJobs);
+  byId("crm-clear-filters").addEventListener("click", () => {
+    for (const id of ["crm-search", "crm-stage-filter", "crm-priority-filter"]) byId(id).value = "";
+    renderCRMJobs();
+  });
   byId("import-career-data").addEventListener("click", importConfiguredProfile);
   byId("career-profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();

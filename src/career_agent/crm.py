@@ -40,13 +40,13 @@ def _text(value: Any, field: str, maximum: int, *, required: bool = False) -> st
     return result
 
 
-def _due(value: Any) -> str:
+def _due(value: Any, field: str = "due_date") -> str:
     if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-        raise ValueError("due_date must be YYYY-MM-DD")
+        raise ValueError(f"{field} must be YYYY-MM-DD")
     try:
         date.fromisoformat(value)
     except ValueError as error:
-        raise ValueError("due_date is not a valid calendar date") from error
+        raise ValueError(f"{field} is not a valid calendar date") from error
     return value
 
 
@@ -74,6 +74,27 @@ class ApplicationCRM:
             );
             CREATE INDEX IF NOT EXISTS idx_crm_stages_job
                 ON crm_stage_events(job_id, event_id DESC);
+
+            CREATE TABLE IF NOT EXISTS crm_priority_events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                priority TEXT NOT NULL CHECK(priority IN ('none','low','medium','high')),
+                actor TEXT NOT NULL DEFAULT 'candidate',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_crm_priority_job
+                ON crm_priority_events(job_id, event_id DESC);
+            CREATE TABLE IF NOT EXISTS crm_interview_notes (
+                note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                interview_date TEXT NOT NULL,
+                round TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                actor TEXT NOT NULL DEFAULT 'candidate',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_crm_interviews_job
+                ON crm_interview_notes(job_id, interview_date DESC, note_id DESC);
 
             CREATE TABLE IF NOT EXISTS crm_contacts (
                 contact_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,6 +191,26 @@ class ApplicationCRM:
             )
         return {"contact_id": cursor.lastrowid, "job_id": job_id, "name": full_name}
 
+    def update_contact(self, job_id: str, contact_id: Any, name: Any,
+                       role: Any = "", email: Any = "", notes: Any = "") -> dict:
+        self.store.get_job(job_id)
+        contact_id = _id(contact_id, "contact_id")
+        name = _text(name, "name", 120, required=True)
+        role = _text(role, "role", 120)
+        email = _text(email, "email", 254)
+        notes = _text(notes, "notes", 1000)
+        if email and not EMAIL_PATTERN.fullmatch(email):
+            raise ValueError("email must be a valid email address or empty")
+        with self.conn:
+            cursor = self.conn.execute(
+                "UPDATE crm_contacts SET name=?,role=?,email=?,notes=? "
+                "WHERE contact_id=? AND job_id=?",
+                (name, role, email, notes, contact_id, job_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Recruiter contact does not belong to this opportunity")
+        return {"contact_id": contact_id, "job_id": job_id, "name": name}
+
     def contacts(self, job_id: str) -> list[dict]:
         self.store.get_job(job_id)
         return [dict(row) for row in self.conn.execute(
@@ -253,25 +294,73 @@ class ApplicationCRM:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def details(self, job_id: str) -> dict:
+    def priority(self, job_id: str) -> str:
         self.store.get_job(job_id)
+        row = self.conn.execute(
+            "SELECT priority FROM crm_priority_events WHERE job_id=? ORDER BY event_id DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
+        return row["priority"] if row else "none"
+
+    def set_priority(self, job_id: str, priority: Any) -> dict:
+        self.store.get_job(job_id)
+        if not isinstance(priority, str) or priority not in ("none", "low", "medium", "high"):
+            raise ValueError("priority must be none, low, medium or high")
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO crm_priority_events(job_id,priority) VALUES(?,?)", (job_id, priority),
+            )
+        return {"job_id": job_id, "priority": priority}
+
+    def add_interview_note(self, job_id: str, interview_date: Any, round: Any, notes: Any) -> dict:
+        self.store.get_job(job_id)
+        interview_date = _due(interview_date, "interview_date")
+        round = _text(round, "round", 120, required=True)
+        notes = _text(notes, "notes", 4000, required=True)
+        with self.conn:
+            cursor = self.conn.execute(
+                "INSERT INTO crm_interview_notes(job_id,interview_date,round,notes) VALUES(?,?,?,?)",
+                (job_id, interview_date, round, notes),
+            )
+        return {"note_id": cursor.lastrowid, "job_id": job_id}
+
+    def interview_notes(self, job_id: str) -> list[dict]:
+        self.store.get_job(job_id)
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM crm_interview_notes WHERE job_id=? ORDER BY interview_date DESC,note_id DESC",
+            (job_id,),
+        ).fetchall()]
+
+    def details(self, job_id: str) -> dict:
+        job = self.store.get_job(job_id)
         return {
             "job_id": job_id,
+            "job": {"id": job.id, "title": job.title, "company": job.company},
             "stage": self._stage(job_id),
             "allowed_transitions": list(self.allowed(job_id)),
             "application_submitted": self.store.stage_of(job_id) == "submitted",
             "stage_events": self.stage_history(job_id),
             "contacts": self.contacts(job_id),
             "followups": self.followups(job_id),
+            "priority": self.priority(job_id),
+            "priority_events": [dict(row) for row in self.conn.execute(
+                "SELECT * FROM crm_priority_events WHERE job_id=? ORDER BY event_id DESC", (job_id,),
+            ).fetchall()],
+            "interview_notes": self.interview_notes(job_id),
         }
 
     def summary(self) -> dict:
-        jobs = self.store.list_jobs(limit=10000)
+        jobs = self.store.list_jobs(limit=-1)
         counts: dict[str, int] = {}
         job_stages = []
         for job in jobs:
             stage = self._stage(job.id)
-            job_stages.append({"job_id": job.id, "stage": stage})
+            job_stages.append({
+                "job_id": job.id, "stage": stage, "title": job.title,
+                "company": job.company, "location": job.location,
+                "application_stage": self.store.stage_of(job.id),
+                "priority": self.priority(job.id),
+            })
             counts[stage] = counts.get(stage, 0) + 1
         rows = self.conn.execute(
             "SELECT f.followup_id,f.job_id,f.title,f.due_date,"

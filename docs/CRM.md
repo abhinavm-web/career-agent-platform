@@ -9,6 +9,8 @@ The Career Agent application tracker keeps opportunities, recruiter contacts, in
 
 Open http://127.0.0.1:8765/ on the same computer, then choose **Application tracker**. Add job postings on the Opportunity board before tracking them.
 
+The tracker lists all stored opportunities independently of the board's newest-500-job window. Older opportunities and their follow-ups remain accessible for stage changes, contact management and task completion.
+
 ## Pipeline stages versus application submissions
 
 A job starts as **discovered**. Before applying, it may be marked **saved**, **shortlisted** or **archived**. These are organizer labels only.
@@ -17,9 +19,21 @@ A job starts as **discovered**. Before applying, it may be marked **saved**, **s
 
 Each manually recorded stage transition includes a timestamp, actor (candidate) and optional private note. Stage history is append-only. Pipeline stage is separate from application packet approval and the original submitted receipt.
 
+## Find and prioritize opportunities
+
+Use the tracker's search field for title, company or location, then combine it with pipeline-stage and priority filters. **Clear filters** restores the full list. The result count describes the filtered list; pipeline totals and upcoming follow-ups continue to cover the whole workspace. Filters last for the current page session.
+
+Select an opportunity and save a **high**, **medium**, **low** or **no priority** label. Priority changes retain a candidate-attributed, timestamped history and do not change the application stage or submission receipt.
+
+## Interview notes
+
+Record an interview date, round/topic and private notes on an opportunity. Notes are displayed newest interview date first, with the recording timestamp and candidate attribution. Notes can also capture preparation for a future interview. They do not assert submission, schedule events or advance the pipeline.
+
+Saved notes are append-only in this version: add another note for a correction. They remain in unencrypted local SQLite, like contacts and other CRM history. Note editing, deletion and data export are not yet implemented.
+
 ## Recruiter contacts
 
-For each opportunity, enter a recruiter's or referrer's name, optional role, email and contextual note. The current MVP allows adding and viewing contacts. The system never sends mail to them. Editing, removal and consent-based account integrations are future work.
+For each opportunity, enter a recruiter's or referrer's name, optional role, email and contextual note. Choose **Edit contact** to correct these fields, then **Save contact**, or **Cancel** to discard edits. Linked follow-up tasks retain the same contact and display its updated name. Contact edits replace the current fields; this MVP does not keep a contact revision history. The system never sends mail to contacts. Removal and consent-based account integrations are future work.
 
 ## Follow-up tasks
 
@@ -54,4 +68,4 @@ The product vision and future requirements are in [PRD](PRD.md), feature **F07**
 
 ## Later improvements
 
-Editable contacts, opt-in reminders, interview notes and structured outcome reasons, event export/deletion, richer funnel analytics, and permitted email/calendar integrations. Any hosted edition requires encrypted storage, authentication, data governance and security review.
+Contact removal, opt-in reminders, structured outcome reasons, event export/deletion, richer funnel analytics, and permitted email/calendar integrations. Any hosted edition requires encrypted storage, authentication, data governance and security review.
