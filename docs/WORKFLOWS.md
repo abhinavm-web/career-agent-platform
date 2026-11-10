@@ -35,6 +35,12 @@ The LangGraph pipeline executes \`analyze → draft → human_review\`. The huma
 
 The current graph uses \`InMemorySaver\`, so an interrupted run does not survive a process restart. The CLI conducts the review in one process. Production will need authenticated reviewers, durable checkpoints, tamper-resistant audit logs and private encrypted storage.
 
+## Interpreting the skill comparison
+
+`candidate_skills_not_mentioned_in_posting` lists skills that the **candidate already reports** but that are not mentioned in the job posting. It does **not** identify skills the job requires that the candidate lacks. `qualification_gaps_assessed` is always `false` in this heuristic MVP. For example, a Python-skilled candidate viewing a Rust role may see Python in this list, but must **not** interpret Python as a missing qualification.
+
+Application packets now use schema version 2; older saved version 1 packets must be regenerated and reviewed again. Scores and rank order are unchanged.
+
 ## Fact bank
 
 A factual statement requires \`id\`, \`section\`, \`statement\`, \`keywords\`, \`source_note\`, and \`verified_by_candidate: true\`. Unverified facts and duplicate IDs fail validation. \`source_note\` remains in the local fact bank, not in the generated application packet.
