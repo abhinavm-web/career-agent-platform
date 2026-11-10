@@ -79,3 +79,18 @@ Optional source-backed sponsorship history:
 Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This pipeline uses deterministic keyword heuristics, not an external LLM. It does not generate PDF or DOCX resumes, download DOL workbooks, operate ATS sites, or submit applications.
 
 Original source code license is not yet selected; public visibility does not grant reuse rights. Upstream projects retain their MIT licenses. Not employment or immigration legal advice.
+
+
+## Local web dashboard (v0.3 preview)
+
+A responsive local dashboard now provides a searchable opportunity board, transparent job-fit and sponsorship signals, previewable verified-fact application packets, review history, and manual-submission tracking.
+
+Install the optional dependencies and start the local server:
+
+    python -m pip install -e ".[web]"
+    career-agent ingest examples/jobs.sample.csv
+    career-agent serve --profile examples/profile.example.json --facts examples/candidate-facts.example.json
+
+Open http://127.0.0.1:8765/ on the same computer. The demo candidate is fictional. The web app only binds to the local loopback address and requires a temporary session token for API calls. It has no user accounts or external submissions.
+
+**Not production SaaS:** sensitive profiles and employer receipts remain in unencrypted local files/SQLite; do not run this outside a trusted local computer. See [Dashboard setup and security](docs/DASHBOARD.md).
