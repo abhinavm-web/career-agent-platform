@@ -51,3 +51,12 @@ Reviews and application statuses are distinct: approving a packet means **ready 
 - Resumes exported to DOCX/PDF with explicit user review.
 - Supervised, permitted ATS adapters; no automatic submission without consent.
 - Authenticated, encrypted multi-user deployment with audit logs.
+
+
+## Editable candidate profile (v0.4)
+
+The local dashboard now supports a **Career profile** screen. Start with no additional arguments: career-agent serve. Enter name, headline, target roles, skills, preferred locations and remote preference. Add, edit, verify, revoke or remove career statements. Only explicitly verified facts may appear in newly generated application packets.
+
+The profile and all revisions are stored as **unencrypted plaintext** in the existing SQLite file, not in the public repository. Source notes remain private to the local workspace. Edits to a confirmed claim automatically revoke verification. Requests include a revision token, with stale edits rejected as HTTP 409.
+
+An explicit one-time import can copy existing configured --profile and --facts files into the workspace, without altering them. See [Career Workspace](CAREER_WORKSPACE.md).
