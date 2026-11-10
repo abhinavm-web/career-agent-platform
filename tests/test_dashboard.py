@@ -72,7 +72,7 @@ class DashboardTests(unittest.TestCase):
             profile_path=self.profile_path,
             facts_path=self.facts_path,
         ))
-        self.client = TestClient(self.app)
+        self.client = TestClient(self.app, base_url="http://localhost")
         landing = self.client.get("/")
         self.assertEqual(landing.status_code, 200)
         self.assertIn("data-session=", landing.text)
@@ -164,7 +164,7 @@ class DashboardTests(unittest.TestCase):
 
         other = TestClient(create_app(DashboardConfig(
             db_path=self.db, packet_dir=self.packet_dir,
-        )))
+        )), base_url="http://localhost")
         token = re.search(r'data-session="([^"]+)"', other.get("/").text).group(1)
         denied = other.post(
             f"/api/jobs/{self.job.id}/draft",
