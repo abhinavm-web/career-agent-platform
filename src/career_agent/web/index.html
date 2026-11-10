@@ -141,6 +141,18 @@
             <button id="h1b-import-submit" type="submit" class="button">Import records locally</button>
           </form>
         </details>
+        <details class="panel profile-editor">
+          <summary>USCIS employer decisions: refresh or import</summary>
+          <p class="muted">Find an annual h1b_datahubexport-YYYY.csv file on the <a href="https://www.uscis.gov/archive/h-1b-employer-data-hub-files" target="_blank" rel="noopener noreferrer">official USCIS data files page</a>. Use its fiscal year and reporting cut-off date, not today's download date. Refresh contacts USCIS directly; if blocked, import the official file instead. Data is historical and may lag.</p>
+          <form id="uscis-form" class="crm-form">
+            <label class="field">Official USCIS CSV URL<input id="uscis-source" type="url" required placeholder="https://www.uscis.gov/sites/default/files/…csv"></label>
+            <label class="field">Fiscal year<input id="uscis-year" type="number" min="2009" required></label>
+            <label class="field">Data as of (from the release)<input id="uscis-as-of" type="date" required></label>
+            <label class="field">CSV file (for local import, up to 8 MB)<input id="uscis-file" type="file" accept=".csv,text/csv"></label>
+            <label class="check-label"><input id="uscis-consent" type="checkbox" required> I checked the source and reporting date. This is the full fiscal-year file, not a filtered company export, and replaces that year's snapshot. Refresh may contact USCIS; no candidate data is sent.</label>
+            <div class="button-row"><button id="uscis-refresh" type="submit" class="button">Refresh from USCIS</button><button id="uscis-import" type="button" class="button">Import official CSV locally</button></div>
+          </form>
+        </details>
         <p id="h1b-coverage" class="muted"></p>
         <form id="h1b-search" class="panel crm-form">
           <label class="field">Company name<input id="h1b-query" type="search" minlength="2" maxlength="200" required placeholder="Legal employer or company name"></label>

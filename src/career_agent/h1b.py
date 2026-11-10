@@ -42,6 +42,10 @@ class H1BResearch:
             );
             CREATE INDEX IF NOT EXISTS h1b_employer ON h1b_lca(employer_key,fiscal_year);
         ''')
+        from .uscis import USCISRecords
+        from .posting_checks import PostingChecks
+        self.uscis = USCISRecords(store)
+        self.posting_checks = PostingChecks(store)
 
     def settings(self):
         row = self.conn.execute('SELECT need,min_year,include_unknown FROM h1b_settings WHERE id=1').fetchone()
@@ -126,7 +130,7 @@ class H1BResearch:
     def coverage(self):
         row = self.conn.execute('SELECT COUNT(*) AS records,MIN(fiscal_year) AS first_year,MAX(fiscal_year) AS last_year,MAX(captured_on) AS latest_capture FROM h1b_lca').fetchone()
         return {**dict(row), 'verification': 'user_imported_not_independently_verified',
-                'complete': False, 'source_url': DOL_URL}
+                'complete': False, 'source_url': DOL_URL, 'uscis_snapshots': self.uscis.coverage()}
 
     def company(self, name, settings=None):
         settings = settings or self.settings()
@@ -134,6 +138,7 @@ class H1BResearch:
                                  (employer_key(name), settings['min_year'])).fetchall()
         recent = self.conn.execute('SELECT case_number,employer,fiscal_year,decision_date,case_status,city,state,job_title,source_url,captured_on FROM h1b_lca WHERE employer_key=? ORDER BY decision_date DESC,case_number LIMIT 20', (employer_key(name),)).fetchall()
         return {'employer': name, 'match': 'exact_case_whitespace_only',
+                'uscis': self.uscis.company(name, settings['min_year']),
                 'counts': [dict(row) for row in rows], 'records': [dict(row) for row in recent],
                 'record_limit': 20, 'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
 
@@ -142,6 +147,7 @@ class H1BResearch:
         history = self.company(job.company, settings)
         policy = h1b_policy(job.description, settings['need'])
         return {**policy, 'id': job.id, 'company': job.company, 'title': job.title, 'url': job.url,
+                'live_check': self.posting_checks.latest(job.id),
                 'location': job.location, 'history': history, 'posting_freshness': 'not_revalidated',
                 'eligibility': 'not_determined', 'need': settings['need']}
 
@@ -152,12 +158,13 @@ class H1BResearch:
         settings = self.settings()
         # instr treats SQL wildcard characters literally. Search suggestions never imply an entity match.
         key = employer_key(query)
-        total = self.conn.execute('SELECT COUNT(DISTINCT employer_key) FROM h1b_lca WHERE instr(employer_key,?)>0', (key,)).fetchone()[0]
-        companies = self.conn.execute('SELECT MIN(employer) AS employer FROM h1b_lca WHERE instr(employer_key,?)>0 GROUP BY employer_key ORDER BY employer_key LIMIT 25 OFFSET ?', (key, offset)).fetchall()
+        employers = 'WITH employers AS (SELECT employer_key,employer FROM h1b_lca UNION ALL SELECT employer_key,employer FROM uscis_employers) '
+        total = self.conn.execute(employers + 'SELECT COUNT(DISTINCT employer_key) FROM employers WHERE instr(employer_key,?)>0', (key,)).fetchone()[0]
+        companies = self.conn.execute(employers + 'SELECT MIN(employer) AS employer FROM employers WHERE instr(employer_key,?)>0 GROUP BY employer_key ORDER BY employer_key LIMIT 25 OFFSET ?', (key, offset)).fetchall()
         jobs = [self.job(job, settings) for job in self.store.list_jobs(limit=-1) if key in employer_key(job.company)]
         if not settings['include_unknown']:
             jobs = [job for job in jobs if job['policy'] != 'unknown']
         return {'companies': [self.company(row['employer'], settings) for row in companies],
                 'company_total': total, 'offset': offset, 'next_offset': offset + 25 if offset + 25 < total else None,
                 'jobs': jobs, 'settings': settings, 'coverage': self.coverage(),
-                'warning': 'Imported LCA history is not petition approval or an offer. No records means unknown, not no sponsorship. Job postings are stored snapshots; confirm availability and policy with the employer.'}
+                'warning': 'LCA and USCIS history are separate from current job policy. No records means unknown, not no sponsorship. Live checks are dated ATS observations, not hiring or sponsorship guarantees.'}

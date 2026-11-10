@@ -54,6 +54,12 @@ def parser() -> argparse.ArgumentParser:
     h1b.add_argument("--source-url", required=True)
     h1b.add_argument("--captured-on", required=True, help="Source capture date YYYY-MM-DD")
 
+    uscis = cmd.add_parser("uscis-import", help="Import one USCIS employer fiscal-year CSV snapshot")
+    uscis.add_argument("csv")
+    uscis.add_argument("--source-url", required=True)
+    uscis.add_argument("--fiscal-year", type=int, required=True)
+    uscis.add_argument("--data-as-of", required=True, help="Reporting cut-off date, not download date")
+
     draft = cmd.add_parser("draft", help="Prepare a local, fact-grounded application packet")
     draft.add_argument("job_id")
     draft.add_argument("--profile", required=True, help="Local preferences JSON")
@@ -138,7 +144,12 @@ def main(argv: list[str] | None = None) -> int:
             jobs = discover_jobspy(args.query, args.location, args.results)
 
         with Store(args.db) as store:
-            if args.command == "h1b-import":
+            if args.command == "uscis-import":
+                from .uscis import USCISRecords
+                with Path(args.csv).open('rb') as source:
+                    content = source.read(32 * 1024 * 1024 + 1)
+                print(json.dumps(USCISRecords(store).import_bytes(content, args.source_url, args.fiscal_year, args.data_as_of)))
+            elif args.command == "h1b-import":
                 from .h1b import H1BResearch
                 with Path(args.csv).open(encoding="utf-8-sig", newline="") as stream:
                     print(json.dumps(H1BResearch(store).import_csv(stream, args.source_url, args.captured_on)))
