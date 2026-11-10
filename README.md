@@ -48,7 +48,7 @@ Local state defaults to .local/career_agent.sqlite3 and is gitignored. Sample jo
 
 ## Design and future direction
 
-See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Security](SECURITY.md), and [Open-source integration notes](docs/UPSTREAM.md).
+See the [Product Requirements Document](docs/PRD.md) for the complete vision, feature catalog and release gates; then [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Security](SECURITY.md), and [Open-source integration notes](docs/UPSTREAM.md) for the current implementation.
 
 ## Candidate intelligence and review (experimental)
 
