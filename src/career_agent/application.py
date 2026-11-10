@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -132,13 +133,32 @@ def build_packet(
     return packet
 
 
+def _reject_symlink_components(destination: Path) -> None:
+    """Reject symlinked files and ancestors, including parents of relative paths.
+
+    This check is suitable for our local, single-user CLI. Do not treat it as
+    protection against an attacker concurrently changing filesystem paths.
+    """
+    absolute_path = destination.absolute()
+    for component in (absolute_path, *absolute_path.parents):
+        if component.is_symlink():
+            raise ValueError(f"Refusing a symbolic link in application packet path: {component}")
+
+
 def save_packet(packet: dict[str, Any], path: str | Path) -> Path:
     validate_packet(packet)
     destination = Path(path)
+    # Check *before* creating parent directories: pathlib.mkdir would otherwise
+    # follow a preexisting directory symlink and write outside the intended tree.
+    _reject_symlink_components(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.is_symlink():
-        raise ValueError("Refusing to write a packet through a symbolic link")
-    destination.write_text(json.dumps(packet, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _reject_symlink_components(destination)
+    contents = json.dumps(packet, indent=2, ensure_ascii=False) + "\n"
+    # O_NOFOLLOW protects the final file against symlink replacement on POSIX.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(destination, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(contents)
     destination.chmod(0o600)
     return destination
 
