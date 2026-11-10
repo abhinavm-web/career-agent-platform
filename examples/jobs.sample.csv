@@ -1,0 +1,3 @@
+company,title,location,job_url,description,is_remote,source
+Example Industries,AI Transformation Manager,"Knoxville, TN",https://example.com/jobs/ai-transformation-manager,"Lead enterprise AI adoption and governance using AWS and Python. Visa sponsorship is available.",false,sample
+Example Systems,Enterprise AI Lead,"Remote, USA",https://example.com/jobs/enterprise-ai-lead,"Deliver AI platforms with AWS and LangGraph. No visa sponsorship.",true,sample

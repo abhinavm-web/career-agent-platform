@@ -1,0 +1,18 @@
+{
+  "note": "Fictional sample only; keep real profiles outside source control.",
+  "target_titles": [
+    "AI Transformation Manager",
+    "Enterprise AI Lead"
+  ],
+  "skills": [
+    "AWS",
+    "Python",
+    "LangGraph",
+    "AI governance"
+  ],
+  "preferred_locations": [
+    "Knoxville",
+    "Tennessee"
+  ],
+  "allow_remote": true
+}
