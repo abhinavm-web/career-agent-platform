@@ -126,8 +126,8 @@
           <div class="form-grid">
             <label>Sponsorship needed<select id="h1b-need"><option value="any">Not specified</option><option value="new">New H-1B sponsorship</option><option value="transfer">H-1B transfer</option></select></label>
             <label>Earliest fiscal year for history counts<input id="h1b-min-year" type="number" min="1990" required></label>
-            <label class="check-label"><input id="h1b-unknown" type="checkbox" checked> Include jobs with unknown policy</label>
           </div>
+          <label class="check-label"><input id="h1b-unknown" type="checkbox" checked> Include jobs with unknown policy</label>
           <button id="h1b-save" class="button" type="submit">Save H-1B preferences</button>
         </form>
         <details class="panel profile-editor">
@@ -143,7 +143,7 @@
         </details>
         <p id="h1b-coverage" class="muted"></p>
         <form id="h1b-search" class="panel crm-form">
-          <label>Company name<input id="h1b-query" type="search" minlength="2" maxlength="200" required placeholder="Legal employer or company name"></label>
+          <label class="field">Company name<input id="h1b-query" type="search" minlength="2" maxlength="200" required placeholder="Legal employer or company name"></label>
           <button id="h1b-search-submit" class="button button-primary" type="submit">Search company records and jobs</button>
         </form>
         <p id="h1b-status" role="status" aria-live="polite"></p>
