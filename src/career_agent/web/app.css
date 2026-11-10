@@ -212,3 +212,5 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
   .profile-editor,.profile-import {padding:16px;}
   .career-history-row {align-items:start;flex-direction:column;}
 }
+
+.stale-warning {padding:10px 12px;border:1px solid #705038;border-radius:8px;background:#37291f;color:#ffdfb0 !important;font-weight:650;}
