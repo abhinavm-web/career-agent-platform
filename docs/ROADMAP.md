@@ -32,9 +32,20 @@
 - [ ] Supervised ATS connectors for Greenhouse, Lever and Ashby
 - [ ] Submission receipt audit trail and funnel analytics
 
+## Phase 3.5 — Single-user local dashboard
+
+- [x] Responsive browser-based opportunity board with search and filters
+- [x] Local token-protected API and explicit loopback binding
+- [x] Candidate-confirmed draft viewing, approval and rejection
+- [x] Append-only local review audit events and employer-submission attestations
+- [x] Contract/security tests for local HTTP endpoints
+- [ ] Client-side accessibility audit, usability sessions and cross-browser testing
+- [ ] Candidate profile editor and encrypted private vault
+
 ## Phase 4 — Product
 
-- [ ] Web dashboard and review queue
+- [x] Local-only web dashboard and review queue (non-hosted MVP)
+- [ ] Production-ready hosted web dashboard
 - [ ] User accounts, consent, deletion and encryption
 - [ ] Secure hosted operations, retention and access controls
 
