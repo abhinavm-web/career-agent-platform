@@ -106,7 +106,50 @@ function createHarness() {
   };
   get("app").dataset.session = "testing-only";
   const waiting = new Map();
-  const fetch = (url) => {
+  let workspace = {
+    revision: 0,
+    profile: {
+      name: "", headline: "", target_titles: [], skills: [],
+      preferred_locations: [], allow_remote: true,
+    },
+    facts: [],
+  };
+  const revisions = [];
+  const fetch = (url, options = {}) => {
+    if (url === "/api/workspace") {
+      if (options.method === "PUT") {
+        const data = JSON.parse(options.body);
+        assert.equal(data.expected_revision, workspace.revision);
+        const previous = Object.fromEntries(workspace.facts.map((fact) => [fact.id, fact]));
+        const facts = data.facts.map((fact) => {
+          const old = previous[fact.id];
+          const unchanged = old && ["section", "statement", "source_note", "keywords"].every(
+            (key) => JSON.stringify(old[key]) === JSON.stringify(fact[key])
+          );
+          return {...fact, verified_by_candidate: Boolean(
+            unchanged && old.verified_by_candidate && fact.verified_by_candidate
+          )};
+        });
+        workspace = {revision: workspace.revision + 1, profile: data.profile, facts};
+        revisions.unshift({revision: workspace.revision, change_type: "edited", created_at: "now"});
+        return Promise.resolve(ok({workspace}));
+      }
+      return Promise.resolve(ok({workspace}));
+    }
+    if (url === "/api/workspace/history") return Promise.resolve(ok({revisions}));
+    if (url.startsWith("/api/workspace/facts/") && url.endsWith("/verification")) {
+      const data = JSON.parse(options.body);
+      assert.equal(data.expected_revision, workspace.revision);
+      assert.equal(data.acknowledged, true);
+      const id = url.split("/")[4];
+      workspace = {
+        ...workspace, revision: workspace.revision + 1,
+        facts: workspace.facts.map((fact) => fact.id === id
+          ? {...fact, verified_by_candidate: data.verified} : fact),
+      };
+      revisions.unshift({revision: workspace.revision, change_type: "verified", created_at: "now"});
+      return Promise.resolve(ok({workspace}));
+    }
     if (url === "/api/jobs") return Promise.resolve(ok({
       jobs: [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")],
     }));
@@ -136,10 +179,12 @@ function createHarness() {
     document, fetch, URL,
     navigator: {clipboard: {writeText: async () => {}}},
     FormData: class {},
+    window: {confirm: () => true},
+    crypto: {randomUUID: () => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
     console,
   };
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
-  return {get, waiting};
+  return {get, waiting, getWorkspace: () => workspace};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -191,4 +236,36 @@ test("submitted job UI cannot expose a regenerate-draft action", async () => {
   const scriptText = SOURCE;
   assert.match(scriptText, /job\.application_stage === "submitted"/);
   assert.match(scriptText, /Draft regeneration is disabled/);
+});
+
+
+test("career profile can add and separately verify a fact through the browser controls", async () => {
+  const harness = createHarness();
+  await flush();
+  await harness.get("nav-profile").click();
+  await flush();
+  assert.equal(harness.get("profile-revision").textContent, "Revision 0");
+  harness.get("career-name").value = "Fictional Candidate";
+  harness.get("career-headline").value = "AI delivery";
+  harness.get("career-targets").value = "AI Lead";
+  harness.get("career-skills").value = "AWS";
+  await harness.get("career-profile-form").handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getWorkspace().profile.name, "Fictional Candidate");
+  assert.equal(harness.getWorkspace().revision, 1);
+
+  harness.get("fact-category").value = "projects";
+  harness.get("fact-statement").value = "Built a fictional AWS test prototype.";
+  harness.get("fact-keywords").value = "AWS";
+  harness.get("fact-source").value = "Private fictional source";
+  await harness.get("career-fact-form").handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getWorkspace().facts.length, 1);
+  assert.equal(harness.getWorkspace().facts[0].verified_by_candidate, false);
+  const factCard = harness.get("career-facts-list").children[0];
+  const actions = factCard.children.find((child) => child.className === "button-row");
+  await actions.children[1].click();
+  await flush();
+  assert.equal(harness.getWorkspace().facts[0].verified_by_candidate, true);
+  assert.match(harness.get("career-facts-list").textContent, /Candidate verified/);
 });
