@@ -390,6 +390,35 @@
     };
   }
 
+
+  function snapshotEditorInputs() {
+    return {
+      profile: readCareerPreferences(),
+      editingFactId: state.editingFactId,
+      category: byId("fact-category").value,
+      statement: byId("fact-statement").value,
+      keywords: byId("fact-keywords").value,
+      source: byId("fact-source").value
+    };
+  }
+
+  function restoreEditorInputs(draft) {
+    const p = draft.profile;
+    byId("career-name").value = p.name;
+    byId("career-headline").value = p.headline;
+    byId("career-targets").value = p.target_titles.join("\n");
+    byId("career-skills").value = p.skills.join("\n");
+    byId("career-locations").value = p.preferred_locations.join("\n");
+    byId("career-remote").checked = p.allow_remote;
+    state.editingFactId = draft.editingFactId;
+    byId("fact-form-heading").textContent = draft.editingFactId
+      ? "Edit fact " + draft.editingFactId : "Add career fact";
+    byId("fact-category").value = draft.category;
+    byId("fact-statement").value = draft.statement;
+    byId("fact-keywords").value = draft.keywords;
+    byId("fact-source").value = draft.source;
+  }
+
   function resetFactEditor() {
     state.editingFactId = null;
     byId("fact-form-heading").textContent = "Add career fact";
@@ -472,9 +501,11 @@
         expected_revision: state.workspace.revision, profile, facts
       });
       state.workspace = response.workspace;
-      resetFactEditor();
+      // A saved fact closes its editor. Saving preferences must not erase
+      // a separate fact draft that the candidate was still typing.
+      if (actionLabel !== "Preferences") resetFactEditor();
       notice(actionLabel + " saved locally. Any added or changed career fact must be verified separately.");
-      await refresh();
+      await refresh(undefined, true);
     } catch (error) {
       notice(error.status === 409 ? "Another edit was saved. Reload the profile before editing." : error.message, true);
     }
@@ -493,12 +524,13 @@
       });
       state.workspace = result.workspace;
       notice(fact.verified_by_candidate ? "Fact verification revoked." : "Fact verified. It can now appear in drafts.");
-      await refresh();
+      await refresh(undefined, true);
     } catch (error) {notice(error.message, true);}
   }
 
   async function deleteFact(factId) {
     if (!state.workspace || !window.confirm("Delete this fact from the current career profile? Its historical revisions remain stored locally.")) return;
+    if (state.editingFactId === factId) resetFactEditor();
     await saveCareerWorkspace(state.workspace.profile, state.workspace.facts.filter((fact) => fact.id !== factId), "Fact");
   }
 
@@ -513,7 +545,9 @@
     } catch (error) {notice(error.message, true);}
   }
 
-  async function refresh(keepSelected) {
+  async function refresh(keepSelected, preserveEditor = false) {
+    const draft = preserveEditor && state.screen === "profile" && state.workspace
+      ? snapshotEditorInputs() : null;
     try {
       const results = await Promise.all([
         api("/api/jobs"), api("/api/overview"), api("/api/settings"), api("/api/reviews")
@@ -530,7 +564,10 @@
       const selectedId = state.selectedId;
       if (selectedId) await loadPacket(selectedId); else state.packet = null;
       if (state.selectedId === selectedId) renderDetail();
-      if (state.screen === "profile") await loadWorkspace();
+      if (state.screen === "profile") {
+        await loadWorkspace();
+        if (draft) restoreEditorInputs(draft);
+      }
     } catch (error) {
       notice("Unable to load local workspace: " + error.message, true);
     }
