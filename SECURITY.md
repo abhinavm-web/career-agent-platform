@@ -39,3 +39,5 @@ Review decisions are appended to local SQLite. Draft regeneration invalidates pr
 ## R1 editable career facts
 
 Profiles, fact statements, verification states, private evidence notes and earlier revisions are stored in **plaintext SQLite** on the local computer. They are not committed to Git. Only current candidate-verified facts are used in new application packets; changing a fact's content revokes prior verification. Revision history deliberately retains past notes and claims. No identity security, tenant isolation, database encryption, backup guarantee, or secure deletion is provided by this preview. Do not use it as a hosted or shared-user service. See docs/CAREER_WORKSPACE.md.
+
+A workspace-generated application packet is bound to its source workspace revision. Subsequent changes or fact revocations invalidate the prior packet for new approval/submission actions. Approved but unsubmitted old drafts must be regenerated and re-reviewed; already submitted records and packets remain preserved.
