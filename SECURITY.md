@@ -25,3 +25,12 @@ These checks protect against accidental redirected local paths; they are **not a
 complete defense against an attacker concurrently replacing parent directories**.
 Before multi-user hosting, replace local path-based writes with an isolated
 private storage service or descriptor-relative, race-resistant file operations.
+
+
+## Local web workspace threat model
+
+The dashboard is accessible only at 127.0.0.1, with a random per-process X-Session-Token required for all API calls, restrictive Host and Origin checks, no enabled CORS, JSON-only writes, strict body-size limits, a no-store policy, and a restrictive Content Security Policy. No third-party JavaScript is loaded.
+
+The above mitigations reduce accidental cross-site and DNS-rebinding exposure; they do **not** provide production-ready authentication. A local process running under the same user account may still access unencrypted files or potentially use the loopback interface. Do not expose ports publicly, use reverse proxies to share the service, or store highly sensitive files on a shared machine. Imported job text is treated as untrusted and inserted into the UI using safe DOM text nodes, never HTML execution.
+
+Review decisions are appended to local SQLite. Draft regeneration invalidates previous approval for the new fingerprint. Submissions are *not* sent through the app; users must manually attest to an external employer confirmation. See docs/DASHBOARD.md.
