@@ -138,7 +138,10 @@
       const lower = node("div", "job-item-bottom");
       const signal = sponsorshipLabel(job.sponsorship_status);
       lower.append(chip(signal[0], signal[1]));
-      if (job.packet_available) lower.append(chip(job.review_decision ? "Reviewed" : "Draft ready", job.review_decision ? "teal" : "amber"));
+      if (job.packet_available) lower.append(chip(
+        job.packet_stale ? "Draft outdated" : (job.review_decision ? "Reviewed" : "Draft ready"),
+        job.review_decision && !job.packet_stale ? "teal" : "amber"
+      ));
       if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
       if (job.fit_score !== null) lower.append(node("span", "score", String(job.fit_score) + "/100"));
       item.append(top, lower);
@@ -251,8 +254,10 @@
   function renderPacket(container, job, record) {
     const packet = record.packet;
     const review = record.review;
+    const stale = Boolean(record.stale);
     const card = node("section", "review-card");
     card.append(node("h4", "", "Application packet"), node("p", "", "Review each statement before using it. Packet fingerprint: " + packet.packet_sha256.slice(0, 12) + "…"));
+    if (stale) card.append(node("p", "stale-warning", "Career facts or preferences changed since this packet was drafted. Regenerate and review before using it."));
     const resume = node("details");
     const resumeTitle = node("summary", "", "Resume draft");
     const resumeText = node("pre", "", packet.resume_markdown);
@@ -277,7 +282,7 @@
       const result = node("p", "", "Latest decision: " + review.decision.replaceAll("_", " ") + ".");
       card.append(result);
     }
-    if (job.application_stage !== "submitted") {
+    if (job.application_stage !== "submitted" && !stale) {
       const attest = node("label", "check-label");
       const check = document.createElement("input");
       check.type = "checkbox";
@@ -292,7 +297,7 @@
       decisionButtons.append(approve, reject);
       card.append(decisionButtons);
     }
-    if (review && review.decision === "approved_for_manual_submission" && job.application_stage !== "submitted") {
+    if (!stale && review && review.decision === "approved_for_manual_submission" && job.application_stage !== "submitted") {
       const submitted = node("div", "detail-section");
       submitted.append(node("h4", "", "Already applied on employer site?"));
       submitted.append(node("p", "", "Only record submission after you have submitted it yourself and received confirmation."));
