@@ -29,6 +29,47 @@ class FilingEvidence:
     case_status: str = ""
 
     @classmethod
+    def from_state(cls, data: object, index: int) -> "FilingEvidence":
+        """Validate deserialized graph state rather than unpacking arbitrary dicts."""
+        label = f"filing_records[{index}]"
+        if not isinstance(data, dict):
+            raise ValueError(f"{label} must be an object")
+        required = {"employer", "fiscal_year", "source_url", "source_type"}
+        allowed = required | {"case_status"}
+        missing = required - set(data)
+        unexpected = set(data) - allowed
+        if missing or unexpected:
+            raise ValueError(
+                f"{label} has invalid fields (missing={missing!r}; unexpected={unexpected!r})"
+            )
+
+        def required_text(key: str) -> str:
+            value = data[key]
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{label}.{key} must be a nonempty string")
+            return value.strip()
+
+        employer = required_text("employer")
+        source_type = required_text("source_type")
+        source_url = required_text("source_url")
+        year = data["fiscal_year"]
+        if type(year) is not int or not 1990 <= year <= 2100:
+            raise ValueError(f"{label}.fiscal_year must be an integer between 1990 and 2100")
+        parts = urlsplit(source_url)
+        if parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password:
+            raise ValueError(f"{label}.source_url must be an absolute HTTP(S) URL without credentials")
+        case_status = data.get("case_status", "")
+        if not isinstance(case_status, str):
+            raise ValueError(f"{label}.case_status must be a string")
+        return cls(
+            employer=employer,
+            fiscal_year=year,
+            source_url=source_url,
+            source_type=source_type,
+            case_status=case_status.strip(),
+        )
+
+    @classmethod
     def from_row(cls, row: dict[str, str], line: int) -> "FilingEvidence":
         employer = (row.get("employer") or "").strip()
         source_url = (row.get("source_url") or "").strip()
@@ -59,8 +100,14 @@ def load_filing_evidence(path: str | Path | None) -> tuple[FilingEvidence, ...]:
         return ()
     with Path(path).open(encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
-        if not {"employer", "source_url"}.issubset(reader.fieldnames or []):
-            raise ValueError("Evidence CSV needs employer, source_url and fiscal_year columns")
+        columns = set(reader.fieldnames or [])
+        if (
+            not {"employer", "source_url"}.issubset(columns)
+            or not {"fiscal_year", "record_year"}.intersection(columns)
+        ):
+            raise ValueError(
+                "Evidence CSV needs employer, source_url, and either fiscal_year or record_year columns"
+            )
         return tuple(FilingEvidence.from_row(row, line) for line, row in enumerate(reader, 2))
 
 
