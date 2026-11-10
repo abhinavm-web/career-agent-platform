@@ -140,9 +140,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
             )
         return FactBank.load(config.facts_path)
 
+    def packet_stale(packet: dict[str, Any]) -> bool:
+        revision = active_workspace()["revision"]
+        return revision > 0 and packet.get("candidate_workspace_revision") != revision
+
     def job_view(store: Store, job: Job, profile: CandidateProfile | None, records: tuple) -> dict:
         packet = current_packet(job.id)
-        review = store.latest_review(job.id, packet["packet_sha256"]) if packet else None
+        stale = packet_stale(packet) if packet else False
+        review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
         fit = score_job(job, profile) if profile is not None else None
         sponsorship = sponsorship_report(job, records)
         return {
@@ -160,6 +165,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "sponsorship_status": sponsorship["status"],
             "sponsorship_reason": sponsorship["reason"],
             "packet_available": packet is not None,
+            "packet_stale": stale,
             "review_decision": review["decision"] if review else None,
         }
 
@@ -289,10 +295,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.post("/api/jobs/{job_id}/draft")
     def draft(job_id: str):
-        profile = configured_profile()
-        if profile is None:
-            raise HTTPException(status_code=412, detail="Start the dashboard with --profile to draft applications")
-        bank = configured_facts()
+        workspace = active_workspace()
+        if workspace["revision"] > 0:
+            profile = CandidateWorkspace.scoring_profile(workspace)
+            bank = CandidateWorkspace.fact_bank(workspace)
+        else:
+            profile = configured_profile()
+            if profile is None:
+                raise HTTPException(status_code=412, detail="Configure a career profile before drafting applications")
+            bank = configured_facts()
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             job = _get_job(store, job_id)
@@ -301,7 +312,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     status_code=409,
                     detail="This application is already recorded as submitted; its reviewed packet is locked",
                 )
-        packet = build_packet(job, profile, bank, records)
+        packet = build_packet(
+            job, profile, bank, records,
+            workspace_revision=workspace["revision"] or None,
+        )
         save_packet(packet, config.packet_dir / f"{job.id}.json")
         return {
             "job_id": job.id,
@@ -317,10 +331,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
             packet = current_packet(job_id)
             if packet is None:
                 raise HTTPException(status_code=404, detail="No packet has been drafted for this job")
-            reviewed = store.latest_review(job_id, packet["packet_sha256"])
+            stale = packet_stale(packet)
+            reviewed = store.latest_review(job_id, packet["packet_sha256"]) if not stale else None
         return {
             "packet": packet,
             "review": reviewed,
+            "stale": stale,
             "submission_sent_by_application": False,
         }
 
@@ -332,6 +348,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         current = current_packet(job_id)
         if current is None:
             raise HTTPException(status_code=404, detail="No packet available to review")
+        if packet_stale(current):
+            raise HTTPException(status_code=409, detail="Career profile changed; regenerate this draft before review")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, current["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale packet; reload and review the latest draft")
@@ -350,6 +368,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         packet = current_packet(job_id)
         if packet is None:
             raise HTTPException(status_code=412, detail="Draft and review an application packet first")
+        if packet_stale(packet):
+            raise HTTPException(status_code=409, detail="Career profile changed; regenerate and review before recording submission")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, packet["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale or missing packet fingerprint")
