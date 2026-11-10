@@ -46,3 +46,15 @@ Before hosting the service, add identity management, encryption, explicit consen
 - `graph_review.py`: optional LangGraph analyze → draft → interrupt → resume. The graph cannot send an application.
 
 Both the standard `draft` command and the optional `workflow` graph write application packets to a gitignored local directory. An approval only authorizes manual submission by the candidate. These in-memory checkpoints are not persistent and must not be treated as hosted-production security or auditing.
+
+
+## Phase 3.5: local-only HTTP dashboard
+
+- dashboard.py: optional FastAPI local API, session-token checks, same-origin/Host checks, manual job entry and review operations.
+- web/: packaged accessible HTML, locally served CSS and JavaScript; user-derived text only inserted with textContent.
+- storage.py: append-only packet_reviews table, keyed by job ID and the current packet fingerprint.
+- CLI serve: binds to 127.0.0.1 and does not accept a public host override.
+
+The server does not invoke JobSpy, LangGraph, external LLMs, or ATS websites. Its local web reviews are persisted independently of the in-memory LangGraph graph. The server never submits an application, and a submitted status requires explicit user attestation of a real external submission.
+
+This architecture is only for a trusted single user. API session tokens are not replacement identity or user isolation in hosted multi-user deployments. See [Dashboard](DASHBOARD.md).
