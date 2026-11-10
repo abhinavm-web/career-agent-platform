@@ -52,8 +52,9 @@
 - [x] API and database regression coverage for local candidate-controlled actions
 - [x] Editable contacts with preserved follow-up links
 - [x] Tracker search, stage and priority filters, and priority change history
-- [x] Dated, append-only interview notes (local branch; pending merge)
-- [ ] Calendar notifications and richer outcome analytics
+- [x] Dated, append-only interview notes
+- [x] Recorded submission/interview/offer/acceptance counts and explicit-denominator rates
+- [ ] Calendar notifications, source-specific analytics and history exports
 
 ## Phase 4 — Product
 
