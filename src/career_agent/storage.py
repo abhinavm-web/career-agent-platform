@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+import re
 from pathlib import Path
 
 from .models import Job
@@ -31,6 +32,17 @@ class Store:
                 receipt TEXT,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS packet_reviews(
+                review_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                packet_sha256 TEXT NOT NULL,
+                decision TEXT NOT NULL CHECK(
+                    decision IN ('approved_for_manual_submission','rejected_by_reviewer')
+                ),
+                decided_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_packet_reviews_job
+                ON packet_reviews(job_id, review_id DESC);
         """)
 
     def __enter__(self) -> "Store":
@@ -117,3 +129,60 @@ class Store:
                 WHERE job_id=?
                 """, (receipt.strip(), job_id)
             )
+
+
+    def record_review(self, job_id: str, packet_sha256: str, approved: bool) -> dict:
+        """Append-only record of explicit human review. Does not send anything."""
+        self.get_job(job_id)
+        if self.stage_of(job_id) == "submitted":
+            raise ValueError("A submitted application cannot receive a new review decision")
+        if type(approved) is not bool:
+            raise ValueError("Review approval must be a boolean")
+        if not isinstance(packet_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", packet_sha256):
+            raise ValueError("Invalid packet SHA-256 fingerprint")
+        decision = "approved_for_manual_submission" if approved else "rejected_by_reviewer"
+        with self.connection:
+            cursor = self.connection.execute(
+                """
+                INSERT INTO packet_reviews(job_id,packet_sha256,decision)
+                VALUES (?,?,?)
+                """,
+                (job_id, packet_sha256, decision),
+            )
+        return {
+            "id": cursor.lastrowid,
+            "job_id": job_id,
+            "packet_sha256": packet_sha256,
+            "decision": decision,
+        }
+
+    def latest_review(self, job_id: str, packet_sha256: str | None = None) -> dict | None:
+        """Return last decision for a job's current packet, never a stale packet."""
+        self.get_job(job_id)
+        sql = """
+            SELECT review_id,job_id,packet_sha256,decision,decided_at
+            FROM packet_reviews WHERE job_id=?
+        """
+        params: tuple = (job_id,)
+        if packet_sha256 is not None:
+            sql += " AND packet_sha256=?"
+            params = (job_id, packet_sha256)
+        row = self.connection.execute(
+            sql + " ORDER BY review_id DESC LIMIT 1", params
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def review_history(self, limit: int = 30) -> list[dict]:
+        """List review actions without disclosing private packets or receipts."""
+        rows = self.connection.execute(
+            """
+            SELECT r.review_id,r.job_id,r.packet_sha256,r.decision,r.decided_at,
+                   j.company,j.title
+            FROM packet_reviews AS r JOIN jobs AS j ON r.job_id=j.job_id
+            ORDER BY r.review_id DESC LIMIT ?
+            """,
+            (max(0, min(limit, 100)),),
+        ).fetchall()
+        return [dict(row) for row in rows]

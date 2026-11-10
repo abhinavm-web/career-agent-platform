@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "career-agent-platform"
-version = "0.2.0"
+version = "0.3.0"
 description = "Privacy-first, human-reviewed career intelligence MVP"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,9 +14,14 @@ dependencies = []
 [project.optional-dependencies]
 jobspy = ["python-jobspy>=1.1,<2"]
 graph = ["langgraph>=1.2,<2"]
+web = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
+dev = ["httpx>=0.27,<1"]
 
 [project.scripts]
 career-agent = "career_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+career_agent = ["web/*.html", "web/*.css", "web/*.js"]
