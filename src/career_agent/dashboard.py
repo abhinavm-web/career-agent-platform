@@ -212,6 +212,11 @@ def create_app(config: DashboardConfig) -> FastAPI:
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             job = _get_job(store, job_id)
+            if store.stage_of(job.id) == "submitted":
+                raise HTTPException(
+                    status_code=409,
+                    detail="This application is already recorded as submitted; its reviewed packet is locked",
+                )
         packet = build_packet(job, profile, bank, records)
         save_packet(packet, config.packet_dir / f"{job.id}.json")
         return {
