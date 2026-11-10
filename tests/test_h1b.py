@@ -25,6 +25,12 @@ class PolicyTests(unittest.TestCase):
     def test_posting_edge_cases(self):
         examples = {
             'Visa sponsorship is available.': 'possible',
+            'Visa sponsorship is available; remote work is not available.': 'possible',
+            'Visa sponsorship is available, but remote work is not available.': 'possible',
+            'We cannot offer remote work but we can sponsor.': 'possible',
+            'H-1B sponsorship is available for new applicants. H-1B transfers are supported.': 'possible',
+            'H-1B sponsorship is available for new applicants. H-1B transfers only.': 'conflicting',
+            'H-1B transfers are supported.': 'transfer_supported',
             'H1B sponsorship is available.': 'possible',
             'No visa sponsorship.': 'excluded',
             'We cannot sponsor candidates.': 'excluded',
