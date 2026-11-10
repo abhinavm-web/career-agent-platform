@@ -8,7 +8,7 @@ Working name only. Final product branding awaits trademark clearance.
 
 - Imports CSV job listings and deduplicates them by stable normalized URLs.
 - Optionally discovers US jobs via JobSpy when the user explicitly invokes a command.
-- Scores title, verified profile skills, and location against job descriptions, with an explanation and missing skills.
+- Scores title, verified profile skills, and location against job descriptions, with an explanation and candidate skills not mentioned in the posting; this is not a qualification-gap assessment.
 - Flags apparent sponsorship exclusions, sponsorship claims and source-backed historical employer records separately. A past LCA is **not** an H-1B sponsorship offer.
 - Stores jobs and application stages in local SQLite.
 - Requires manual review and a user-attested employer confirmation reference before recording an application as submitted.
