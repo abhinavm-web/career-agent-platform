@@ -676,7 +676,9 @@
       }
       stageLabel.append(stageSelect);
       const noteField = crmInput("Optional outcome note (private)", "note", "text", false, 1000);
-      form.append(stageLabel, noteField.field, button("Record stage", "button button-primary"));
+      const stageSubmit = button("Record stage", "button button-primary");
+      stageSubmit.type = "submit";
+      form.append(stageLabel, noteField.field, stageSubmit);
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         await crmPost("/api/jobs/" + item.id + "/crm/stage", {
@@ -703,8 +705,9 @@
     const contactRole = crmInput("Role / relationship", "role", "text", false, 120);
     const contactEmail = crmInput("Email (optional)", "email", "email", false, 254);
     const contactNotes = crmInput("Context note (private)", "notes", "text", false, 1000);
-    contactForm.append(contactName.field, contactRole.field, contactEmail.field, contactNotes.field,
-      button("Add contact", "button button-primary"));
+    const contactSubmit = button("Add contact", "button button-primary");
+    contactSubmit.type = "submit";
+    contactForm.append(contactName.field, contactRole.field, contactEmail.field, contactNotes.field, contactSubmit);
     contactForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       await crmPost("/api/jobs/" + item.id + "/crm/contacts", {
@@ -756,7 +759,9 @@
       contactSelect.append(option);
     }
     contactLabel.append(contactSelect);
-    followupForm.append(title.field, due.field, contactLabel, button("Add follow-up", "button button-primary"));
+    const followupSubmit = button("Add follow-up", "button button-primary");
+    followupSubmit.type = "submit";
+    followupForm.append(title.field, due.field, contactLabel, followupSubmit);
     followupForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       await crmPost("/api/jobs/" + item.id + "/crm/followups", {
