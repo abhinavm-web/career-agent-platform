@@ -232,6 +232,45 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertEqual(packet["candidate_name"], "Fictional Candidate")
         self.assertTrue(self.api("GET", "/api/settings").json()["facts_configured"])
 
+    def test_fact_revocation_invalidates_prior_approval_and_prevents_submission(self):
+        saved = self.api("PUT", "/api/workspace", {
+            "expected_revision": 0, "profile": preferences(), "facts": [fact()],
+        })
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(self.api("POST", "/api/workspace/facts/pilot-01/verification", {
+            "expected_revision": 1, "verified": True, "acknowledged": True,
+        }).status_code, 200)
+        draft = self.api("POST", f"/api/jobs/{self.job.id}/draft", {})
+        self.assertEqual(draft.status_code, 200)
+        fingerprint = draft.json()["packet_sha256"]
+        packet = self.api("GET", f"/api/jobs/{self.job.id}/packet").json()["packet"]
+        self.assertEqual(packet["candidate_workspace_revision"], 2)
+        approved = self.api("POST", f"/api/jobs/{self.job.id}/decision", {
+            "packet_sha256": fingerprint, "approved": True, "acknowledged": True,
+        })
+        self.assertEqual(approved.status_code, 200)
+
+        revoked = self.api("POST", "/api/workspace/facts/pilot-01/verification", {
+            "expected_revision": 2, "verified": False, "acknowledged": True,
+        })
+        self.assertEqual(revoked.status_code, 200)
+        latest = self.api("GET", f"/api/jobs/{self.job.id}/packet").json()
+        self.assertTrue(latest["stale"])
+        self.assertIsNone(latest["review"])
+        jobs = self.api("GET", "/api/jobs").json()["jobs"]
+        self.assertTrue(jobs[0]["packet_stale"])
+        self.assertIsNone(jobs[0]["review_decision"])
+        rejected = self.api("POST", f"/api/jobs/{self.job.id}/submitted", {
+            "packet_sha256": fingerprint, "receipt": "external-receipt-123",
+            "attest_confirmed": True,
+        })
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(self.api("POST", f"/api/jobs/{self.job.id}/decision", {
+            "packet_sha256": fingerprint, "approved": True, "acknowledged": True,
+        }).status_code, 409)
+        with Store(self.db) as store:
+            self.assertEqual(store.stage_of(self.job.id), "discovered")
+
     def test_changed_verified_fact_is_excluded_from_new_draft(self):
         self.assertEqual(self.api("PUT", "/api/workspace", {
             "expected_revision": 0, "profile": preferences(), "facts": [fact()],
