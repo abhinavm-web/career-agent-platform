@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
                         "title": job.title, "url": job.url,
                         "score": fit.score, "fit_reasons": fit.reasons,
                         "matched_skills": fit.matched_skills,
-                        "missing_skills": fit.missing_skills,
+                        "candidate_skills_not_mentioned_in_posting": fit.candidate_skills_not_mentioned_in_posting,
                         "sponsorship_status": sponsor.status,
                         "sponsorship_reason": sponsor.reason,
                     })
