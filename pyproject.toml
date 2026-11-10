@@ -13,6 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 jobspy = ["python-jobspy>=1.1,<2"]
+graph = ["langgraph>=1.2,<2"]
 
 [project.scripts]
 career-agent = "career_agent.cli:main"
