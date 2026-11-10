@@ -60,3 +60,5 @@ The local dashboard now supports a **Career profile** screen. Start with no addi
 The profile and all revisions are stored as **unencrypted plaintext** in the existing SQLite file, not in the public repository. Source notes remain private to the local workspace. Edits to a confirmed claim automatically revoke verification. Requests include a revision token, with stale edits rejected as HTTP 409.
 
 An explicit one-time import can copy existing configured --profile and --facts files into the workspace, without altering them. See [Career Workspace](CAREER_WORKSPACE.md).
+
+**Safety invariant:** A new candidate-workspace revision invalidates previous draft review approvals. Outdated packets are displayed with a warning and cannot be approved or recorded as newly submitted until regenerated and reviewed again.
