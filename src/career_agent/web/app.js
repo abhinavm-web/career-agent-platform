@@ -8,7 +8,7 @@
   const token = root.dataset.session;
   const state = {
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
-    packet: null, filter: "all", search: "", screen: "jobs"
+    packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs"
   };
 
   const byId = (id) => document.getElementById(id);
@@ -153,15 +153,28 @@
     state.selectedId = id;
     state.packet = null;
     renderJobs();
-    await loadPacket();
     renderDetail();
+    await loadPacket(id);
+    if (state.selectedId === id) renderDetail();
   }
 
-  async function loadPacket() {
-    if (!state.selectedId) return;
+  async function loadPacket(requestedJobId) {
+    const jobId = requestedJobId || state.selectedId;
+    if (!jobId) return;
+    const sequence = ++state.packetRequestSequence;
     try {
-      state.packet = await api("/api/jobs/" + state.selectedId + "/packet");
+      const response = await api("/api/jobs/" + jobId + "/packet");
+      // An older request must not render a previous job's draft under a
+      // newly selected job, or overwrite a newer same-job packet response.
+      if (state.selectedId !== jobId || sequence !== state.packetRequestSequence) return;
+      if (response.packet && response.packet.job_id !== jobId) {
+        notice("Packet belongs to a different job. Refusing to display.", true);
+        state.packet = null;
+        return;
+      }
+      state.packet = response;
     } catch (error) {
+      if (state.selectedId !== jobId || sequence !== state.packetRequestSequence) return;
       if (error.status !== 404) notice(error.message, true);
       state.packet = null;
     }
@@ -229,7 +242,11 @@
     const drafts = section("Application preparation");
     const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
     drafts.append(p);
-    drafts.append(button(job.packet_available ? "Regenerate draft" : "Create application draft", "button button-primary", createDraft));
+    if (job.application_stage === "submitted") {
+      drafts.append(node("p", "", "This submitted application's reviewed packet is locked. Draft regeneration is disabled."));
+    } else {
+      drafts.append(button(job.packet_available ? "Regenerate draft" : "Create application draft", "button button-primary", createDraft));
+    }
     detail.append(drafts);
     if (state.packet) renderPacket(detail, job, state.packet);
   }
@@ -375,8 +392,9 @@
       renderMetrics();
       renderJobs();
       renderActivity();
-      if (state.selectedId) await loadPacket(); else state.packet = null;
-      renderDetail();
+      const selectedId = state.selectedId;
+      if (selectedId) await loadPacket(selectedId); else state.packet = null;
+      if (state.selectedId === selectedId) renderDetail();
     } catch (error) {
       notice("Unable to load local workspace: " + error.message, true);
     }
