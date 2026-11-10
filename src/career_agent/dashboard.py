@@ -140,14 +140,16 @@ def create_app(config: DashboardConfig) -> FastAPI:
             )
         return FactBank.load(config.facts_path)
 
-    def packet_stale(packet: dict[str, Any]) -> bool:
-        revision = active_workspace()["revision"]
+    def packet_stale(packet: dict[str, Any], revision: int | None = None) -> bool:
+        if revision is None:
+            revision = active_workspace()["revision"]
         bound_revision = packet.get("candidate_workspace_revision")
         return (bound_revision != revision) if revision > 0 else bound_revision is not None
 
-    def job_view(store: Store, job: Job, profile: CandidateProfile | None, records: tuple) -> dict:
+    def job_view(store: Store, job: Job, profile: CandidateProfile | None,
+                 records: tuple, workspace_revision: int) -> dict:
         packet = current_packet(job.id)
-        stale = packet_stale(packet) if packet else False
+        stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
         fit = score_job(job, profile) if profile is not None else None
         sponsorship = sponsorship_report(job, records)
@@ -258,11 +260,16 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get("/api/jobs")
     def list_jobs():
-        profile = configured_profile()
+        workspace = active_workspace()
+        profile = (
+            CandidateWorkspace.scoring_profile(workspace)
+            if workspace["revision"] > 0
+            else CandidateProfile.load(config.profile_path) if config.profile_path else None
+        )
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             items = [
-                job_view(store, job, profile, records)
+                job_view(store, job, profile, records, workspace["revision"])
                 for job in store.list_jobs(limit=500)
             ]
         return {"jobs": items, "total": len(items)}
