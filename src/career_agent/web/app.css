@@ -214,3 +214,27 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 }
 
 .stale-warning {padding:10px 12px;border:1px solid #705038;border-radius:8px;background:#37291f;color:#ffdfb0 !important;font-weight:650;}
+
+
+/* R1 application CRM. Keep contacts and interview notes local to the user's machine. */
+.crm-summary {display:grid;grid-template-columns:1.25fr 1fr;gap:15px;margin-bottom:18px;}
+.crm-stage-counts {display:flex;flex-wrap:wrap;gap:10px;align-content:start;}
+.crm-count {background:var(--panel);border:1px solid var(--border);border-radius:11px;min-width:110px;padding:14px;}
+.crm-count strong {display:block;font-size:25px;letter-spacing:-.04em;}
+.crm-count small {color:var(--muted);font-size:11px;text-transform:capitalize;}
+.crm-due-list {padding:16px;background:var(--panel);border:1px solid var(--border);border-radius:12px;}
+.crm-due-list h3 {font-size:13px;margin:0 0 11px;}
+.crm-due-item {width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:3px;border:0;border-top:1px solid var(--border);background:transparent;color:var(--text);padding:9px 0;text-align:left;}
+.crm-due-item strong {font-size:12px;}
+.crm-due-item small {font-size:10px;color:var(--muted);}
+.crm-due-item .overdue {color:var(--red);}
+.crm-form {display:grid;grid-template-columns:1fr;gap:10px;margin:13px 0 6px;padding:13px;background:#18253a;border:1px solid var(--border);border-radius:10px;}
+.crm-form .field {margin:0;}
+.crm-form .field input,.crm-form .field select {width:100%;background:#0d192a;color:var(--text);border:1px solid #34415b;border-radius:7px;padding:8px;}
+.crm-form .button {justify-self:start;}
+.crm-record {background:#142137;border:1px solid var(--border);border-radius:9px;padding:11px 13px;margin:10px 0;overflow-wrap:anywhere;}
+.crm-record strong {display:block;font-size:12px;}
+.crm-record small {display:block;color:var(--muted);font-size:11px;margin-top:4px;}
+.crm-record p {font-size:12px;color:#bdcbe0;margin:6px 0;}
+.crm-record .button-row input[type="date"] {background:#0d192a;border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px;}
+@media(max-width:900px) {.crm-summary{grid-template-columns:1fr;}}
