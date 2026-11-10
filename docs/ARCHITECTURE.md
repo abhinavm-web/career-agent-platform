@@ -37,3 +37,12 @@ A future orchestration layer will add typed state and checkpoints for discover, 
 Job descriptions and scraped websites are untrusted input, never instructions. Profiles should contain verified facts only. No code runs from job descriptions. External sending is not implemented. Historical DOL LCA filings do not guarantee H-1B sponsorship for any particular role.
 
 Before hosting the service, add identity management, encryption, explicit consent, audit trails, retention and deletion.
+
+## Phase 2: evidence-grounded application drafts and LangGraph
+
+- `candidate.py`: local candidate-confirmed fact bank; reject unverified statements.
+- `application.py`: select and format verbatim supported facts, construct fingerprinted local packets.
+- `sponsor_evidence.py`: dated employer-source records, exact entity matching, explicit limitations.
+- `graph_review.py`: optional LangGraph analyze → draft → interrupt → resume. The graph cannot send an application.
+
+Both the standard `draft` command and the optional `workflow` graph write application packets to a gitignored local directory. An approval only authorizes manual submission by the candidate. These in-memory checkpoints are not persistent and must not be treated as hosted-production security or auditing.

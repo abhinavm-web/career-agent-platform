@@ -13,7 +13,7 @@ STOPWORDS = {"and", "or", "the", "of", "for", "a", "in", "to"}
 class Fit:
     score: int
     matched_skills: tuple[str, ...]
-    missing_skills: tuple[str, ...]
+    candidate_skills_not_mentioned_in_posting: tuple[str, ...]
     reasons: tuple[str, ...]
 
 
@@ -29,7 +29,10 @@ def contains_phrase(text: str, phrase: str) -> bool:
 
 
 def score_job(job: Job, profile: CandidateProfile) -> Fit:
-    """Score title (40), known skill mentions (50), preferred location (10)."""
+    """Score title (40), existing profile-skill mentions (50), and location (10).
+
+    This does not extract job requirements or infer qualification gaps.
+    """
     actual_title = words(job.title)
     overlap = max(
         (len(actual_title & words(target)) / len(words(target))
@@ -39,7 +42,7 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
     title_points = round(40 * overlap)
     text = f"{job.title}\n{job.description}"
     matches = tuple(skill for skill in profile.skills if contains_phrase(text, skill))
-    missing = tuple(skill for skill in profile.skills if skill not in matches)
+    unmentioned_candidate_skills = tuple(skill for skill in profile.skills if skill not in matches)
     skill_points = round(50 * len(matches) / len(profile.skills)) if profile.skills else 0
     place_ok = profile.allow_remote and job.remote
     place_ok = place_ok or any(
@@ -50,7 +53,7 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
     return Fit(
         score=min(100, title_points + skill_points + location_points),
         matched_skills=matches,
-        missing_skills=missing,
+        candidate_skills_not_mentioned_in_posting=unmentioned_candidate_skills,
         reasons=(
             f"Title overlap: {title_points}/40",
             f"Profile skills mentioned: {len(matches)}/{len(profile.skills)} ({skill_points}/50)",

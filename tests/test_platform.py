@@ -65,7 +65,7 @@ class MatchingTests(unittest.TestCase):
     def test_missing_skills_are_not_invented(self):
         result = score_job(sample_job("Spreadsheets"), self.profile)
         self.assertEqual(result.score, 50)
-        self.assertEqual(set(result.missing_skills), {"AWS", "Python"})
+        self.assertEqual(set(result.candidate_skills_not_mentioned_in_posting), {"AWS", "Python"})
 
 
 class SponsorshipTests(unittest.TestCase):

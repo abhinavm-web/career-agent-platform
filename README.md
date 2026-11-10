@@ -8,7 +8,7 @@ Working name only. Final product branding awaits trademark clearance.
 
 - Imports CSV job listings and deduplicates them by stable normalized URLs.
 - Optionally discovers US jobs via JobSpy when the user explicitly invokes a command.
-- Scores title, verified profile skills, and location against job descriptions, with an explanation and missing skills.
+- Scores title, verified profile skills, and location against job descriptions, with an explanation and candidate skills not mentioned in the posting; this is not a qualification-gap assessment.
 - Flags apparent sponsorship exclusions, sponsorship claims and source-backed historical employer records separately. A past LCA is **not** an H-1B sponsorship offer.
 - Stores jobs and application stages in local SQLite.
 - Requires manual review and a user-attested employer confirmation reference before recording an application as submitted.
@@ -50,6 +50,32 @@ Local state defaults to .local/career_agent.sqlite3 and is gitignored. Sample jo
 
 See [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Security](SECURITY.md), and [Open-source integration notes](docs/UPSTREAM.md).
 
-The architecture reserves space for LangGraph orchestration, candidate-approved resume tailoring, verified employer data, and audited ATS integrations. Those components are not yet implemented.
+## Candidate intelligence and review (experimental)
+
+Install the optional LangGraph runtime:
+
+    python -m pip install -e ".[graph]"
+
+After importing example jobs, use `career-agent list` to copy a job ID.
+
+Create a fact-grounded resume and cover-note draft:
+
+    career-agent draft JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json
+
+Review the private packet under `.local/packets/JOB_ID.json` using an actual LangGraph human interrupt:
+
+    career-agent review .local/packets/JOB_ID.json
+
+Or run the full `analyze → draft → human_review` graph in one command:
+
+    career-agent workflow JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json
+
+The CLI prints the draft and requires you to type `APPROVE JOB_ID` before marking the packet approved **for manual submission only**. It does not apply to any jobs. The graph is an in-memory local demonstration, not a persistent cloud service.
+
+Optional source-backed sponsorship history:
+
+    career-agent sponsorship JOB_ID --filings my-private-filings.csv
+
+Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This pipeline uses deterministic keyword heuristics, not an external LLM. It does not generate PDF or DOCX resumes, download DOL workbooks, operate ATS sites, or submit applications.
 
 Original source code license is not yet selected; public visibility does not grant reuse rights. Upstream projects retain their MIT licenses. Not employment or immigration legal advice.

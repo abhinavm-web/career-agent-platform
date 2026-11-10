@@ -1,0 +1,38 @@
+{
+  "_note": "Fictional data for tests and demonstration. Do not commit real career profiles.",
+  "name": "Demo Candidate",
+  "headline": "AI Program Delivery",
+  "facts": [
+    {
+      "id": "delivery-01",
+      "section": "experience",
+      "statement": "Delivered a fictional AWS automation pilot with a documented review process.",
+      "keywords": [
+        "AWS",
+        "AI"
+      ],
+      "source_note": "Fictional internal project record.",
+      "verified_by_candidate": true
+    },
+    {
+      "id": "projects-01",
+      "section": "projects",
+      "statement": "Created a fictional Python project prototype.",
+      "keywords": [
+        "Python"
+      ],
+      "source_note": "Fictional project folder.",
+      "verified_by_candidate": true
+    },
+    {
+      "id": "cert-01",
+      "section": "certifications",
+      "statement": "Completed a fictional cloud training program.",
+      "keywords": [
+        "cloud"
+      ],
+      "source_note": "Fictional training record.",
+      "verified_by_candidate": true
+    }
+  ]
+}

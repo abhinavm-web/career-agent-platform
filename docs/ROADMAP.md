@@ -12,6 +12,12 @@
 
 ## Phase 2 — Candidate intelligence
 
+- [x] Local candidate-attested fact bank with private source notes
+- [x] Deterministic role-specific resume and cover-note draft packets
+- [x] Version fingerprint and interactive approval of a packet
+- [x] Source-linked, dated manually curated H-1B employer history
+- [x] LangGraph analyze → draft → human-review interrupt (in-memory prototype)
+
 - [ ] Encrypted verified candidate profile
 - [ ] Seniority, location, compensation and work-authorization constraints
 - [ ] Direct employer posting checks and provenance timestamps
