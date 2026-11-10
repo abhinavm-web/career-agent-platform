@@ -40,7 +40,8 @@
 - [x] Append-only local review audit events and employer-submission attestations
 - [x] Contract/security tests for local HTTP endpoints
 - [ ] Client-side accessibility audit, usability sessions and cross-browser testing
-- [ ] Candidate profile editor and encrypted private vault
+- [x] Local candidate-profile editor, explicit fact verification and SQLite revision history (unencrypted)
+- [ ] Encrypted private vault, backups and safe data migration
 
 ## Phase 4 — Product
 
