@@ -4,8 +4,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import uuid
+from dataclasses import asdict
+from pathlib import Path
 
 from .discovery import discover_jobspy, read_csv_jobs
+from .application import build_packet, load_packet, save_packet
+from .candidate import FactBank
+from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .models import CandidateProfile
 from .scoring import score_job
 from .sponsorship import assess_sponsorship, load_historical_evidence
@@ -38,9 +44,62 @@ def parser() -> argparse.ArgumentParser:
     confirm.add_argument("--receipt", required=True)
     confirm.add_argument("--attest-confirmed", action="store_true")
 
+    sponsor = cmd.add_parser("sponsorship", help="Research job sponsorship and dated employer records")
+    sponsor.add_argument("job_id")
+    sponsor.add_argument("--filings", help="CSV with employer, fiscal_year, source_url")
+
+    draft = cmd.add_parser("draft", help="Prepare a local, fact-grounded application packet")
+    draft.add_argument("job_id")
+    draft.add_argument("--profile", required=True, help="Local preferences JSON")
+    draft.add_argument("--facts", required=True, help="Local candidate-verified fact bank")
+    draft.add_argument("--filings", help="Source-backed, candidate-provided filing CSV")
+    draft.add_argument("--output", help="Optional local packet destination")
+
+    review = cmd.add_parser("review", help="Interactively review a saved packet using LangGraph")
+    review.add_argument("packet", help="Local application packet JSON file")
+
+    flow = cmd.add_parser("workflow", help="Run LangGraph analysis, draft, and human review")
+    flow.add_argument("job_id")
+    flow.add_argument("--profile", required=True)
+    flow.add_argument("--facts", required=True)
+    flow.add_argument("--filings")
+    flow.add_argument("--output", help="Optional local packet destination")
+
     listing = cmd.add_parser("list", help="List local jobs and application stages")
     listing.add_argument("--limit", type=int, default=100)
     return root
+
+
+def _packet_destination(job_id: str, custom: str | None) -> Path:
+    return Path(custom) if custom else Path(".local/packets") / f"{job_id}.json"
+
+
+def _interactive_review(graph, packet: dict, thread_id: str) -> str:
+    """Show complete application materials before a deliberate approval action."""
+    from .graph_review import resume_review
+
+    print(json.dumps({
+        "job_id": packet["job_id"],
+        "job_title": packet["job_title"],
+        "employer": packet["employer"],
+        "job_url": packet["job_url"],
+        "resume_markdown": packet["resume_markdown"],
+        "cover_note": packet["cover_note"],
+        "sponsorship": packet["sponsorship"],
+        "review_questions": packet["review_questions"],
+        "packet_sha256": packet["packet_sha256"],
+        "submission_sent": False,
+    }, indent=2, ensure_ascii=False))
+    answer = input(
+        f"Type APPROVE {packet['job_id']} to mark this draft ready for "
+        "MANUAL submission; otherwise press Enter to reject: "
+    )
+    status = resume_review(
+        graph, packet, approved=(answer.strip() == f"APPROVE {packet['job_id']}"),
+        thread_id=thread_id,
+    )
+    print(json.dumps({"review_status": status, "submission_sent": False}))
+    return status
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -78,6 +137,58 @@ def main(argv: list[str] | None = None) -> int:
                     })
                 ranked.sort(key=lambda row: row["score"], reverse=True)
                 print(json.dumps(ranked[:max(0, args.top)], indent=2))
+            elif args.command == "sponsorship":
+                job = store.get_job(args.job_id)
+                print(json.dumps(sponsorship_report(
+                    job, load_filing_evidence(args.filings)
+                ), indent=2))
+            elif args.command in {"draft", "workflow"}:
+                job = store.get_job(args.job_id)
+                preferences = CandidateProfile.load(args.profile)
+                bank = FactBank.load(args.facts)
+                records = load_filing_evidence(args.filings)
+                if args.command == "draft":
+                    packet = build_packet(job, preferences, bank, records)
+                else:
+                    from .graph_review import build_career_graph
+
+                    graph = build_career_graph()
+                    thread_id = str(uuid.uuid4())
+                    state = {
+                        "job": asdict(job),
+                        "preferences": asdict(preferences),
+                        "fact_bank": json.loads(Path(args.facts).read_text(encoding="utf-8")),
+                        "filing_records": [asdict(item) for item in records],
+                    }
+                    interrupted = graph.invoke(
+                        state, config={"configurable": {"thread_id": thread_id}}
+                    )
+                    if "__interrupt__" not in interrupted:
+                        raise RuntimeError("Graph did not stop for human review")
+                    packet = interrupted["packet"]
+                path = save_packet(packet, _packet_destination(job.id, args.output))
+                print(json.dumps({
+                    "packet_path": str(path),
+                    "job_id": job.id,
+                    "fit_score": packet["fit_score"],
+                    "sponsorship_status": packet["sponsorship"]["status"],
+                    "status": packet["status"],
+                    "submission_sent": False,
+                }, indent=2))
+                if args.command == "workflow":
+                    _interactive_review(graph, packet, thread_id)
+            elif args.command == "review":
+                from .graph_review import build_review_graph
+
+                packet = load_packet(args.packet)
+                graph = build_review_graph()
+                thread_id = str(uuid.uuid4())
+                interrupted = graph.invoke(
+                    {"packet": packet}, config={"configurable": {"thread_id": thread_id}}
+                )
+                if "__interrupt__" not in interrupted:
+                    raise RuntimeError("Graph did not stop for human review")
+                _interactive_review(graph, packet, thread_id)
             elif args.command == "stage":
                 store.stage(args.job_id)
                 job = store.get_job(args.job_id)
@@ -102,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
                     for job in store.list_jobs(limit=max(0, args.limit))
                 ], indent=2))
         return 0
-    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, EOFError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
