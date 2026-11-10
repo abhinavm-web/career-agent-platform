@@ -282,8 +282,13 @@ test("JobSpy search requires consent, blocks duplicate clicks and reports import
   assert.deepEqual(JSON.parse(JSON.stringify(harness.discoveryRequests[0])), {
     query: "AI Lead", location: "United States", results: 5, acknowledged: true
   });
+  await harness.get("nav-profile").click();
+  harness.get("career-headline").value = "Unsaved headline during search";
+  harness.get("fact-statement").value = "Unsaved fictional career fact";
   finish(ok({found: 3, new: 2, duplicates: 1}));
   await running;
+  assert.equal(harness.get("career-headline").value, "Unsaved headline during search");
+  assert.equal(harness.get("fact-statement").value, "Unsaved fictional career fact");
   assert.match(harness.get("discover-status").textContent, /3 returned · 2 added · 1 duplicates/);
   assert.equal(harness.get("discover-submit").disabled, false);
   assert.equal(harness.get("discover-consent").checked, false);

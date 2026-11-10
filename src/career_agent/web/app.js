@@ -966,7 +966,7 @@
       status.textContent = result.found + " returned · " + result.new + " added · " + result.duplicates +
         " duplicates. Sources may return partial results.";
       byId("discover-consent").checked = false;
-      await refresh();
+      await refresh(undefined, true);
     } catch (error) {
       status.textContent = error.message;
     } finally {
