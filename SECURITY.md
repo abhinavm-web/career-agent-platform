@@ -34,3 +34,8 @@ The dashboard is accessible only at 127.0.0.1, with a random per-process X-Sessi
 The above mitigations reduce accidental cross-site and DNS-rebinding exposure; they do **not** provide production-ready authentication. A local process running under the same user account may still access unencrypted files or potentially use the loopback interface. Do not expose ports publicly, use reverse proxies to share the service, or store highly sensitive files on a shared machine. Imported job text is treated as untrusted and inserted into the UI using safe DOM text nodes, never HTML execution.
 
 Review decisions are appended to local SQLite. Draft regeneration invalidates previous approval for the new fingerprint. Submissions are *not* sent through the app; users must manually attest to an external employer confirmation. See docs/DASHBOARD.md.
+
+
+## R1 editable career facts
+
+Profiles, fact statements, verification states, private evidence notes and earlier revisions are stored in **plaintext SQLite** on the local computer. They are not committed to Git. Only current candidate-verified facts are used in new application packets; changing a fact's content revokes prior verification. Revision history deliberately retains past notes and claims. No identity security, tenant isolation, database encryption, backup guarantee, or secure deletion is provided by this preview. Do not use it as a hosted or shared-user service. See docs/CAREER_WORKSPACE.md.
