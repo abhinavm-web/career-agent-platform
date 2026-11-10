@@ -29,3 +29,10 @@ resumes/
 candidate*.json
 profile*.json
 !examples/profile.example.json
+
+# Candidate-specific local files (keep fictional examples under examples/)
+**/candidate-facts.json
+**/candidate-profile.json
+**/application-packet*.json
+**/packet-*.json
+**/filings-private*.csv
