@@ -29,6 +29,8 @@ from .workspace import CandidateWorkspace, StaleRevision
 
 JOB_ID = re.compile(r"[a-f0-9]{16}\Z")
 API_BODY_LIMIT = 128 * 1024
+# Full workspace saves can contain 100 validated statements and private notes.
+WORKSPACE_BODY_LIMIT = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -80,7 +82,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
                     return JSONResponse({"detail": "Use application/json"}, status_code=415)
                 body = await request.body()
-                if len(body) > API_BODY_LIMIT:
+                limit = (
+                    WORKSPACE_BODY_LIMIT
+                    if request.url.path == "/api/workspace" and request.method == "PUT"
+                    else API_BODY_LIMIT
+                )
+                if len(body) > limit:
                     return JSONResponse({"detail": "Request too large"}, status_code=413)
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
