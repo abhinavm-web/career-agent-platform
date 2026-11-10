@@ -130,6 +130,34 @@ class PacketTests(unittest.TestCase):
         self.assertFalse(self.packet["submission_sent"])
         self.assertEqual(self.packet["status"], "awaiting_human_review")
 
+    def test_candidate_skill_absent_from_posting_is_not_a_qualification_gap(self):
+        rust_job = Job.from_mapping({
+            "company": "Example Industries",
+            "title": "Rust Engineer",
+            "location": "Remote, USA",
+            "job_url": "https://example.com/jobs/rust",
+            "description": "Rust is required for this role.",
+            "is_remote": True,
+        })
+        candidate = CandidateProfile(
+            target_titles=("Rust Engineer",),
+            skills=("Python",),
+            preferred_locations=(),
+            allow_remote=True,
+        )
+        packet = build_packet(rust_job, candidate, self.bank)
+        self.assertEqual(packet["candidate_skills_not_mentioned_in_posting"], ["Python"])
+        self.assertNotIn("reported_skill_gaps", packet)
+        self.assertFalse(packet["qualification_gaps_assessed"])
+        self.assertNotIn("Rust", packet["candidate_skills_not_mentioned_in_posting"])
+        self.assertEqual(validate_packet(packet), packet["packet_sha256"])
+
+    def test_older_packet_schema_requires_regeneration(self):
+        previous = dict(self.packet)
+        previous["version"] = 1
+        with self.assertRaisesRegex(ValueError, "Unsupported"):
+            validate_packet(previous)
+
     def test_packet_provenance_does_not_disclose_private_notes(self):
         content = json.dumps(self.packet)
         self.assertNotIn("Fictional internal project record", content)
