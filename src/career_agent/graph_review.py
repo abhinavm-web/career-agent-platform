@@ -1,82 +1,144 @@
-"""LangGraph human review interrupt, intentionally without an application sender.
+"""LangGraph scoring → sponsorship → draft → human review.
 
-Graph checkpoints are in memory for the local demonstration. For persistent,
-multi-process workflows use a durable checkpointer and an authenticated review UI.
+No application submission occurs. Local demonstration uses in-memory
+checkpoints: restarting a process loses its pending interrupt.
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any, TypedDict
 
-from .application import validate_packet
+from .application import build_packet, validate_packet
+from .candidate import FactBank
+from .models import CandidateProfile, Job
+from .scoring import score_job
+from .sponsor_evidence import FilingEvidence, sponsorship_report
 
 
-class ReviewState(TypedDict, total=False):
+class CareerState(TypedDict, total=False):
+    job: dict[str, Any]
+    preferences: dict[str, Any]
+    fact_bank: dict[str, Any]
+    filing_records: list[dict[str, Any]]
+    analysis: dict[str, Any]
     packet: dict[str, Any]
     review_status: str
 
 
-def build_review_graph():
-    """Compile the optional LangGraph workflow with a real human interrupt."""
+def _imports():
     try:
         from langgraph.checkpoint.memory import InMemorySaver
         from langgraph.graph import END, START, StateGraph
-        from langgraph.types import interrupt
+        from langgraph.types import Command, interrupt
     except ImportError as error:
-        raise RuntimeError('Install LangGraph: pip install -e ".[graph]"') from error
+        raise RuntimeError('Install the optional graph: pip install -e ".[graph]"') from error
+    return InMemorySaver, END, START, StateGraph, Command, interrupt
 
-    def review(state: ReviewState) -> dict[str, str]:
-        packet = state["packet"]
-        fingerprint = validate_packet(packet)
-        # Side effects must never precede interrupt(): LangGraph replays the node.
-        decision = interrupt({
-            "action": "review_application_packet",
-            "job_id": packet["job_id"],
-            "job_url": packet["job_url"],
-            "packet_sha256": fingerprint,
-            "notice": "Approval only marks draft ready for a manual application. Nothing is sent.",
-        })
-        if not isinstance(decision, dict):
-            raise ValueError("A structured review decision is required")
-        if decision.get("packet_sha256") != fingerprint:
-            raise ValueError("Review decision refers to an obsolete packet")
-        if decision.get("reviewed") is not True:
-            raise ValueError("Explicit confirmation of review is required")
-        if type(decision.get("approved")) is not bool:
-            raise ValueError("Review decision must explicitly approve or reject")
+
+def _decode(state: CareerState):
+    job = Job.from_mapping(state["job"])
+    raw_profile = state["preferences"]
+    if not isinstance(raw_profile, dict):
+        raise ValueError("Workflow preferences must be an object")
+
+    def items(key: str) -> tuple[str, ...]:
+        values = raw_profile.get(key, [])
+        if not isinstance(values, (tuple, list)) or not all(isinstance(x, str) for x in values):
+            raise ValueError(f"Workflow preference {key} must be a list of strings")
+        return tuple(values)
+
+    remote = raw_profile.get("allow_remote", True)
+    if type(remote) is not bool:
+        raise ValueError("allow_remote must be a boolean")
+    preferences = CandidateProfile(
+        target_titles=items("target_titles"),
+        skills=items("skills"),
+        preferred_locations=items("preferred_locations"),
+        allow_remote=remote,
+    )
+    bank = FactBank.parse(state["fact_bank"])
+    records = tuple(FilingEvidence(**item) for item in state.get("filing_records", []))
+    return job, preferences, bank, records
+
+
+def _review_node(state: CareerState, interrupt) -> dict[str, str]:
+    packet = state["packet"]
+    fingerprint = validate_packet(packet)
+    # Never perform side effects before an interrupt: LangGraph replays the node.
+    decision = interrupt({
+        "action": "review_application_packet",
+        "job_id": packet["job_id"],
+        "job_url": packet["job_url"],
+        "packet_sha256": fingerprint,
+        "notice": "Approval permits only manual submission; no application will be sent.",
+    })
+    if not isinstance(decision, dict):
+        raise ValueError("Structured review decision required")
+    if decision.get("packet_sha256") != fingerprint:
+        raise ValueError("Review decision refers to an obsolete packet")
+    if decision.get("reviewed") is not True:
+        raise ValueError("Explicit confirmation of packet review is required")
+    if type(decision.get("approved")) is not bool:
+        raise ValueError("Review decision must explicitly approve or reject")
+    return {
+        "review_status": (
+            "approved_for_manual_submission" if decision["approved"]
+            else "rejected_by_reviewer"
+        )
+    }
+
+
+def build_career_graph():
+    """A real multi-node LangGraph pipeline with explicit review interrupt."""
+    InMemorySaver, END, START, StateGraph, _, interrupt = _imports()
+
+    def analyze(state: CareerState) -> dict[str, Any]:
+        job, preferences, _, records = _decode(state)
         return {
-            "review_status": (
-                "approved_for_manual_submission" if decision["approved"]
-                else "rejected_by_reviewer"
-            )
+            "analysis": {
+                "fit": asdict(score_job(job, preferences)),
+                "sponsorship": sponsorship_report(job, records),
+            }
         }
 
-    builder = StateGraph(ReviewState)
-    builder.add_node("human_review", review)
+    def draft(state: CareerState) -> dict[str, Any]:
+        job, preferences, bank, records = _decode(state)
+        return {"packet": build_packet(job, preferences, bank, records)}
+
+    def human_review(state: CareerState) -> dict[str, str]:
+        return _review_node(state, interrupt)
+
+    builder = StateGraph(CareerState)
+    builder.add_node("analyze", analyze)
+    builder.add_node("draft", draft)
+    builder.add_node("human_review", human_review)
+    builder.add_edge(START, "analyze")
+    builder.add_edge("analyze", "draft")
+    builder.add_edge("draft", "human_review")
+    builder.add_edge("human_review", END)
+    return builder.compile(checkpointer=InMemorySaver())
+
+
+def build_review_graph():
+    """Review an existing fingerprinted packet, without rerunning discovery."""
+    InMemorySaver, END, START, StateGraph, _, interrupt = _imports()
+    builder = StateGraph(CareerState)
+    builder.add_node("human_review", lambda state: _review_node(state, interrupt))
     builder.add_edge(START, "human_review")
     builder.add_edge("human_review", END)
     return builder.compile(checkpointer=InMemorySaver())
 
 
-def run_review(packet: dict[str, Any], approved: bool, thread_id: str) -> str:
-    """Run a same-process interrupt+resume after an explicit caller decision.
-
-    This is appropriate for a local CLI demonstration, not a secure hosted
-    approval API. The caller must show the packet to the reviewing person.
-    """
-    from langgraph.types import Command
-
+def resume_review(graph, packet: dict[str, Any], approved: bool, thread_id: str) -> str:
+    """Resume a *paused* graph. The caller must display the packet first."""
+    _, _, _, _, Command, _ = _imports()
     fingerprint = validate_packet(packet)
-    graph = build_review_graph()
-    config = {"configurable": {"thread_id": thread_id}}
-    result = graph.invoke({"packet": packet}, config=config)
-    if "__interrupt__" not in result:
-        raise RuntimeError("Expected human review interrupt did not occur")
-    resumed = graph.invoke(
+    result = graph.invoke(
         Command(resume={
             "approved": approved,
             "reviewed": True,
             "packet_sha256": fingerprint,
         }),
-        config=config,
+        config={"configurable": {"thread_id": thread_id}},
     )
-    return resumed["review_status"]
+    return result["review_status"]
