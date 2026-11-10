@@ -108,3 +108,13 @@ Open http://127.0.0.1:8765/ and select **Career profile**. Edit your preferences
 Existing --profile and --facts files are never modified automatically. If both are configured, the profile screen offers an explicit, one-time import into SQLite.
 
 **Privacy:** local SQLite is not encrypted, and history retains earlier private notes and statements. Do not expose the localhost server or use it on a shared computer. See [Career Workspace](docs/CAREER_WORKSPACE.md).
+
+ 
+## Local application CRM (v0.5 preview)
+
+Use the new **Application tracker** tab in the loopback dashboard to record interview stages, recruiter contacts, follow-up dates, and outcomes. Pre-application organizer stages never imply submission. The CRM does not send emails, reminders or applications.
+
+    python -m pip install -e ".[web]"
+    career-agent serve
+
+See [Application CRM](docs/CRM.md) for the status model, available operations and privacy limitations.
