@@ -75,6 +75,8 @@
       "posting_claims_sponsorship": ["Posting mentions sponsorship", "teal"],
       "historical_only": ["Employer filing history", "amber"],
       "explicit_exclusion": ["Posting excludes sponsorship", "red"],
+      "conflicting": ["Conflicting sponsorship wording", "amber"],
+      "conditional": ["Conditional sponsorship wording", "amber"],
       "unknown": ["Sponsorship unknown", ""]
     };
     return map[status] || ["Unverified", ""];
@@ -82,7 +84,7 @@
 
   function showScreen(screen) {
     state.screen = screen;
-    const screens = {jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker"};
+    const screens = {jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker", h1b: "H-1B research"};
     for (const name of Object.keys(screens)) {
       byId(name + "-screen").hidden = screen !== name;
       byId("nav-" + name).classList.toggle("active", screen === name);
@@ -224,6 +226,10 @@
     const label = sponsorshipLabel(job.sponsorship_status);
     sponsorBox.append(chip(label[0], label[1]), node("p", "", job.sponsorship_reason));
     sponsor.append(sponsorBox);
+    sponsor.append(button("Research H-1B records and jobs", "button", () => {
+      byId("h1b-query").value = job.company;
+      byId("nav-h1b").click();
+    }));
     detail.append(sponsor);
 
     if (job.fit_reasons && job.fit_reasons.length) {
@@ -976,6 +982,7 @@
   }
 
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
+  byId("nav-h1b").addEventListener("click", () => showScreen("h1b"));
   byId("discover-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const submit = byId("discover-submit");

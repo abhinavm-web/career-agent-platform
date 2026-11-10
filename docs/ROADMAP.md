@@ -18,6 +18,7 @@
 - [x] Reviewed résumé PDF export using adapted Career Ops styling and optional Chromium
 - [x] Version fingerprint and interactive approval of a packet
 - [x] Source-linked, dated manually curated H-1B employer history
+- [x] Configurable H-1B company research, DOL CSV index and separate job-policy assessments
 - [x] LangGraph analyze → draft → human-review interrupt (in-memory prototype)
 
 - [ ] Encrypted verified candidate profile

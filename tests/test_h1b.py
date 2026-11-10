@@ -1,0 +1,141 @@
+"""F04: fictional LCA imports, provenance, entity boundaries and posting policy."""
+import csv
+import io
+import tempfile
+import unittest
+from datetime import date
+from pathlib import Path
+
+from career_agent.h1b import DOL_URL, H1BResearch, fiscal_year
+from career_agent.models import Job
+from career_agent.sponsorship import h1b_policy
+from career_agent.storage import Store
+
+
+def lca_csv(rows):
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE', 'EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE'])
+    writer.writeheader()
+    for index, changes in enumerate(rows):
+        writer.writerow({'CASE_NUMBER': f'I-200-25123-{index:06d}', 'EMPLOYER_NAME': 'Example Inc.', 'VISA_CLASS': 'H-1B', 'CASE_STATUS': 'Certified', 'DECISION_DATE': '2025-04-15', 'EMPLOYER_CITY': 'Example City', 'EMPLOYER_STATE': 'NY', 'JOB_TITLE': 'Engineer', **changes})
+    return stream.getvalue()
+
+
+class PolicyTests(unittest.TestCase):
+    def test_posting_edge_cases(self):
+        examples = {
+            'Visa sponsorship is available.': 'possible',
+            'Visa sponsorship is available; remote work is not available.': 'possible',
+            'Visa sponsorship is available, but remote work is not available.': 'possible',
+            'We cannot offer remote work but we can sponsor.': 'possible',
+            'H-1B sponsorship is available for new applicants. H-1B transfers are supported.': 'possible',
+            'H-1B sponsorship is available for new applicants. H-1B transfers only.': 'conflicting',
+            'H-1B transfers are supported.': 'transfer_supported',
+            'H1B sponsorship is available.': 'possible',
+            'No visa sponsorship.': 'excluded',
+            'We cannot sponsor candidates.': 'excluded',
+            'Applicants must not require visa sponsorship.': 'excluded',
+            'Visa sponsorship is not currently available.': 'excluded',
+            'We are not offering visa sponsorship.': 'excluded',
+            'We can sponsor visas other than H-1B.': 'excluded',
+            'We are not sponsoring H1B candidates.': 'excluded',
+            'We are not able to provide sponsorship.': 'excluded',
+            'Must be a U.S. citizen.': 'excluded',
+            'U.S. citizens only.': 'excluded',
+            'We can sponsor. No visa sponsorship for this position.': 'conflicting',
+            'Visa sponsorship available, but not for this role.': 'conflicting',
+            'H-1B transfers only.': 'transfer_only',
+            'H-1B transfers accepted if already selected.': 'conditional',
+            'We may offer visa sponsorship.': 'conditional',
+            'Visa sponsorship is available if requirements are met.': 'conditional',
+            'Will you require sponsorship now or in the future?': 'conditional',
+            'No sponsorship required.': 'conditional',
+            'No visa sponsorship restrictions.': 'conditional',
+            'No visa sponsorship for this role, other teams may sponsor.': 'excluded',
+            'H-1B1 sponsorship available.': 'conditional',
+            'E-3 visa sponsorship available.': 'conditional',
+            'Equal opportunity regardless of citizenship.': 'unknown',
+            'Must be authorized to work in the US.': 'unknown',
+            'Python engineer.': 'unknown',
+            '': 'unknown',
+        }
+        for description, expected in examples.items():
+            with self.subTest(description=description):
+                self.assertEqual(h1b_policy(description)['policy'], expected)
+
+    def test_transfer_preference_never_claims_new_sponsorship(self):
+        self.assertFalse(h1b_policy('H-1B transfers only.', 'new')['potential_match'])
+        self.assertTrue(h1b_policy('H-1B transfers only.', 'transfer')['potential_match'])
+        self.assertEqual(h1b_policy('<p>No visa sponsorship.</p>')['policy'], 'excluded')
+        self.assertEqual(h1b_policy('H‑1B transfers only.')['policy'], 'transfer_only')
+
+
+class ResearchTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = Store(Path(self.tmp.name) / 'test.sqlite3')
+        self.addCleanup(self.store.connection.close)
+        self.research = H1BResearch(self.store)
+        self.research.configure({'need': 'any', 'min_year': 2024, 'include_unknown': True})
+
+    def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
+        return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
+
+    def test_h1b_only_separate_status_counts_exact_entity_and_literals(self):
+        result = self.ingest([{}, {'CASE_STATUS': 'Denied'}, {'CASE_STATUS': 'Withdrawn'},
+                              {'CASE_STATUS': 'Certified-Withdrawn'}, {'VISA_CLASS': 'H-1B1 Chile'},
+                              {'VISA_CLASS': 'E-3 Australian'}, {'EMPLOYER_NAME': 'Example Subsidiary'}])
+        self.assertEqual(result['added'], 5)
+        self.assertEqual(result['other_visas_skipped'], 2)
+        company = self.research.company(' EXAMPLE   INC. ')
+        self.assertEqual(company['recent_certified_cases'], 1)
+        self.assertEqual(len(company['counts']), 4)
+        self.assertEqual(self.research.company('Example Inc')['counts'], [])
+        self.assertEqual(self.research.search('Example')['company_total'], 2)
+        self.assertEqual(self.research.search("%' OR 1=1 --")['company_total'], 0)
+        self.assertFalse(self.research.coverage()['complete'])
+
+    def test_deduplication_conflicts_and_older_decisions_are_atomic(self):
+        self.ingest([{}])
+        self.assertEqual(self.ingest([{}])['duplicates'], 1)
+        with self.assertRaisesRegex(ValueError, 'conflicting'):
+            self.ingest([{'CASE_NUMBER': 'I-200-25123-999999'}, {'CASE_NUMBER': 'I-200-25123-000000', 'CASE_STATUS': 'Denied'}])
+        self.assertEqual(self.research.coverage()['records'], 1)
+        self.assertEqual(self.ingest([{'CASE_STATUS': 'Certified-Withdrawn', 'DECISION_DATE': '2025-07-01'}], '2025-07-02')['updated'], 1)
+        self.assertEqual(self.ingest([{}], '2025-08-01')['older_skipped'], 1)
+        self.assertEqual(self.research.company('Example Inc.')['recent_certified_cases'], 0)
+        self.assertEqual(self.ingest([{}])['older_skipped'], 1)
+
+    def test_invalid_dates_statuses_sources_and_shapes(self):
+        for change in ({'DECISION_DATE': '2027-01-01'}, {'CASE_STATUS': 'Pending'}, {'VISA_CLASS': 'unknown'}, {'EMPLOYER_NAME': ''}, {'CASE_NUMBER': 'private-case'}, {'DECISION_DATE': 'not a date'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.ingest([change])
+        for url in ('http://www.dol.gov/data', 'https://dol.gov.evil.invalid', 'https://www.dol.gov@evil.invalid', 'https://user:password@www.dol.gov'):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                self.ingest([{}], url=url)
+        with self.assertRaises(ValueError):
+            self.ingest([{}], '2099-01-01')
+        with self.assertRaises(ValueError):
+            self.research.import_csv(io.StringIO('employer,status\nExample,Certified'), DOL_URL, '2025-06-01')
+        self.assertEqual(self.research.coverage()['records'], 0)
+
+    def test_fiscal_window_pagination_and_job_restrictions(self):
+        self.assertEqual(fiscal_year(date(2025, 9, 30)), 2025)
+        self.assertEqual(fiscal_year(date(2025, 10, 1)), 2026)
+        self.ingest([{'EMPLOYER_NAME': f'Example {i:02d}'} for i in range(26)] + [{'EMPLOYER_NAME': 'Example Inc.'}])
+        self.assertEqual(self.research.search('Example')['next_offset'], 25)
+        self.assertEqual(len(self.research.search('Example', 25)['companies']), 2)
+        job = Job.from_mapping({'company': 'Example Inc.', 'title': 'Role', 'job_url': 'https://example.invalid/job', 'description': 'No visa sponsorship.'})
+        unknown = Job.from_mapping({'company': 'Example Inc.', 'title': 'Other', 'job_url': 'https://example.invalid/other'})
+        self.store.add_jobs([job, unknown])
+        info = self.research.job(job)
+        self.assertEqual(info['policy'], 'excluded')
+        self.assertEqual(info['history']['recent_certified_cases'], 1)
+        self.assertFalse(info['potential_match'])
+        self.research.configure({'need': 'new', 'min_year': 2026, 'include_unknown': False})
+        self.assertEqual(self.research.company('Example Inc.')['recent_certified_cases'], 0)
+        self.assertEqual(len(self.research.search('Example')['jobs']), 1)
+        for data in ({'need': 'new'}, {'need': 'wrong', 'min_year': 2025, 'include_unknown': True}, {'need': 'new', 'min_year': True, 'include_unknown': True}):
+            with self.assertRaises(ValueError):
+                self.research.configure(data)

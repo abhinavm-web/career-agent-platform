@@ -8,6 +8,7 @@
   <title>Career Agent · Local Workspace</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script defer src="/assets/app.js"></script>
+  <script defer src="/assets/h1b.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -21,6 +22,7 @@
       <nav class="navigation" aria-label="Main">
         <button class="nav-item active" id="nav-jobs" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
         <button class="nav-item" id="nav-tracker" type="button"><span class="nav-glyph" aria-hidden="true">▤</span> Application tracker</button>
+        <button class="nav-item" id="nav-h1b" type="button">H-1B research</button>
         <button class="nav-item" id="nav-activity" type="button"><span class="nav-glyph" aria-hidden="true">☷</span> Review history</button>
         <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
       </nav>
@@ -114,6 +116,39 @@
             <div class="empty-detail"><span class="empty-icon" aria-hidden="true">◎</span><h3>Select an opportunity</h3><p>Inspect the job, review a truthful application draft, and track your decision.</p></div>
           </div>
         </div>
+      </section>
+
+      <section id="h1b-screen" class="screen" hidden>
+        <div class="section-heading"><h2>H-1B company and job research</h2></div>
+        <p class="muted">Search locally imported public filing records and jobs in your workspace. Historical LCAs are not petition approvals or job offers. Confirm the employer entity, role availability and H-1B support directly.</p>
+        <form id="h1b-settings" class="panel profile-editor">
+          <h3>Search preferences</h3>
+          <div class="form-grid">
+            <label>Sponsorship needed<select id="h1b-need"><option value="any">Not specified</option><option value="new">New H-1B sponsorship</option><option value="transfer">H-1B transfer</option></select></label>
+            <label>Earliest fiscal year for history counts<input id="h1b-min-year" type="number" min="1990" required></label>
+          </div>
+          <label class="check-label"><input id="h1b-unknown" type="checkbox" checked> Include jobs with unknown policy</label>
+          <button id="h1b-save" class="button" type="submit">Save H-1B preferences</button>
+        </form>
+        <details class="panel profile-editor">
+          <summary>Import public DOL LCA records</summary>
+          <p class="muted">Download an LCA disclosure workbook from <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">DOL performance data</a> and export its disclosure sheet as UTF-8 CSV. Upload a file up to 8 MB here; use the documented CLI for larger files. No records are downloaded automatically.</p>
+          <form id="h1b-import" class="crm-form">
+            <label>DOL source URL<input id="h1b-source" type="url" required value="https://www.dol.gov/agencies/eta/foreign-labor/performance"></label>
+            <label>Date you captured the source<input id="h1b-captured" type="date" required></label>
+            <label>Public LCA CSV<input id="h1b-file" type="file" accept=".csv,text/csv" required></label>
+            <label class="check-label"><input id="h1b-consent" type="checkbox" required> This is public DOL disclosure data, and I checked the source URL and capture date.</label>
+            <button id="h1b-import-submit" type="submit" class="button">Import records locally</button>
+          </form>
+        </details>
+        <p id="h1b-coverage" class="muted"></p>
+        <form id="h1b-search" class="panel crm-form">
+          <label class="field">Company name<input id="h1b-query" type="search" minlength="2" maxlength="200" required placeholder="Legal employer or company name"></label>
+          <button id="h1b-search-submit" class="button button-primary" type="submit">Search company records and jobs</button>
+        </form>
+        <p id="h1b-status" role="status" aria-live="polite"></p>
+        <div id="h1b-results" aria-label="H-1B research results"></div>
+        <button id="h1b-next" class="button" type="button" hidden>Next company page</button>
       </section>
 
       <section id="tracker-screen" class="screen" hidden>

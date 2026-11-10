@@ -114,6 +114,8 @@ Existing --profile and --facts files are never modified automatically. If both a
  
 ## Local application CRM (v0.5 preview)
 
+The **H-1B research** tab supports new/transfer preferences, a fiscal-year window, DOL LCA CSV imports, company-record search and job-policy evidence. See [H-1B research](docs/H1B_RESEARCH.md). It searches local data; filing history never establishes job availability or immigration eligibility.
+
 Use the new **Application tracker** tab in the loopback dashboard to record interview stages, recruiter contacts, follow-up dates, and outcomes. Pre-application organizer stages never imply submission. The CRM does not send emails, reminders or applications.
 
     python -m pip install -e ".[web]"

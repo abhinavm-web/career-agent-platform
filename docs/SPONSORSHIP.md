@@ -4,7 +4,7 @@
 
 Authoritative original data should come from the [U.S. Department of Labor Office of Foreign Labor Certification performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance), specifically LCA program disclosure files and their field layouts. Employer name, fiscal year, and official source URL should remain attached to every imported record.
 
-The current MVP accepts **manually curated CSV records**, not the original DOL .xlsx workbooks. It does not download or automatically authenticate the documents. URL presence is validated syntactically only; each CSV entry is marked \`user_supplied_not_independently_verified\`.
+The legacy packet/CLI evidence adapter accepts **manually curated CSV records** in the format below. The dashboard also provides an [H-1B research workspace](H1B_RESEARCH.md) for importing DOL LCA disclosure sheets exported as CSV, company searches and job-policy assessments. Neither workflow downloads or independently authenticates government records. Raw `.xlsx` parsing and USCIS data import are not implemented.
 
 Format:
 
@@ -21,6 +21,8 @@ Sponsorship statuses:
 - \`posting_claims_sponsorship\`: keywords in the posting appear to permit sponsorship. Still requires role-specific confirmation.
 - \`historical_only\`: source-backed, user-provided employer records match the exact company name, but the current posting provides no clear sponsorship policy.
 - \`unknown\`: no recognized job-specific statement and no matching historical record.
+- `conflicting`: posting contains both support and restriction language; do not resolve the conflict using company history.
+- `conditional`: wording is conditional, a screening question, or unclear; no commitment established.
 
 A DOL LCA is an employer labor condition filing, not an approval of a worker's H-1B petition, a commitment to sponsor a new employee, or legal advice. A company can sponsor some roles and not others. Name matching is deliberately exact after case/whitespace normalization. Subsidiaries, alternate legal names, and acquired companies require separate human research.
 
@@ -28,7 +30,7 @@ Never automatically answer screening questions about citizenship, status, petiti
 
 ## Future scope
 
-- Parse official DOL data with verified quarterly provenance, case-status filters and fiscal years.
+- Download/parse official workbooks directly and independently validate release provenance; import USCIS petition decisions separately.
 - Cross-reference employer legal entities with manually reviewed mappings.
 - Add current employer career-page statements and explicit timestamps.
 - Keep employer historical probability models separate from job-specific assertions.
