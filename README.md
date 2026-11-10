@@ -120,3 +120,5 @@ Use the new **Application tracker** tab in the loopback dashboard to record inte
     career-agent serve
 
 See [Application CRM](docs/CRM.md) for the status model, available operations and privacy limitations.
+
+Select **Download tracker history** to export all local tracker records and events as JSON, including private notes and submission references. See [Tracker export](docs/TRACKER_EXPORT.md) for the format, scope and privacy guidance.

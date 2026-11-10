@@ -1007,6 +1007,32 @@
   byId("nav-activity").addEventListener("click", () => showScreen("activity"));
   byId("nav-profile").addEventListener("click", async () => {showScreen("profile"); await loadWorkspace();});
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});
+  byId("crm-export").addEventListener("click", async () => {
+    const control = byId("crm-export");
+    control.disabled = true;
+    try {
+      const response = await fetch("/api/crm/export", {
+        headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "Tracker export failed");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "career-tracker-history.json";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notice("Tracker history downloaded. Keep this file private.");
+    } catch (error) {
+      notice(error.message, true);
+    } finally {
+      control.disabled = false;
+    }
+  });
   byId("crm-search").addEventListener("input", renderCRMJobs);
   byId("crm-stage-filter").addEventListener("change", renderCRMJobs);
   byId("crm-priority-filter").addEventListener("change", renderCRMJobs);

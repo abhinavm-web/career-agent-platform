@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import html
+import json
 import re
 import secrets
 from threading import Lock
@@ -453,6 +454,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def reviews():
         with Store(config.db_path) as store:
             return {"reviews": store.review_history(limit=50)}
+
+    @app.get("/api/crm/export")
+    def export_crm_history():
+        with Store(config.db_path) as store:
+            snapshot = ApplicationCRM(store).export_history()
+        return Response(json.dumps(snapshot, ensure_ascii=False, indent=2),
+                        media_type="application/json", headers={
+                            "Content-Disposition": 'attachment; filename="career-tracker-history.json"',
+                        })
 
     @app.get("/api/crm")
     def crm_summary():

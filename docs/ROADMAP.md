@@ -56,7 +56,8 @@
 - [x] Tracker search, stage and priority filters, and priority change history
 - [x] Dated, append-only interview notes
 - [x] Recorded submission/interview/offer/acceptance counts and explicit-denominator rates
-- [ ] Calendar notifications, source-specific analytics and history exports
+- [x] Complete local tracker-history JSON export, including recorded events
+- [ ] Calendar notifications and source-specific analytics
 
 ## Phase 4 — Product
 

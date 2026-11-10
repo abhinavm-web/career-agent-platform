@@ -119,7 +119,9 @@
       <section id="tracker-screen" class="screen" hidden>
         <div class="section-heading">
           <div><span class="eyebrow">APPLICATION CRM</span><h2>Application tracker</h2></div>
+          <button id="crm-export" type="button" class="button" aria-describedby="crm-export-description">Download tracker history</button>
         </div>
+        <p id="crm-export-description" class="muted">Downloads all tracker records as JSON, regardless of filters, including private contact details, notes and submission references. The file is unencrypted. Career facts and application documents are excluded.</p>
         <p class="muted">Track employer conversations, interview stages, recruiter contacts and reminders. CRM updates are manual and do not send emails or applications. Private notes are stored in local, unencrypted SQLite.</p>
         <div id="crm-summary" class="crm-summary" aria-label="Pipeline overview"></div>
         <section id="crm-outcomes" class="panel crm-due-list" aria-label="Recorded application outcomes"></section>

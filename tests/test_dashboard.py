@@ -88,6 +88,28 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_tracker_export_is_private_download_and_excludes_career_files(self):
+        from career_agent.crm import ApplicationCRM
+
+        with Store(self.db) as store:
+            ApplicationCRM(store).add_contact(self.job.id, "Fictional Renée", notes="Private contact note")
+        self.assertEqual(self.client.get("/api/crm/export").status_code, 403)
+        self.assertEqual(self.call("GET", "/api/crm/export", token="wrong").status_code, 403)
+        self.assertEqual(self.call("GET", "/api/crm/export", headers={"Origin": "https://example.invalid"}).status_code, 403)
+        response = self.call("GET", "/api/crm/export")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers["content-type"])
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["content-disposition"],
+                         'attachment; filename="career-tracker-history.json"')
+        rows = response.json()["records"]
+        self.assertEqual(rows["jobs"][0]["job_id"], self.job.id)
+        self.assertEqual(rows["contacts"][0]["name"], "Fictional Renée")
+        self.assertIn("Private contact note", response.text)
+        self.assertNotIn(fake_fact_bank()["facts"][0]["source_note"], response.text)
+        self.assertNotIn(self.session, response.text)
+        self.assertNotIn(str(self.root), response.text)
+
     def test_dashboard_assets_and_security_headers(self):
         landing = self.client.get("/")
         self.assertIn("Content-Security-Policy", landing.headers)
