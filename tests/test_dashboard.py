@@ -263,9 +263,48 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/jobs", ["array-not-object"]).status_code, 422)
         self.assertEqual(self.call("POST", "/api/jobs", {"company": "No URL", "title": "Missing link"}).status_code, 422)
 
+    def test_bounded_json_body_and_forged_session_are_rejected(self):
+        large = {"company": "Example", "title": "Too big", "job_url": "https://example.invalid/large", "description": "X" * (129 * 1024)}
+        response = self.call("POST", "/api/jobs", large)
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(self.call("GET", "/api/jobs", token="another-process-token").status_code, 403)
+
+    def test_local_job_untrusted_html_is_only_json_data(self):
+        hostile = {
+            "company": "<img src=x onerror=alert(1)>",
+            "title": "<script>alert('injected')</script>",
+            "job_url": "https://example.invalid/jobs/hostile",
+            "description": "A <b>markup</b> job",
+        }
+        created = self.call("POST", "/api/jobs", hostile)
+        self.assertEqual(created.status_code, 201)
+        response = self.call("GET", "/api/jobs")
+        self.assertEqual(response.status_code, 200)
+        job = next(j for j in response.json()["jobs"] if j["id"] == created.json()["job_id"])
+        self.assertEqual(job["title"], hostile["title"])
+        self.assertNotIn(hostile["title"], self.client.get("/").text)
+        # Frontend uses textContent; untrusted strings are never interpreted as HTML.
+        source = self.client.get("/assets/app.js").text
+        self.assertIn("textContent", source)
+        self.assertNotIn("innerHTML", source)
+
     def test_no_candidate_claims_embedded_in_homepage(self):
         self.assertNotIn("Fictional Candidate", self.client.get("/").text)
         self.assertNotIn("Delivered a fictional AI program", self.client.get("/").text)
+
+
+class ServerBindingTests(unittest.TestCase):
+    @unittest.skipUnless(HAS_WEB, 'Install test dependencies with pip install -e ".[web,dev]"')
+    def test_loopback_only_binding_and_port_limits(self):
+        from unittest.mock import patch
+        from career_agent.dashboard import DashboardConfig, serve
+        with patch("uvicorn.run") as run:
+            serve(DashboardConfig(), port=8765)
+            self.assertEqual(run.call_args.kwargs["host"], "127.0.0.1")
+            self.assertEqual(run.call_args.kwargs["port"], 8765)
+            self.assertFalse(run.call_args.kwargs["access_log"])
+        with self.assertRaises(ValueError):
+            serve(DashboardConfig(), port=443)
 
 
 class ReviewStoreTests(unittest.TestCase):
