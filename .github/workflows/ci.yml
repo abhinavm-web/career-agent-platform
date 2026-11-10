@@ -23,3 +23,5 @@ jobs:
         run: python -m compileall -q src
       - name: Check frontend JavaScript
         run: node --check src/career_agent/web/app.js
+      - name: Test async dashboard UI state
+        run: node --test tests/test_dashboard_js.cjs
