@@ -23,7 +23,7 @@ HEADINGS = {
     "education": "Education",
     "certifications": "Certifications",
 }
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 def relevance(job: Job, fact: VerifiedFact) -> int:
@@ -110,7 +110,8 @@ def build_packet(
         "candidate_name": bank.name,
         "fit_score": fit.score,
         "fit_reasons": list(fit.reasons),
-        "reported_skill_gaps": list(fit.missing_skills),
+        "candidate_skills_not_mentioned_in_posting": list(fit.candidate_skills_not_mentioned_in_posting),
+        "qualification_gaps_assessed": False,
         "selected_fact_ids": [fact.fact_id for fact in selected],
         "resume_markdown": resume_markdown(bank, selected),
         "cover_note": cover_note(job, bank, selected),
@@ -119,6 +120,7 @@ def build_packet(
             "Verify that the vacancy still exists on the employer's official website.",
             "Confirm every resume and cover-note claim against your own records.",
             "Check that no important qualifying or disqualifying information was omitted.",
+            "Candidate skills absent from the posting are not qualification gaps.",
             "Personally answer all work-authorization and sponsorship questions truthfully.",
             "Independently confirm sponsorship policy for this specific position.",
             "Review salary, location, application consent and document accuracy.",
