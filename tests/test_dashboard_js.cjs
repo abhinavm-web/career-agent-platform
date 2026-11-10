@@ -38,7 +38,12 @@ class Element {
     return this._text + this.children.map((c) => c.textContent).join("");
   }
   append(...children) {
+    for (const child of children) child.parentElement = this;
     this.children.push(...children);
+  }
+  focus() { this.focused = true; }
+  remove() {
+    this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
   }
   replaceChildren(...children) {
     this.children = children;
@@ -98,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness() {
+function createHarness({olderTrackedJob = false} = {}) {
   const elements = new Map();
   const get = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
@@ -115,7 +120,68 @@ function createHarness() {
     facts: [],
   };
   const revisions = [];
+  let crmStage = "discovered";
+  let crmContact = null;
+  let crmTask = null;
+  let crmPriority = "none";
+  const interviewNotes = [];
   const fetch = (url, options = {}) => {
+    if (url === "/api/crm") return Promise.resolve(ok({
+      stages: {[crmStage]: 1, discovered: crmStage === "discovered" ? 2 : 1},
+      job_stages: [
+        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority},
+        {...fakeJob(ID_B, "Role Beta"), job_id: ID_B, stage: "discovered"}
+      ],
+      open_followups: crmTask && !crmTask.completed_at ? [{
+        ...crmTask, job_id: ID_A, company: "Example Corp", overdue: false
+      }] : [],
+      today: "2026-11-10"
+    }));
+    if (url === "/api/jobs/" + ID_A + "/crm") return Promise.resolve(ok({
+      job: fakeJob(ID_A, "Role Alpha"),
+      priority: crmPriority, priority_events: [], interview_notes: interviewNotes,
+      job_id: ID_A, stage: crmStage, application_submitted: false,
+      allowed_transitions: crmStage === "discovered" ? ["saved", "shortlisted", "archived"] : ["shortlisted", "archived"],
+      contacts: crmContact ? [crmContact] : [],
+      followups: crmTask ? [crmTask] : [],
+      stage_events: crmStage === "discovered" ? [] : [{
+        event_id: 1, stage: crmStage, note: "Manual note",
+        actor: "candidate", created_at: "2026-11-10"
+      }]
+    }));
+    if (url === "/api/jobs/" + ID_A + "/crm/stage" && options.method === "POST") {
+      crmStage = JSON.parse(options.body).stage;
+      return Promise.resolve(ok({job_id: ID_A, stage: crmStage}));
+    }
+    if (url === "/api/jobs/" + ID_A + "/crm/priority" && options.method === "POST") {
+      crmPriority = JSON.parse(options.body).priority;
+      return Promise.resolve(ok({priority: crmPriority}));
+    }
+    if (url === "/api/jobs/" + ID_A + "/crm/interview-notes" && options.method === "POST") {
+      interviewNotes.push({...JSON.parse(options.body), actor: "candidate", created_at: "2026-11-10"});
+      return Promise.resolve(ok({note_id: interviewNotes.length}));
+    }
+    if (url === "/api/jobs/" + ID_A + "/crm/contacts" && options.method === "POST") {
+      const data = JSON.parse(options.body);
+      crmContact = {...data, contact_id: 5, created_at: "2026-11-10"};
+      return Promise.resolve(ok(crmContact));
+    }
+    if (url === "/api/jobs/" + ID_A + "/crm/contacts/5" && options.method === "POST") {
+      crmContact = {...crmContact, ...JSON.parse(options.body)};
+      return Promise.resolve(ok(crmContact));
+    }
+    if (url === "/api/jobs/" + ID_A + "/crm/followups" && options.method === "POST") {
+      const data = JSON.parse(options.body);
+      crmTask = {...data, followup_id: 7, completed_at: null, created_at: "2026-11-10",
+        contact_name: crmContact?.name || null};
+      return Promise.resolve(ok(crmTask));
+    }
+    if (url === "/api/crm/followups/7/complete" && options.method === "POST") {
+      assert.equal(JSON.parse(options.body).acknowledged, true);
+      crmTask = {...crmTask, completed_at: "2026-11-10"};
+      return Promise.resolve(ok({followup_id: 7, action: "completed"}));
+    }
+
     if (url === "/api/workspace") {
       if (options.method === "PUT") {
         const data = JSON.parse(options.body);
@@ -151,7 +217,8 @@ function createHarness() {
       return Promise.resolve(ok({workspace}));
     }
     if (url === "/api/jobs") return Promise.resolve(ok({
-      jobs: [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")],
+      jobs: olderTrackedJob ? [fakeJob(ID_B, "Role Beta")]
+        : [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")],
     }));
     if (url === "/api/overview") return Promise.resolve(ok({
       total_jobs: 2, submitted_recorded: 0, staged: 0, review_events_recent: 0,
@@ -184,10 +251,49 @@ function createHarness() {
     console,
   };
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
-  return {get, waiting, getWorkspace: () => workspace};
+  return {get, waiting, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("tracker combines filters and saves priority and plain-text interview notes", async () => {
+  const harness = createHarness();
+  await flush();
+  await harness.get("nav-tracker").click();
+  await harness.get("crm-jobs").children[0].click();
+  const section = (title) => harness.get("crm-detail").children.find((child) => child.children[0]?.textContent === title);
+  const priorityForm = section("Opportunity priority").children.find((child) => child.tagName === "form");
+  priorityForm.children[0].children[0].value = "high";
+  await priorityForm.handlers.submit({preventDefault() {}});
+  assert.match(harness.get("crm-jobs").textContent, /high priority/);
+  harness.get("crm-priority-filter").value = "high";
+  harness.get("crm-priority-filter").handlers.change();
+  assert.equal(harness.get("crm-result-count").textContent, "1 of 2 opportunities");
+  harness.get("crm-search").value = "beta";
+  harness.get("crm-search").handlers.input();
+  assert.match(harness.get("crm-jobs").textContent, /No opportunities match/);
+  harness.get("crm-search").value = "ALPHA";
+  harness.get("crm-search").handlers.input();
+  assert.match(harness.get("crm-jobs").textContent, /Role Alpha/);
+  harness.get("crm-stage-filter").value = "interview";
+  harness.get("crm-stage-filter").handlers.change();
+  assert.equal(harness.get("crm-result-count").textContent, "0 of 2 opportunities");
+  await harness.get("crm-clear-filters").click();
+  assert.equal(harness.get("crm-result-count").textContent, "2 of 2 opportunities");
+  const noteForm = section("Interview notes").children.find((child) => child.tagName === "form");
+  noteForm.children[0].children[0].value = "2026-11-10";
+  noteForm.children[1].children[0].value = "Technical panel";
+  noteForm.children[2].children[0].value = "<script>not executable</script>\nPrivate follow-up";
+  await noteForm.handlers.submit({preventDefault() {}});
+  const notes = section("Interview notes");
+  assert.match(notes.textContent, /Technical panel/);
+  assert.match(notes.textContent, /<script>not executable<\/script>/);
+  const tags = (element) => [element.tagName, ...element.children.flatMap(tags)];
+  assert.ok(!tags(notes).includes("script"));
+  assert.equal(harness.getCRM().stage, "discovered");
+  await harness.get("nav-tracker").click();
+  assert.match(section("Interview notes").textContent, /Private follow-up/);
+});
 
 async function selectBoth(harness) {
   await flush();
@@ -298,4 +404,82 @@ test("saving preferences or a fact preserves unsaved changes in the other editor
   assert.equal(harness.getWorkspace().profile.headline, "Saved headline");
   assert.equal(harness.get("career-headline").value, "Not yet saved as a preference");
   assert.equal(harness.get("fact-statement").value, "");
+});
+
+
+test("application tracker records local pipeline, contact and follow-up without sending", async () => {
+  // Alpha has fallen outside the board's newest-job window.
+  const harness = createHarness({olderTrackedJob: true});
+  await flush();
+  assert.doesNotMatch(harness.get("job-list").textContent, /Role Alpha/);
+  await harness.get("nav-tracker").click();
+  await flush();
+  assert.match(harness.get("crm-summary").textContent, /Upcoming follow-ups/);
+  assert.match(harness.get("crm-jobs").textContent, /Role Alpha/);
+  await harness.get("crm-jobs").children[0].click();
+  await flush();
+  assert.match(harness.get("crm-detail").textContent, /Role Alpha/);
+  const detail = harness.get("crm-detail");
+  const status = detail.children.find((child) =>
+    child.children[0]?.textContent === "Pipeline stage");
+  assert.ok(status);
+  const form = status.children.find((child) => child.tagName === "form");
+  const select = form.children[0].children[0];
+  select.value = "saved";
+  await form.handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getCRM().stage, "saved");
+  assert.match(harness.get("crm-detail").textContent, /Manual note/);
+
+  const refreshed = harness.get("crm-detail");
+  const contacts = refreshed.children.find((child) =>
+    child.children[0]?.textContent === "Recruiter and referral contacts");
+  const contactForm = contacts.children.find((child) => child.tagName === "form");
+  contactForm.children[0].children[0].value = "Example Recruiter";
+  contactForm.children[1].children[0].value = "Talent Partner";
+  await contactForm.handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getCRM().contact.name, "Example Recruiter");
+
+  const savedContacts = harness.get("crm-detail").children.find((child) =>
+    child.children[0]?.textContent === "Recruiter and referral contacts");
+  const contactRow = savedContacts.children.find((child) => child.className === "crm-record");
+  const edit = contactRow.children.find((child) => child.textContent === "Edit contact");
+  await edit.click();
+  let editForm = contactRow.children.find((child) => child.tagName === "form");
+  assert.equal(editForm.children[0].children[0].value, "Example Recruiter");
+  editForm.children[0].children[0].value = "Discarded name";
+  await editForm.children.find((child) => child.textContent === "Cancel").click();
+  assert.equal(harness.getCRM().contact.name, "Example Recruiter");
+  assert.equal(edit.hidden, false);
+  await edit.click();
+  editForm = contactRow.children.find((child) => child.tagName === "form");
+  editForm.children[1].children[0].value = "Updated Talent Partner";
+  editForm.children[2].children[0].value = "corrected@example.invalid";
+  await editForm.handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getCRM().contact.role, "Updated Talent Partner");
+  assert.match(harness.get("crm-detail").textContent, /corrected@example.invalid/);
+
+  const followups = harness.get("crm-detail").children.find((child) =>
+    child.children[0]?.textContent === "Follow-ups and reminders");
+  const followupForm = followups.children.find((child) => child.tagName === "form");
+  followupForm.children[0].children[0].value = "Call after interview";
+  followupForm.children[1].children[0].value = "2026-11-20";
+  followupForm.children[2].children[0].value = "";
+  await followupForm.handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getCRM().task.title, "Call after interview");
+  assert.match(harness.get("crm-summary").textContent, /Call after interview/);
+  await harness.get("crm-summary").children[1].children[1].click();
+  await flush();
+  assert.match(harness.get("crm-detail").textContent, /Role Alpha/);
+  assert.match(harness.get("crm-detail").textContent, /Example Recruiter/);
+  const tasks = harness.get("crm-detail").children.find((child) =>
+    child.children[0]?.textContent === "Follow-ups and reminders");
+  const taskRow = tasks.children.find((child) => child.className === "crm-record");
+  await taskRow.children.find((child) => child.className === "button-row").children[0].click();
+  await flush();
+  assert.match(harness.get("crm-detail").textContent, /Completed/);
+  assert.match(harness.get("crm-detail").textContent, /Role Alpha/);
 });

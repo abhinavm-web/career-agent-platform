@@ -41,3 +41,8 @@ Review decisions are appended to local SQLite. Draft regeneration invalidates pr
 Profiles, fact statements, verification states, private evidence notes and earlier revisions are stored in **plaintext SQLite** on the local computer. They are not committed to Git. Only current candidate-verified facts are used in new application packets; changing a fact's content revokes prior verification. Revision history deliberately retains past notes and claims. No identity security, tenant isolation, database encryption, backup guarantee, or secure deletion is provided by this preview. Do not use it as a hosted or shared-user service. See docs/CAREER_WORKSPACE.md.
 
 A workspace-generated application packet is bound to its source workspace revision. Subsequent changes or fact revocations invalidate the prior packet for new approval/submission actions. Approved but unsubmitted old drafts must be regenerated and re-reviewed; already submitted records and packets remain preserved.
+
+
+## CRM contact and follow-up data
+
+Recruiter names, emails, private notes, interview/outcome status and due-date tasks are stored **only in local plaintext SQLite**. No CRM action sends external messages, contacts an employer, runs background checks or updates external calendars. The applied state is derived only from a separately attested application submission. Do not expose the local dashboard publicly or run it on a shared/untrusted computer. Hosted use needs encryption, authentication, deletion policies, audit protection and an integration-specific security review.

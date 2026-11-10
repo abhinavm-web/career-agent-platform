@@ -69,3 +69,13 @@ This architecture is only for a trusted single user. API session tokens are not 
 - Existing CLI workflows supplied with --profile and --facts are unchanged. Nothing in this increment adds application sending or multi-user hosting.
 
 This is a single-user, local, **unencrypted** revision log, not a secure production vault. See [Career Workspace](CAREER_WORKSPACE.md).
+
+
+## R1 — Application CRM (F07)
+
+- crm.py: isolated local SQLite tables for pipeline stage events, recruiter contacts, follow-up tasks and follow-up event history.
+- dashboard.py: API routes for CRM summary, per-job details, stage changes, contacts, follow-up creation, rescheduling and completion.
+- web/: local Application tracker view with event timeline and manually initiated actions.
+- A job's applied state is **derived only** from the existing Store-confirmed manual submission. CRM pipeline events cannot set it. Contacts, notes and follow-up tasks do not trigger email, ATS or calendar actions.
+
+CRM is single-user plaintext SQLite like the rest of the MVP, not a hosted service. See [CRM](CRM.md) for workflow and limitations.

@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from .application import _reject_symlink_components, build_packet, load_packet, save_packet
 from .candidate import FactBank
+from .crm import ApplicationCRM
 from .models import CandidateProfile, Job
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
@@ -400,6 +401,102 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def reviews():
         with Store(config.db_path) as store:
             return {"reviews": store.review_history(limit=50)}
+
+    @app.get("/api/crm")
+    def crm_summary():
+        with Store(config.db_path) as store:
+            return ApplicationCRM(store).summary()
+
+    @app.get("/api/jobs/{job_id}/crm")
+    def crm_details(job_id: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).details(job_id)
+
+    @app.post("/api/jobs/{job_id}/crm/stage")
+    async def crm_change_stage(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Pipeline update must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).change_stage(
+                job_id, data.get("stage"), data.get("note", ""),
+            )
+
+    @app.post("/api/jobs/{job_id}/crm/priority")
+    async def crm_priority(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Priority update must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).set_priority(job_id, data.get("priority"))
+
+    @app.post("/api/jobs/{job_id}/crm/interview-notes", status_code=201)
+    async def crm_interview_note(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Interview note must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).add_interview_note(
+                job_id, data.get("interview_date"), data.get("round"), data.get("notes"),
+            )
+
+    @app.post("/api/jobs/{job_id}/crm/contacts", status_code=201)
+    async def crm_add_contact(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Contact must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).add_contact(
+                job_id, data.get("name"), data.get("role", ""),
+                data.get("email", ""), data.get("notes", ""),
+            )
+
+    @app.post("/api/jobs/{job_id}/crm/contacts/{contact_id}")
+    async def crm_update_contact(job_id: str, contact_id: int, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Contact must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).update_contact(
+                job_id, contact_id, data.get("name"), data.get("role", ""),
+                data.get("email", ""), data.get("notes", ""),
+            )
+
+    @app.post("/api/jobs/{job_id}/crm/followups", status_code=201)
+    async def crm_add_followup(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Follow-up must be an object")
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return ApplicationCRM(store).add_followup(
+                job_id, data.get("title"), data.get("due_date"),
+                data.get("contact_id"),
+            )
+
+    @app.post("/api/crm/followups/{followup_id}/complete")
+    async def crm_complete_followup(followup_id: int, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise HTTPException(status_code=422, detail="Explicit completion confirmation is required")
+        with Store(config.db_path) as store:
+            return ApplicationCRM(store).update_followup(followup_id, complete=True)
+
+    @app.post("/api/crm/followups/{followup_id}/reschedule")
+    async def crm_reschedule_followup(followup_id: int, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="New due date must be an object")
+        with Store(config.db_path) as store:
+            return ApplicationCRM(store).update_followup(
+                followup_id, due_date=data.get("due_date"),
+            )
 
     return app
 
