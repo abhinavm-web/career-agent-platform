@@ -3,6 +3,9 @@ import csv
 import io
 import json
 import socket
+import http.client
+import threading
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -118,7 +121,55 @@ class PublicSourceTests(unittest.TestCase):
             with self.assertRaises(SourceUnavailable):
                 public_get(URL, {'www.uscis.gov'}, maximum=4)
             response.getheader.side_effect = lambda key, default=None: None if key == 'Content-Length' else 'text/csv'
-            response.read.side_effect = [b'12345']
+            response.read1.side_effect = [b'12345']
             with self.assertRaises(SourceUnavailable):
                 public_get(URL, {'www.uscis.gov'}, maximum=4)
             self.assertTrue(conn.close.called)
+            response.getheader.side_effect = lambda key, default=None: '5' if key == 'Content-Length' else 'text/csv'
+            response.read1.side_effect = [b'123', b'']
+            with self.assertRaisesRegex(SourceUnavailable, 'incomplete'):
+                public_get(URL, {'www.uscis.gov'})
+            self.assertTrue(response.close.called)
+
+    def test_absolute_deadline_interrupts_slow_headers_and_body_trickles(self):
+        dns = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('8.8.8.8', 443))]
+        for wire in (b'HTTP/1.1 200 OK\r\nContent-Type: text/csv\r\n\r\n',
+                     b'HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n' + b'a' * 100):
+            with self.subTest(wire=wire[:30]):
+                client, server = socket.socketpair()
+                response = http.client.HTTPResponse(client)
+                stopped = threading.Event()
+                def drip():
+                    try:
+                        # Second fixture sends complete headers, then a slow body.
+                        if b'Content-Length' in wire:
+                            header, body = wire.split(b'\r\n\r\n', 1)
+                            server.sendall(header + b'\r\n\r\n')
+                        else:
+                            body = wire
+                        for byte in body:
+                            if stopped.wait(0.02):
+                                break
+                            server.sendall(bytes([byte]))
+                    except OSError:
+                        pass
+                worker = threading.Thread(target=drip)
+                worker.start()
+                try:
+                    with patch('career_agent.public_sources.socket.getaddrinfo', return_value=dns), patch('career_agent.public_sources._PinnedHTTPS') as constructor, patch('career_agent.public_sources.RESPONSE_DEADLINE', 0.15):
+                        conn = constructor.return_value
+                        conn.sock = client
+                        def begin():
+                            response.begin()
+                            return response
+                        conn.getresponse.side_effect = begin
+                        started = time.monotonic()
+                        with self.assertRaises(SourceUnavailable):
+                            public_get(URL, {'www.uscis.gov'})
+                        self.assertLess(time.monotonic() - started, 2)
+                finally:
+                    stopped.set()
+                    worker.join(timeout=2)
+                    response.close()
+                    client.close()
+                    server.close()

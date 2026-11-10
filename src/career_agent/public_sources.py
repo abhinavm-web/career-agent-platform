@@ -6,11 +6,15 @@ import ipaddress
 import socket
 import ssl
 import time
+from threading import Event, Timer
 from urllib.parse import urlsplit
 
 
 class SourceUnavailable(ValueError):
     pass
+
+
+RESPONSE_DEADLINE = 45
 
 
 class _PinnedHTTPS(http.client.HTTPSConnection):
@@ -39,13 +43,35 @@ def public_get(url, allowed_hosts, maximum=2 * 1024 * 1024):
                            key=lambda value: (ipaddress.ip_address(value).version, value))
         if not addresses or any(not ipaddress.ip_address(a).is_global for a in addresses):
             raise SourceUnavailable('Source did not resolve exclusively to public addresses')
-        deadline = time.monotonic() + 45
+        deadline = time.monotonic() + RESPONSE_DEADLINE
         connection = _PinnedHTTPS(parts.hostname, addresses[0], timeout=15)
+        timer = None
+        response = None
+        expired = Event()
         try:
+            connection.connect()
+            # Keep the TLS socket even when HTTPConnection transfers ownership to
+            # HTTPResponse for Connection: close. shutdown interrupts header reads
+            # and slow-trickle/chunk-framing reads, not just idle socket reads.
+            transport = connection.sock
+            def abort_at_deadline():
+                expired.set()
+                try:
+                    transport.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SourceUnavailable('Source response timed out')
+            timer = Timer(remaining, abort_at_deadline)
+            timer.daemon = True
+            timer.start()
             path = (parts.path or '/') + ('?' + parts.query if parts.query else '')
             connection.request('GET', path, headers={'Accept': 'application/json,text/csv,text/plain',
                                'User-Agent': 'CareerAgent/0.5 public-source-check', 'Accept-Encoding': 'identity'})
             response = connection.getresponse()
+            if expired.is_set():
+                raise SourceUnavailable('Source response timed out')
             # A redirect is an observation, never authority to contact another URL.
             if response.status != 200:
                 return response.status, b'', response.getheader('Content-Type', '')
@@ -59,15 +85,24 @@ def public_get(url, allowed_hosts, maximum=2 * 1024 * 1024):
                     raise SourceUnavailable('Source response timed out')
                 if connection.sock:
                     connection.sock.settimeout(min(15, remaining))
-                chunk = response.read(min(65536, maximum + 1 - count))
+                chunk = response.read1(min(65536, maximum + 1 - count))
+                if expired.is_set():
+                    raise SourceUnavailable('Source response timed out')
                 if not chunk:
                     break
                 count += len(chunk)
                 if count > maximum:
                     raise SourceUnavailable('Source response exceeds the download limit')
                 chunks.append(chunk)
+            if size and count != int(size):
+                raise SourceUnavailable('Source response was incomplete; existing records retained')
             return response.status, b''.join(chunks), response.getheader('Content-Type', '')
         finally:
+            if timer:
+                timer.cancel()
+                timer.join()
+            if response is not None:
+                response.close()
             connection.close()
     except (OSError, http.client.HTTPException) as error:
         raise SourceUnavailable('Source could not be reached securely; retry later') from error
