@@ -64,3 +64,7 @@ Install test extras and run: `python -m pip install -e ".[graph,web,dev]"`, then
 ## Still out of scope
 
 At-rest encryption, tenant-level authorization, secure document uploads, machine-extracted résumé fact confirmation, historical revision restoration, full application CRM, and managed cloud hosting. These need separately scoped, reviewed work.
+
+## Previously approved packets after a change
+
+When a profile or career-fact revision changes, previously drafted packets generated from the earlier workspace revision are flagged **outdated**. The dashboard no longer treats their old review approvals as current and refuses new approval or a manual-submission attestation against that obsolete packet. Regenerate a draft from the current verified facts and explicitly review it again. Previously recorded externally submitted packets remain preserved and locked.
