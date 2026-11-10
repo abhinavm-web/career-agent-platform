@@ -21,6 +21,7 @@
       <nav class="navigation" aria-label="Main">
         <button class="nav-item active" id="nav-jobs" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
         <button class="nav-item" id="nav-activity" type="button"><span class="nav-glyph" aria-hidden="true">☷</span> Review history</button>
+        <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
       </nav>
       <div class="rail-bottom">
         <div class="privacy-note">
@@ -28,7 +29,7 @@
           <strong>Local-first</strong>
           <p>Private data remains on your computer. No automated applications.</p>
         </div>
-        <span class="version">v0.3 · DEVELOPMENT PREVIEW</span>
+        <span class="version">v0.4 · DEVELOPMENT PREVIEW</span>
       </div>
     </aside>
 
@@ -97,6 +98,59 @@
           <div id="detail-panel" class="detail-panel panel" aria-label="Job details">
             <div class="empty-detail"><span class="empty-icon" aria-hidden="true">◎</span><h3>Select an opportunity</h3><p>Inspect the job, review a truthful application draft, and track your decision.</p></div>
           </div>
+        </div>
+      </section>
+
+      <section id="profile-screen" class="screen" hidden>
+        <div class="section-heading">
+          <div><span class="eyebrow">YOUR PRIVATE WORKSPACE</span><h2>Career profile</h2></div>
+          <span id="profile-revision" class="config-pill">Not saved yet</span>
+        </div>
+        <p class="muted">These details are stored in your local SQLite database, not in Git. Storage is not encrypted. Only individually verified facts can appear in generated application drafts.</p>
+        <div id="legacy-import" class="panel profile-import" hidden>
+          <strong>Existing career files found</strong>
+          <p class="muted">You can copy the configured profile and verified fact bank into this editable workspace. Your original files will not be changed.</p>
+          <button id="import-career-data" type="button" class="button">Import configured files</button>
+        </div>
+        <form id="career-profile-form" class="panel profile-editor">
+          <h3>Preferences</h3>
+          <div class="form-grid">
+            <label>Your name<input id="career-name" name="name" maxlength="120" autocomplete="name" placeholder="Name used for your applications"></label>
+            <label>Professional headline<input id="career-headline" name="headline" maxlength="240" placeholder="AI Delivery Leader"></label>
+            <label>Target roles (one per line)<textarea id="career-targets" rows="3" placeholder="AI Transformation Manager"></textarea></label>
+            <label>Skills (one per line)<textarea id="career-skills" rows="3" placeholder="AWS"></textarea></label>
+            <label>Preferred locations (one per line)<textarea id="career-locations" rows="3" placeholder="Knoxville, TN"></textarea></label>
+            <label class="check-label"><input id="career-remote" type="checkbox"> Include fully remote roles</label>
+          </div>
+          <div class="form-footer"><span class="muted">Changing preferences does not automatically verify a career achievement.</span><button type="submit" class="button button-primary">Save preferences</button></div>
+        </form>
+        <div class="panel profile-editor">
+          <div class="section-heading"><div><h3>Career facts</h3><p class="muted">Each achievement or credential needs your explicit verification. Changing its content revokes earlier verification.</p></div></div>
+          <div id="career-facts-list" aria-label="Saved career facts"></div>
+          <form id="career-fact-form" class="fact-form">
+            <h3 id="fact-form-heading">Add career fact</h3>
+            <div class="form-grid">
+              <label>Category<select id="fact-category">
+                <option value="experience">Experience</option>
+                <option value="projects">Projects</option>
+                <option value="skills">Skills</option>
+                <option value="education">Education</option>
+                <option value="certifications">Certifications</option>
+              </select></label>
+              <label>Matching keywords (one per line)<textarea id="fact-keywords" rows="2" placeholder="AWS"></textarea></label>
+            </div>
+            <label class="block-label">Verified statement<textarea id="fact-statement" rows="3" minlength="8" maxlength="1000" required placeholder="Describe something you can confirm, without invented outcomes"></textarea></label>
+            <label class="block-label">Private evidence note<textarea id="fact-source" rows="2" maxlength="500" required placeholder="How you verified this statement (never added to a resume)"></textarea></label>
+            <div class="form-footer">
+              <button id="fact-reset" type="button" class="button">Clear form</button>
+              <button type="submit" class="button button-primary">Save unverified fact</button>
+            </div>
+          </form>
+        </div>
+        <div class="panel profile-editor">
+          <h3>Local revision history</h3>
+          <p class="muted">Saved revisions are append-only. This history is readable on this device but is not encrypted or a cloud backup.</p>
+          <div id="career-revision-list" aria-label="Career workspace revisions"></div>
         </div>
       </section>
 
