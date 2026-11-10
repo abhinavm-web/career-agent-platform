@@ -269,3 +269,33 @@ test("career profile can add and separately verify a fact through the browser co
   assert.equal(harness.getWorkspace().facts[0].verified_by_candidate, true);
   assert.match(harness.get("career-facts-list").textContent, /Candidate verified/);
 });
+
+
+test("saving preferences or a fact preserves unsaved changes in the other editor", async () => {
+  const harness = createHarness();
+  await flush();
+  await harness.get("nav-profile").click();
+  await flush();
+
+  // Save preferences while a separate fact statement is still unsaved.
+  harness.get("career-name").value = "Fictional Candidate";
+  harness.get("career-headline").value = "Saved headline";
+  harness.get("fact-statement").value = "An unsaved fictional achievement.";
+  harness.get("fact-source").value = "Unsaved supporting note";
+  harness.get("fact-keywords").value = "AWS";
+  await harness.get("career-profile-form").handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getWorkspace().profile.headline, "Saved headline");
+  assert.equal(harness.get("fact-statement").value, "An unsaved fictional achievement.");
+  assert.equal(harness.get("fact-source").value, "Unsaved supporting note");
+
+  // Saving the fact should preserve unsaved edits to the separate profile form.
+  harness.get("career-headline").value = "Not yet saved as a preference";
+  await harness.get("career-fact-form").handlers.submit({preventDefault() {}});
+  await flush();
+  assert.equal(harness.getWorkspace().facts.length, 1);
+  assert.equal(harness.getWorkspace().facts[0].verified_by_candidate, false);
+  assert.equal(harness.getWorkspace().profile.headline, "Saved headline");
+  assert.equal(harness.get("career-headline").value, "Not yet saved as a preference");
+  assert.equal(harness.get("fact-statement").value, "");
+});
