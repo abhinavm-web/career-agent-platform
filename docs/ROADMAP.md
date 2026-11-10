@@ -19,6 +19,8 @@
 - [x] Version fingerprint and interactive approval of a packet
 - [x] Source-linked, dated manually curated H-1B employer history
 - [x] Configurable H-1B company research, DOL CSV index and separate job-policy assessments
+- [x] Explicit USCIS annual CSV refresh/import with separate decision counts and provenance
+- [x] Dated live Greenhouse/Lever posting observations, with stale and inconclusive checks marked unknown
 - [x] LangGraph analyze → draft → human-review interrupt (in-memory prototype)
 
 - [ ] Encrypted verified candidate profile

@@ -88,6 +88,31 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_uscis_refresh_failure_and_live_check_require_explicit_action(self):
+        from test_uscis import hub_csv, URL
+
+        data = {'source_url': URL, 'fiscal_year': 2025, 'data_as_of': '2025-09-30',
+                'acknowledged': True, 'csv': hub_csv().decode()}
+        self.assertEqual(self.call('POST', '/api/h1b/uscis/import', data).status_code, 200)
+        with patch('career_agent.uscis.public_get', return_value=(403, b'', 'text/html')) as fetch:
+            self.assertEqual(self.call('POST', '/api/h1b/uscis/refresh', {**data, 'acknowledged': False}).status_code, 422)
+            fetch.assert_not_called()
+            response = self.call('POST', '/api/h1b/uscis/refresh', data)
+        self.assertEqual(response.status_code, 422)
+        self.assertIn('403', response.json()['detail'])
+        self.assertEqual(len(self.call('GET', '/api/h1b').json()['coverage']['uscis_snapshots']), 1)
+        path = f'/api/jobs/{self.job.id}/live-check'
+        with patch('career_agent.dashboard.check_posting', return_value={
+                'availability': 'unknown', 'reason': 'Unsupported posting',
+                'checked_at': '2025-01-01T00:00:00+00:00', 'source_url': self.job.url, 'policy': None}) as check:
+            self.assertEqual(self.call('POST', path, {}).status_code, 422)
+            self.assertEqual(self.call('POST', path, {'acknowledged': True}, token='bad').status_code, 403)
+            check.assert_not_called()
+            self.assertEqual(self.call('POST', path, {'acknowledged': True}).status_code, 200)
+        observed = self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['live_check']
+        self.assertEqual(observed['availability'], 'unknown')
+        self.assertTrue(observed['stale'])
+
     def test_h1b_settings_import_search_and_job_assessment(self):
         from test_h1b import lca_csv
         from career_agent.h1b import DOL_URL

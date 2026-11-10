@@ -30,6 +30,8 @@ from .crm import ApplicationCRM
 from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
 from .h1b import H1BResearch
+from .uscis import USCISRecords
+from .posting_checks import PostingChecks, check_posting
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
@@ -78,6 +80,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     token = secrets.token_urlsafe(32)
     discovery_lock = Lock()
     h1b_import_lock = Lock()
+    live_check_lock = Lock()
 
     @app.middleware("http")
     async def protect(request: Request, call_next):
@@ -94,7 +97,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     return JSONResponse({"detail": "Use application/json"}, status_code=415)
                 body = await request.body()
                 limit = (
-                    10 * 1024 * 1024 if request.url.path == "/api/h1b/import" else
+                    10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
                     WORKSPACE_BODY_LIMIT
                     if request.url.path == "/api/workspace" and request.method == "PUT"
                     else API_BODY_LIMIT
@@ -231,6 +234,45 @@ def create_app(config: DashboardConfig) -> FastAPI:
             return await run_in_threadpool(import_records)
         finally:
             h1b_import_lock.release()
+
+    @app.post("/api/h1b/uscis/{action}")
+    async def uscis_update(action: str, request: Request):
+        if action not in {"import", "refresh"}:
+            raise HTTPException(status_code=404, detail="Unknown USCIS action")
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise ValueError("Confirm the USCIS source and reporting date before proceeding")
+        if action == "import" and not isinstance(data.get("csv"), str):
+            raise ValueError("Choose an official USCIS CSV file")
+        if not h1b_import_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="An evidence update is already running")
+        def update_records():
+            with Store(config.db_path) as store:
+                records = USCISRecords(store)
+                args = (data.get("source_url"), data.get("fiscal_year"), data.get("data_as_of"))
+                if action == "refresh":
+                    return records.refresh(*args)
+                return records.import_bytes(data["csv"].encode('utf-8'), *args)
+        try:
+            return await run_in_threadpool(update_records)
+        finally:
+            h1b_import_lock.release()
+
+    @app.post("/api/jobs/{job_id}/live-check")
+    async def live_check(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise ValueError("Confirm checking this public posting with its ATS provider")
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+        if not live_check_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="A live job check is already running")
+        try:
+            result = await run_in_threadpool(check_posting, job)
+            with Store(config.db_path) as store:
+                return PostingChecks(store).save(job_id, result)
+        finally:
+            live_check_lock.release()
 
     @app.get("/api/h1b/search")
     def h1b_search(q: str, offset: int = 0):
