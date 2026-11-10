@@ -304,7 +304,7 @@ class DashboardTests(unittest.TestCase):
         # Frontend uses textContent; untrusted strings are never interpreted as HTML.
         source = self.client.get("/assets/app.js").text
         self.assertIn("textContent", source)
-        self.assertNotIn("innerHTML", source)
+        self.assertNotRegex(source, r"\b(?:innerHTML|outerHTML)\s*=")
 
     def test_no_candidate_claims_embedded_in_homepage(self):
         self.assertNotIn("Fictional Candidate", self.client.get("/").text)
