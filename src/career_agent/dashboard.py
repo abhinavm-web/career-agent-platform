@@ -142,7 +142,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     def packet_stale(packet: dict[str, Any]) -> bool:
         revision = active_workspace()["revision"]
-        return revision > 0 and packet.get("candidate_workspace_revision") != revision
+        bound_revision = packet.get("candidate_workspace_revision")
+        return (bound_revision != revision) if revision > 0 else bound_revision is not None
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None, records: tuple) -> dict:
         packet = current_packet(job.id)
