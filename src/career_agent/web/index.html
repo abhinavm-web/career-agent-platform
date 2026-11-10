@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Career Agent · Local Workspace</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
+  <div id="app" data-session="__SESSION_TOKEN__">
+    <aside class="rail" aria-label="Workspace navigation">
+      <div class="identity">
+        <div class="logo" aria-hidden="true">C<span>A</span></div>
+        <div class="identity-text"><strong>Career Agent</strong><small>LOCAL WORKSPACE</small></div>
+      </div>
+      <div class="rail-divider"></div>
+      <nav class="navigation" aria-label="Main">
+        <button class="nav-item active" id="nav-jobs" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
+        <button class="nav-item" id="nav-activity" type="button"><span class="nav-glyph" aria-hidden="true">☷</span> Review history</button>
+      </nav>
+      <div class="rail-bottom">
+        <div class="privacy-note">
+          <span class="small-dot" aria-hidden="true"></span>
+          <strong>Local-first</strong>
+          <p>Private data remains on your computer. No automated applications.</p>
+        </div>
+        <span class="version">v0.3 · DEVELOPMENT PREVIEW</span>
+      </div>
+    </aside>
+
+    <main id="workspace" class="workspace">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>Workspace</span><span class="slash">/</span><strong id="section-name">Opportunity board</strong></div>
+        <div class="top-actions">
+          <span id="configuration-status" class="config-pill">Checking profile…</span>
+          <button id="refresh" type="button" class="icon-action" title="Refresh data" aria-label="Refresh data">↻</button>
+        </div>
+      </header>
+
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <section class="welcome">
+        <div>
+          <span class="eyebrow">CAREER INTELLIGENCE / CONTROL CENTER</span>
+          <h1>Find the right opportunity.<br><em>Stay in control.</em></h1>
+          <p>Discover, evaluate and prepare applications backed by verified career facts. Every submission remains your decision.</p>
+        </div>
+        <div class="welcome-art" aria-hidden="true"><div class="orbital orbital-outer"></div><div class="orbital orbital-inner"></div><div class="orb-core">01</div></div>
+      </section>
+
+      <section class="metrics" aria-label="Workspace snapshot">
+        <div class="metric"><small>OPPORTUNITIES</small><strong id="count-jobs">—</strong><span>Tracked job postings</span></div>
+        <div class="metric"><small>STAGED</small><strong id="count-staged">—</strong><span>Waiting for submission</span></div>
+        <div class="metric"><small>SUBMISSIONS</small><strong id="count-submitted">—</strong><span>Manually confirmed</span></div>
+        <div class="metric"><small>REVIEW EVENTS</small><strong id="count-reviews">—</strong><span>Decisions recorded locally</span></div>
+      </section>
+
+      <section id="jobs-screen" class="screen">
+        <div class="section-heading">
+          <div><span class="eyebrow">PIPELINE</span><h2>Opportunity board</h2></div>
+          <button id="show-add-job" class="button button-primary" type="button">+ Add opportunity</button>
+        </div>
+
+        <form id="add-job-form" class="add-job-form panel" hidden>
+          <div class="form-header"><h3>Track a job posting</h3><button type="button" id="close-add-job" class="plain-button">Close</button></div>
+          <div class="form-grid">
+            <label>Job title<input name="title" required maxlength="200" autocomplete="off" placeholder="AI Transformation Manager"></label>
+            <label>Company<input name="company" required maxlength="200" autocomplete="organization" placeholder="Company name"></label>
+            <label>Location<input name="location" maxlength="240" placeholder="City, State / Remote"></label>
+            <label>Job URL<input name="job_url" type="url" required placeholder="https://company.example/careers/job"></label>
+          </div>
+          <label class="block-label">Description<textarea name="description" rows="4" maxlength="50000" placeholder="Paste the published requirements and role summary"></textarea></label>
+          <div class="form-footer"><label class="check-label"><input type="checkbox" name="is_remote"> Fully remote</label><button class="button button-primary" type="submit">Save opportunity</button></div>
+        </form>
+
+        <div class="board">
+          <div class="list-panel panel">
+            <div class="list-tools">
+              <label class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search roles or companies" aria-label="Search roles or companies"></label>
+              <label class="filter-label">View
+                <select id="filter" aria-label="Filter opportunities">
+                  <option value="all">All roles</option>
+                  <option value="priority">High match (70+)</option>
+                  <option value="sponsorship">Sponsorship signals</option>
+                  <option value="review">Awaiting review</option>
+                  <option value="approved">Approved drafts</option>
+                  <option value="submitted">Submitted</option>
+                </select>
+              </label>
+            </div>
+            <div class="list-count"><span id="visible-count">0 opportunities</span><span>Best match first</span></div>
+            <div id="job-list" class="job-list" aria-label="Job postings"><div class="loading">Loading your local jobs…</div></div>
+          </div>
+          <div id="detail-panel" class="detail-panel panel" aria-label="Job details">
+            <div class="empty-detail"><span class="empty-icon" aria-hidden="true">◎</span><h3>Select an opportunity</h3><p>Inspect the job, review a truthful application draft, and track your decision.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="activity-screen" class="screen" hidden>
+        <div class="section-heading"><div><span class="eyebrow">AUDIT TRAIL</span><h2>Review history</h2></div></div>
+        <div class="panel activity-panel">
+          <p class="muted">Review decisions are recorded in the local SQLite database. A review decision never transmits an application.</p>
+          <div id="activity-list" class="activity-list"></div>
+        </div>
+      </section>
+
+      <footer>Working product name · Local prototype · No automated submissions or hosted accounts</footer>
+    </main>
+  </div>
+</body>
+</html>
