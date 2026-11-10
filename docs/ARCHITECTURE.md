@@ -58,3 +58,14 @@ Both the standard `draft` command and the optional `workflow` graph write applic
 The server does not invoke JobSpy, LangGraph, external LLMs, or ATS websites. Its local web reviews are persisted independently of the in-memory LangGraph graph. The server never submits an application, and a submitted status requires explicit user attestation of a real external submission.
 
 This architecture is only for a trusted single user. API session tokens are not replacement identity or user isolation in hosted multi-user deployments. See [Dashboard](DASHBOARD.md).
+
+
+## R1: Versioned local candidate workspace
+
+- workspace.py stores private profile/fact snapshots as sequential SQLite revisions and validates each update.
+- The dashboard exposes GET/PUT /api/workspace, POST /api/workspace/facts/{id}/verification, GET /api/workspace/history, and POST /api/workspace/import for explicit legacy migration.
+- Before an editable workspace is initialized, the dashboard continues using read-only --profile/--facts configuration. After initialization, dashboard matching and drafts use the saved workspace.
+- A separately acknowledged verification step is mandatory for newly added or edited career facts. Only verified facts are converted into FactBank objects for drafting.
+- Existing CLI workflows supplied with --profile and --facts are unchanged. Nothing in this increment adds application sending or multi-user hosting.
+
+This is a single-user, local, **unencrypted** revision log, not a secure production vault. See [Career Workspace](CAREER_WORKSPACE.md).

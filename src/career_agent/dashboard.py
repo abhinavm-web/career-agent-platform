@@ -25,9 +25,12 @@ from .models import CandidateProfile, Job
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store
+from .workspace import CandidateWorkspace, StaleRevision
 
 JOB_ID = re.compile(r"[a-f0-9]{16}\Z")
 API_BODY_LIMIT = 128 * 1024
+# Full workspace saves can contain 100 validated statements and private notes.
+WORKSPACE_BODY_LIMIT = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -79,7 +82,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
                     return JSONResponse({"detail": "Use application/json"}, status_code=415)
                 body = await request.body()
-                if len(body) > API_BODY_LIMIT:
+                limit = (
+                    WORKSPACE_BODY_LIMIT
+                    if request.url.path == "/api/workspace" and request.method == "PUT"
+                    else API_BODY_LIMIT
+                )
+                if len(body) > limit:
                     return JSONResponse({"detail": "Request too large"}, status_code=413)
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
@@ -111,17 +119,38 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise ValueError("Saved packet job ID does not match the requested job")
         return packet
 
+    def active_workspace() -> dict[str, Any]:
+        with Store(config.db_path) as store:
+            return CandidateWorkspace(store).latest()
+
     def configured_profile() -> CandidateProfile | None:
+        workspace = active_workspace()
+        if workspace["revision"] > 0:
+            return CandidateWorkspace.scoring_profile(workspace)
         return CandidateProfile.load(config.profile_path) if config.profile_path else None
 
     def configured_facts() -> FactBank:
+        workspace = active_workspace()
+        if workspace["revision"] > 0:
+            return CandidateWorkspace.fact_bank(workspace)
         if config.facts_path is None:
-            raise HTTPException(status_code=412, detail="Start the dashboard with --facts to draft applications")
+            raise HTTPException(
+                status_code=412,
+                detail="Verify career facts in the profile workspace before drafting applications",
+            )
         return FactBank.load(config.facts_path)
 
-    def job_view(store: Store, job: Job, profile: CandidateProfile | None, records: tuple) -> dict:
+    def packet_stale(packet: dict[str, Any], revision: int | None = None) -> bool:
+        if revision is None:
+            revision = active_workspace()["revision"]
+        bound_revision = packet.get("candidate_workspace_revision")
+        return (bound_revision != revision) if revision > 0 else bound_revision is not None
+
+    def job_view(store: Store, job: Job, profile: CandidateProfile | None,
+                 records: tuple, workspace_revision: int) -> dict:
         packet = current_packet(job.id)
-        review = store.latest_review(job.id, packet["packet_sha256"]) if packet else None
+        stale = packet_stale(packet, workspace_revision) if packet else False
+        review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
         fit = score_job(job, profile) if profile is not None else None
         sponsorship = sponsorship_report(job, records)
         return {
@@ -139,6 +168,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "sponsorship_status": sponsorship["status"],
             "sponsorship_reason": sponsorship["reason"],
             "packet_available": packet is not None,
+            "packet_stale": stale,
             "review_decision": review["decision"] if review else None,
         }
 
@@ -157,21 +187,89 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get("/api/settings")
     def settings():
+        workspace = active_workspace()
+        is_saved = workspace["revision"] > 0
         return {
-            "profile_configured": config.profile_path is not None,
-            "facts_configured": config.facts_path is not None,
+            "profile_configured": bool(workspace["profile"]["name"]) if is_saved else config.profile_path is not None,
+            "facts_configured": (
+                any(fact["verified_by_candidate"] for fact in workspace["facts"])
+                if is_saved else config.facts_path is not None
+            ),
+            "workspace_initialized": is_saved,
+            "legacy_import_available": bool(config.profile_path and config.facts_path and not is_saved),
             "filings_configured": config.filings_path is not None,
             "runtime": "local_single_user",
             "application_submission_enabled": False,
         }
 
+    @app.get("/api/workspace")
+    def get_workspace():
+        return {"workspace": active_workspace()}
+
+    @app.get("/api/workspace/history")
+    def workspace_history():
+        with Store(config.db_path) as store:
+            return {"revisions": CandidateWorkspace(store).history()}
+
+    @app.put("/api/workspace")
+    async def save_workspace(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Workspace must be a JSON object")
+        with Store(config.db_path) as store:
+            try:
+                saved = CandidateWorkspace(store).save(
+                    data.get("expected_revision"), data.get("profile"), data.get("facts")
+                )
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"workspace": saved}
+
+    @app.post("/api/workspace/facts/{fact_id}/verification")
+    async def verify_workspace_fact(fact_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Verification decision must be an object")
+        with Store(config.db_path) as store:
+            try:
+                updated = CandidateWorkspace(store).verify(
+                    data.get("expected_revision"),
+                    fact_id,
+                    data.get("verified"),
+                    data.get("acknowledged"),
+                )
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"workspace": updated}
+
+    @app.post("/api/workspace/import")
+    async def import_legacy_workspace(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise HTTPException(status_code=422, detail="Explicit legacy import acknowledgement is required")
+        if config.profile_path is None or config.facts_path is None:
+            raise HTTPException(status_code=412, detail="Configure --profile and --facts before importing")
+        profile = CandidateProfile.load(config.profile_path)
+        facts = FactBank.load(config.facts_path)
+        with Store(config.db_path) as store:
+            try:
+                imported = CandidateWorkspace(store).import_legacy(profile, facts)
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail="Workspace already exists; import would overwrite it") from error
+        return {"workspace": imported}
+
     @app.get("/api/jobs")
     def list_jobs():
-        profile = configured_profile()
+        workspace = active_workspace()
+        profile = (
+            CandidateWorkspace.scoring_profile(workspace)
+            if workspace["revision"] > 0
+            else CandidateProfile.load(config.profile_path) if config.profile_path else None
+        )
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             items = [
-                job_view(store, job, profile, records)
+                job_view(store, job, profile, records, workspace["revision"])
                 for job in store.list_jobs(limit=500)
             ]
         return {"jobs": items, "total": len(items)}
@@ -205,10 +303,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.post("/api/jobs/{job_id}/draft")
     def draft(job_id: str):
-        profile = configured_profile()
-        if profile is None:
-            raise HTTPException(status_code=412, detail="Start the dashboard with --profile to draft applications")
-        bank = configured_facts()
+        workspace = active_workspace()
+        if workspace["revision"] > 0:
+            profile = CandidateWorkspace.scoring_profile(workspace)
+            bank = CandidateWorkspace.fact_bank(workspace)
+        else:
+            profile = configured_profile()
+            if profile is None:
+                raise HTTPException(status_code=412, detail="Configure a career profile before drafting applications")
+            bank = configured_facts()
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             job = _get_job(store, job_id)
@@ -217,7 +320,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     status_code=409,
                     detail="This application is already recorded as submitted; its reviewed packet is locked",
                 )
-        packet = build_packet(job, profile, bank, records)
+        packet = build_packet(
+            job, profile, bank, records,
+            workspace_revision=workspace["revision"] or None,
+        )
         save_packet(packet, config.packet_dir / f"{job.id}.json")
         return {
             "job_id": job.id,
@@ -233,10 +339,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
             packet = current_packet(job_id)
             if packet is None:
                 raise HTTPException(status_code=404, detail="No packet has been drafted for this job")
-            reviewed = store.latest_review(job_id, packet["packet_sha256"])
+            stale = packet_stale(packet)
+            reviewed = store.latest_review(job_id, packet["packet_sha256"]) if not stale else None
         return {
             "packet": packet,
             "review": reviewed,
+            "stale": stale,
             "submission_sent_by_application": False,
         }
 
@@ -248,6 +356,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         current = current_packet(job_id)
         if current is None:
             raise HTTPException(status_code=404, detail="No packet available to review")
+        if packet_stale(current):
+            raise HTTPException(status_code=409, detail="Career profile changed; regenerate this draft before review")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, current["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale packet; reload and review the latest draft")
@@ -266,6 +376,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         packet = current_packet(job_id)
         if packet is None:
             raise HTTPException(status_code=412, detail="Draft and review an application packet first")
+        if packet_stale(packet):
+            raise HTTPException(status_code=409, detail="Career profile changed; regenerate and review before recording submission")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, packet["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale or missing packet fingerprint")
