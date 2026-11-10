@@ -1,4 +1,4 @@
-"""Local-only FastAPI dashboard. No accounts, telemetry, ATS submissions or external API calls.
+"""Local-only dashboard with explicitly requested JobSpy discovery; no submissions.
 
 Threat model: a single trusted user at 127.0.0.1. This is NOT a hosted SaaS.
 A random per-process session token protects API reads and writes; host and Origin
@@ -10,6 +10,7 @@ import hmac
 import html
 import re
 import secrets
+from threading import Lock
 from dataclasses import asdict, dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -18,10 +19,12 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from .application import _reject_symlink_components, build_packet, load_packet, save_packet
 from .candidate import FactBank
 from .crm import ApplicationCRM
+from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
@@ -68,6 +71,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         allowed_hosts=["localhost", "127.0.0.1", "[::1]"],
     )
     token = secrets.token_urlsafe(32)
+    discovery_lock = Lock()
 
     @app.middleware("http")
     async def protect(request: Request, call_next):
@@ -274,6 +278,33 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 for job in store.list_jobs(limit=500)
             ]
         return {"jobs": items, "total": len(items)}
+
+    @app.post("/api/discover")
+    async def discover(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise HTTPException(status_code=422, detail="Confirm sending this search to external job sources")
+        query, location, results = data.get("query"), data.get("location"), data.get("results", 20)
+        if not isinstance(query, str) or not 1 <= len(query.strip()) <= 200:
+            raise HTTPException(status_code=422, detail="Search query must be 1–200 characters")
+        if not isinstance(location, str) or not 1 <= len(location.strip()) <= 240:
+            raise HTTPException(status_code=422, detail="Location must be 1–240 characters")
+        if type(results) is not int or not 1 <= results <= 100:
+            raise HTTPException(status_code=422, detail="Results per source must be an integer from 1 to 100")
+        if not discovery_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="A job search is already running. Wait for it to finish.")
+        try:
+            try:
+                jobs = await run_in_threadpool(discover_jobspy, query.strip(), location.strip(), results)
+            except DiscoveryUnavailable as error:
+                raise HTTPException(status_code=503, detail='Job discovery unavailable. Install the jobspy extra and retry.') from error
+            except Exception as error:
+                raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
+            with Store(config.db_path) as store:
+                added = store.add_jobs(jobs)
+            return {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
+        finally:
+            discovery_lock.release()
 
     @app.get("/api/overview")
     def overview():

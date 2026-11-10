@@ -946,6 +946,34 @@
   }
 
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
+  byId("discover-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = byId("discover-submit");
+    const status = byId("discover-status");
+    if (submit.disabled) return;
+    if (!byId("discover-consent").checked) {
+      status.textContent = "Confirm sending this search to external job sources.";
+      return;
+    }
+    submit.disabled = true;
+    byId("discover-form").setAttribute("aria-busy", "true");
+    status.textContent = "Searching job sources… This may take a few minutes.";
+    try {
+      const result = await api("/api/discover", "POST", {
+        query: byId("discover-query").value, location: byId("discover-location").value,
+        results: Number(byId("discover-results").value), acknowledged: true
+      });
+      status.textContent = result.found + " returned · " + result.new + " added · " + result.duplicates +
+        " duplicates. Sources may return partial results.";
+      byId("discover-consent").checked = false;
+      await refresh(undefined, true);
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+      byId("discover-form").setAttribute("aria-busy", "false");
+    }
+  });
   byId("nav-activity").addEventListener("click", () => showScreen("activity"));
   byId("nav-profile").addEventListener("click", async () => {showScreen("profile"); await loadWorkspace();});
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});

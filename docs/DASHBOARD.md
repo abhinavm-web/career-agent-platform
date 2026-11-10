@@ -26,7 +26,11 @@ All private candidate files should be outside the public repository or under a g
 - After **manually applying on an employer site**, record a confirmation reference and attestation to update application status.
 - Show dashboard counts and recent review decisions.
 
-The app **does not** fetch jobs automatically, perform ATS submissions, answer visa screening questions, or transmit candidate data to a hosted API. The JobSpy adapter is a separate explicitly invoked CLI action. The dashboard never operates it in the background.
+The app **does not** fetch jobs automatically, perform ATS submissions, or answer visa screening questions. JobSpy discovery is available through both the CLI and the Opportunity board's **Find jobs with JobSpy** form. Each dashboard search requires explicit acknowledgement that its query and location will be sent to external sources. Profile facts, recruiter contacts and private notes are not included in the discovery request.
+
+Install discovery with `python -m pip install -e ".[web,jobspy]"`, restart the server, then enter a role, location and requested results per source (1–100). The existing JobSpy adapter searches Indeed, LinkedIn and ZipRecruiter for US jobs. Returned jobs are normalized and deduplicated by the existing job store; the UI reports returned, added and duplicate counts. Requests run outside the server's event loop, with one discovery request at a time per server process. Searches can take several minutes; cancellation and background scheduling are not implemented.
+
+Job sources may block requests, rate-limit or return partial results. Zero results do not prove that no jobs exist. Missing dependencies and provider exceptions show retryable errors without returning upstream exception details. The test suite uses mocked discovery, not live job-board requests; source-specific live validation remains outstanding. Respect each provider's terms and rate limits.
 
 ## Security and scope
 

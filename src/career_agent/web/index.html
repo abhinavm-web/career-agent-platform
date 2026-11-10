@@ -66,6 +66,20 @@
           <button id="show-add-job" class="button button-primary" type="button">+ Add opportunity</button>
         </div>
 
+        <details class="panel profile-editor">
+          <summary>Find jobs with JobSpy</summary>
+          <form id="discover-form">
+            <p class="muted">Search Indeed, LinkedIn and ZipRecruiter for US roles. Only your search query and location are sent to job sources; your career facts and notes are not included. Returned jobs are added to this local board. Sources may return partial or no results.</p>
+            <div class="form-grid">
+              <label>Role or keywords<input id="discover-query" required maxlength="200" placeholder="AI Program Lead"></label>
+              <label>Search location<input id="discover-location" required maxlength="240" value="United States"></label>
+              <label>Requested results per source<input id="discover-results" type="number" min="1" max="100" value="20" required></label>
+            </div>
+            <label class="check-label"><input id="discover-consent" type="checkbox" required> Send this search to external job sources</label>
+            <div class="form-footer"><span id="discover-status" role="status" aria-live="polite"></span><button id="discover-submit" class="button button-primary" type="submit">Search and import jobs</button></div>
+          </form>
+        </details>
+
         <form id="add-job-form" class="add-job-form panel" hidden>
           <div class="form-header"><h3>Track a job posting</h3><button type="button" id="close-add-job" class="plain-button">Close</button></div>
           <div class="form-grid">

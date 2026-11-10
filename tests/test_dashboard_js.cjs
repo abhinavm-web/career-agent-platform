@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, outcomes = {
+function createHarness({olderTrackedJob = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -127,7 +127,12 @@ function createHarness({olderTrackedJob = false, outcomes = {
   let crmTask = null;
   let crmPriority = "none";
   const interviewNotes = [];
+  const discoveryRequests = [];
   const fetch = (url, options = {}) => {
+    if (url === "/api/discover") {
+      discoveryRequests.push(JSON.parse(options.body));
+      return discovery();
+    }
     if (url === "/api/crm") return Promise.resolve(ok({
       outcomes,
       stages: {[crmStage]: 1, discovered: crmStage === "discovered" ? 2 : 1},
@@ -254,10 +259,56 @@ function createHarness({olderTrackedJob = false, outcomes = {
     console,
   };
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
-  return {get, waiting, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
+  return {get, waiting, discoveryRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("JobSpy search requires consent, blocks duplicate clicks and reports imports", async () => {
+  let finish;
+  const harness = createHarness({discovery: () => new Promise((resolve) => {finish = resolve;})});
+  await flush();
+  const submit = () => harness.get("discover-form").handlers.submit({preventDefault() {}});
+  await submit();
+  assert.equal(harness.discoveryRequests.length, 0);
+  harness.get("discover-consent").checked = true;
+  harness.get("discover-query").value = "AI Lead";
+  harness.get("discover-location").value = "United States";
+  harness.get("discover-results").value = "5";
+  const running = submit();
+  assert.equal(harness.get("discover-submit").disabled, true);
+  await submit();
+  assert.equal(harness.discoveryRequests.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.discoveryRequests[0])), {
+    query: "AI Lead", location: "United States", results: 5, acknowledged: true
+  });
+  await harness.get("nav-profile").click();
+  harness.get("career-headline").value = "Unsaved headline during search";
+  harness.get("fact-statement").value = "Unsaved fictional career fact";
+  finish(ok({found: 3, new: 2, duplicates: 1}));
+  await running;
+  assert.equal(harness.get("career-headline").value, "Unsaved headline during search");
+  assert.equal(harness.get("fact-statement").value, "Unsaved fictional career fact");
+  assert.match(harness.get("discover-status").textContent, /3 returned · 2 added · 1 duplicates/);
+  assert.equal(harness.get("discover-submit").disabled, false);
+  assert.equal(harness.get("discover-consent").checked, false);
+});
+
+test("failed discovery preserves search input and enables retry", async () => {
+  const harness = createHarness({discovery: () => Promise.resolve({
+    ok: false, status: 503, json: async () => ({detail: "Install the jobspy extra"})
+  })});
+  await flush();
+  harness.get("discover-consent").checked = true;
+  harness.get("discover-query").value = "AI Lead";
+  harness.get("discover-location").value = "USA";
+  harness.get("discover-results").value = "5";
+  await harness.get("discover-form").handlers.submit({preventDefault() {}});
+  assert.match(harness.get("discover-status").textContent, /Install the jobspy extra/);
+  assert.equal(harness.get("discover-submit").disabled, false);
+  assert.equal(harness.get("discover-query").value, "AI Lead");
+  assert.equal(harness.get("discover-form").attributes["aria-busy"], "false");
+});
 
 test("outcome metrics explain empty and recorded submission denominators", async () => {
   const empty = createHarness();

@@ -6,6 +6,7 @@ import json
 import re
 import tempfile
 import unittest
+from unittest.mock import patch
 from dataclasses import asdict
 from pathlib import Path
 
@@ -99,6 +100,55 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(snippet, response.text)
             self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_discovery_imports_deduplicated_jobs_without_sending_candidate_data(self):
+        new_job = fake_job("https://example.invalid/jobs/new")
+        with patch("career_agent.dashboard.discover_jobspy", return_value=[self.job, new_job]) as discover:
+            response = self.call("POST", "/api/discover", {
+                "query": " AI Lead ", "location": " United States ", "results": 5, "acknowledged": True,
+            })
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"found": 2, "new": 1, "duplicates": 1})
+        discover.assert_called_once_with("AI Lead", "United States", 5)
+        with Store(self.db) as store:
+            self.assertEqual(len(store.list_jobs()), 2)
+            self.assertEqual(store.stage_of(new_job.id), "discovered")
+
+    def test_discovery_requires_valid_input_consent_and_session(self):
+        valid = {"query": "AI Lead", "location": "United States", "results": 5, "acknowledged": True}
+        with patch("career_agent.dashboard.discover_jobspy") as discover:
+            self.assertEqual(self.call("POST", "/api/discover", valid, token="bad").status_code, 403)
+            self.assertEqual(self.call("POST", "/api/discover", valid, headers={"Origin": "https://example.invalid"}).status_code, 403)
+            for change in ({"acknowledged": False}, {"acknowledged": "true"}, {"query": " "},
+                           {"query": "x" * 201}, {"location": None}, {"results": True},
+                           {"results": 0}, {"results": 101}, {"results": 1.5}):
+                with self.subTest(change=change):
+                    self.assertEqual(self.call("POST", "/api/discover", {**valid, **change}).status_code, 422)
+            self.assertEqual(self.call("POST", "/api/discover", []).status_code, 422)
+            discover.assert_not_called()
+
+    def test_discovery_failure_is_sanitized_and_can_be_retried(self):
+        from career_agent.discovery import DiscoveryUnavailable
+        payload = {"query": "AI Lead", "location": "USA", "acknowledged": True}
+        for error, status in ((DiscoveryUnavailable("missing dependency"), 503),
+                              (RuntimeError("private upstream details"), 502)):
+            with patch("career_agent.dashboard.discover_jobspy", side_effect=error):
+                response = self.call("POST", "/api/discover", payload)
+            self.assertEqual(response.status_code, status)
+            self.assertNotIn("private upstream details", response.text)
+        with patch("career_agent.dashboard.discover_jobspy", return_value=[]):
+            self.assertEqual(self.call("POST", "/api/discover", payload).json()["new"], 0)
+        with Store(self.db) as store:
+            self.assertEqual(len(store.list_jobs()), 1)
+
+    def test_discovery_rejects_overlapping_searches_but_keeps_reads_available(self):
+        payload = {"query": "AI Lead", "location": "USA", "acknowledged": True}
+        def provider(*args):
+            self.assertEqual(self.call("GET", "/api/jobs").status_code, 200)
+            self.assertEqual(self.call("POST", "/api/discover", payload).status_code, 409)
+            return []
+        with patch("career_agent.dashboard.discover_jobspy", side_effect=provider):
+            self.assertEqual(self.call("POST", "/api/discover", payload).status_code, 200)
 
     def test_no_token_cannot_read_jobs_or_write(self):
         denied = self.client.get("/api/jobs")

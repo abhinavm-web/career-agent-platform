@@ -4,6 +4,7 @@
 
 - [x] Local CSV ingestion, URL normalization and deduplication
 - [x] Optional JobSpy discovery
+- [x] Explicit dashboard JobSpy search, import counts and duplicate handling
 - [x] Explainable matching and skills-gap report
 - [x] Conservative sponsorship evidence assessment
 - [x] Manual review and attested submission tracking

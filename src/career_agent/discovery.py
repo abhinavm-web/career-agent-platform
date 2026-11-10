@@ -7,6 +7,10 @@ from pathlib import Path
 from .models import Job
 
 
+class DiscoveryUnavailable(RuntimeError):
+    """The optional discovery dependency is not installed."""
+
+
 def read_csv_jobs(path: str | Path) -> list[Job]:
     with Path(path).open(encoding="utf-8-sig", newline="") as file:
         return [Job.from_mapping(row) for row in csv.DictReader(file)]
@@ -19,7 +23,7 @@ def discover_jobspy(query: str, location: str, results: int = 20) -> list[Job]:
     try:
         from jobspy import scrape_jobs
     except ImportError as error:
-        raise RuntimeError('Install JobSpy: pip install -e ".[jobspy]"') from error
+        raise DiscoveryUnavailable('Install JobSpy: pip install -e ".[jobspy]"') from error
     frame = scrape_jobs(
         site_name=["indeed", "linkedin", "zip_recruiter"],
         search_term=query,
