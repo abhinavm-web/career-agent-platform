@@ -57,7 +57,13 @@ def _decode(state: CareerState):
         allow_remote=remote,
     )
     bank = FactBank.parse(state["fact_bank"])
-    records = tuple(FilingEvidence(**item) for item in state.get("filing_records", []))
+    raw_records = state.get("filing_records", [])
+    if not isinstance(raw_records, list):
+        raise ValueError("Workflow filing_records must be a list of evidence objects")
+    records = tuple(
+        FilingEvidence.from_state(item, index)
+        for index, item in enumerate(raw_records)
+    )
     return job, preferences, bank, records
 
 
