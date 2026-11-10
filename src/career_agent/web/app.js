@@ -601,6 +601,26 @@
       due.append(row);
     }
     root.append(due);
+    const outcomePanel = byId("crm-outcomes");
+    outcomePanel.replaceChildren();
+    outcomePanel.append(node("h3", "", "Recorded application outcomes"));
+    const outcomes = summary.outcomes;
+    if (!outcomes) return;
+    const milestones = node("div", "crm-stage-counts");
+    for (const [key, label] of [["submitted", "Attested submissions"], ["interviewed", "Interview recorded"],
+      ["offered", "Offer recorded"], ["accepted", "Accepted offer"]]) {
+      const metric = node("div", "crm-count");
+      metric.append(node("strong", "", outcomes[key]), node("small", "", label));
+      milestones.append(metric);
+    }
+    outcomePanel.append(milestones);
+    if (outcomes.submitted) {
+      outcomePanel.append(node("p", "muted", "Interview rate: " + outcomes.interview_rate + "% · Offer rate: " +
+        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " attested submissions."));
+    } else {
+      outcomePanel.append(node("p", "muted", "Rates appear after a manual submission is attested. Drafts and approvals are excluded."));
+    }
+    outcomePanel.append(node("p", "muted", "All-time candidate-recorded milestones, counted once per opportunity. Later outcomes retain earlier milestones; skipped stages are not inferred. These records are not independently verified or predictions."));
   }
 
   function renderCRMJobs() {

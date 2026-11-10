@@ -204,6 +204,36 @@ class CRMStoreTests(unittest.TestCase):
         self.assertEqual(self.crm.details(self.job.id)["priority_events"], [])
         self.assertEqual(self.crm.interview_notes(self.job.id), [])
 
+    def test_outcomes_exclude_unsubmitted_and_do_not_infer_skipped_milestones(self):
+        self.store.stage(self.job.id)
+        self.store.record_review(self.job.id, "a" * 64, approved=True)
+        self.crm.add_interview_note(self.job.id, "2026-11-10", "Preparation", "Fictional practice")
+        self.assertEqual(self.crm.outcomes(), {
+            "submitted": 0, "interviewed": 0, "offered": 0, "accepted": 0,
+            "interview_rate": None, "offer_rate": None,
+        })
+        self.store.confirm(self.job.id, "fictional-receipt", attested=True)
+        self.crm.change_stage(self.job.id, "offer")
+        self.crm.change_stage(self.job.id, "accepted")
+        self.assertEqual(self.crm.outcomes(), {
+            "submitted": 1, "interviewed": 0, "offered": 1, "accepted": 1,
+            "interview_rate": 0.0, "offer_rate": 100.0,
+        })
+
+    def test_outcomes_count_each_application_once_and_retain_past_interviews(self):
+        for job in (self.job, self.second):
+            self.store.stage(job.id)
+            self.store.confirm(job.id, "fictional-receipt", attested=True)
+        for stage in ("interview", "assessment", "interview", "rejected"):
+            self.crm.change_stage(self.job.id, stage)
+        self.assertEqual(self.crm.outcomes(), {
+            "submitted": 2, "interviewed": 1, "offered": 0, "accepted": 0,
+            "interview_rate": 50.0, "offer_rate": 0.0,
+        })
+        self.assertEqual(self.crm.summary()["outcomes"], self.crm.outcomes())
+        with Store(self.db) as reopened:
+            self.assertEqual(ApplicationCRM(reopened).outcomes(), self.crm.outcomes())
+
 
 @unittest.skipUnless(TestClient is not None, 'Install web test extras: pip install -e ".[web,dev]"')
 class CRMApiTests(unittest.TestCase):
@@ -359,6 +389,8 @@ class CRMApiTests(unittest.TestCase):
         self.assertFalse(details["application_submitted"])
         summary = self.api("GET", "/api/crm").json()
         self.assertEqual(next(j for j in summary["job_stages"] if j["job_id"] == self.job.id)["priority"], "high")
+        self.assertEqual(summary["outcomes"]["submitted"], 0)
+        self.assertIsNone(summary["outcomes"]["interview_rate"])
 
 
 if __name__ == "__main__":

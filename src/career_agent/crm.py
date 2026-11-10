@@ -349,6 +349,25 @@ class ApplicationCRM:
             "interview_notes": self.interview_notes(job_id),
         }
 
+    def outcomes(self) -> dict:
+        """Count distinct attested applications with explicitly recorded milestones."""
+        rows = self.conn.execute(
+            "SELECT a.job_id,e.stage FROM applications a "
+            "LEFT JOIN crm_stage_events e ON e.job_id=a.job_id "
+            "WHERE a.stage='submitted'"
+        ).fetchall()
+        submitted = {row["job_id"] for row in rows}
+        interviews = {row["job_id"] for row in rows if row["stage"] == "interview"}
+        offers = {row["job_id"] for row in rows if row["stage"] == "offer"}
+        accepted = {row["job_id"] for row in rows if row["stage"] == "accepted"}
+        total = len(submitted)
+        return {
+            "submitted": total, "interviewed": len(interviews),
+            "offered": len(offers), "accepted": len(accepted),
+            "interview_rate": round(100 * len(interviews) / total, 1) if total else None,
+            "offer_rate": round(100 * len(offers) / total, 1) if total else None,
+        }
+
     def summary(self) -> dict:
         jobs = self.store.list_jobs(limit=-1)
         counts: dict[str, int] = {}
@@ -373,4 +392,5 @@ class ApplicationCRM:
         return {
             "stages": counts, "job_stages": job_stages,
             "open_followups": upcoming, "today": today,
+            "outcomes": self.outcomes(),
         }

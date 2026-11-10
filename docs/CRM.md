@@ -41,6 +41,14 @@ Create a task title, due date (YYYY-MM-DD), and optionally link a contact associ
 
 Follow-up dates are **not automation schedules**. No email, reminder notification or calendar entry is created. Overdue detection uses the computer's local date.
 
+## Recorded application outcomes
+
+The tracker shows all-time counts of attested submissions, opportunities with an explicitly recorded interview, recorded offers, and accepted offers. Each opportunity counts once per milestone, including when multiple interview rounds are recorded. Later rejection or withdrawal does not erase an earlier interview or offer.
+
+Interview and offer rates divide their milestone counts by all attested submissions, rounded to one decimal place. With no submissions, rates are unavailable. Drafts, approvals, and interview notes never count as submissions or interview milestones. Skipped pipeline stages are not inferred: moving straight to an offer does not create a recorded interview.
+
+These are candidate-entered records, not independent employer verification, hiring predictions or causal measures. Search and list filters do not change the all-time metrics.
+
 ## Privacy and reliability
 
 This CRM stores names, emails, notes, statuses and tasks in the existing local SQLite database. **It is not encrypted and is not a cloud backup.** Do not run the loopback server on a shared or untrusted machine, expose it through a reverse proxy, or commit the database to Git.

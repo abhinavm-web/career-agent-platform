@@ -103,7 +103,9 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false} = {}) {
+function createHarness({olderTrackedJob = false, outcomes = {
+  submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
+}} = {}) {
   const elements = new Map();
   const get = (id) => {
     if (!elements.has(id)) elements.set(id, new Element(id));
@@ -127,6 +129,7 @@ function createHarness({olderTrackedJob = false} = {}) {
   const interviewNotes = [];
   const fetch = (url, options = {}) => {
     if (url === "/api/crm") return Promise.resolve(ok({
+      outcomes,
       stages: {[crmStage]: 1, discovered: crmStage === "discovered" ? 2 : 1},
       job_stages: [
         {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority},
@@ -255,6 +258,24 @@ function createHarness({olderTrackedJob = false} = {}) {
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("outcome metrics explain empty and recorded submission denominators", async () => {
+  const empty = createHarness();
+  await flush();
+  await empty.get("nav-tracker").click();
+  assert.match(empty.get("crm-outcomes").textContent, /Drafts and approvals are excluded/);
+  assert.doesNotMatch(empty.get("crm-outcomes").textContent, /null%|NaN|Infinity/);
+  const recorded = createHarness({outcomes: {
+    submitted: 4, interviewed: 2, offered: 1, accepted: 0, interview_rate: 50, offer_rate: 25
+  }});
+  await flush();
+  await recorded.get("nav-tracker").click();
+  const content = recorded.get("crm-outcomes").textContent;
+  assert.match(content, /Interview rate: 50%/);
+  assert.match(content, /Offer rate: 25%/);
+  assert.match(content, /Denominator: 4 attested submissions/);
+  assert.match(content, /skipped stages are not inferred/);
+});
 
 test("tracker combines filters and saves priority and plain-text interview notes", async () => {
   const harness = createHarness();
