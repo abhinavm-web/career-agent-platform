@@ -25,6 +25,7 @@ from .models import CandidateProfile, Job
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store
+from .workspace import CandidateWorkspace, StaleRevision
 
 JOB_ID = re.compile(r"[a-f0-9]{16}\Z")
 API_BODY_LIMIT = 128 * 1024
@@ -111,12 +112,25 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise ValueError("Saved packet job ID does not match the requested job")
         return packet
 
+    def active_workspace() -> dict[str, Any]:
+        with Store(config.db_path) as store:
+            return CandidateWorkspace(store).latest()
+
     def configured_profile() -> CandidateProfile | None:
+        workspace = active_workspace()
+        if workspace["revision"] > 0:
+            return CandidateWorkspace.scoring_profile(workspace)
         return CandidateProfile.load(config.profile_path) if config.profile_path else None
 
     def configured_facts() -> FactBank:
+        workspace = active_workspace()
+        if workspace["revision"] > 0:
+            return CandidateWorkspace.fact_bank(workspace)
         if config.facts_path is None:
-            raise HTTPException(status_code=412, detail="Start the dashboard with --facts to draft applications")
+            raise HTTPException(
+                status_code=412,
+                detail="Verify career facts in the profile workspace before drafting applications",
+            )
         return FactBank.load(config.facts_path)
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None, records: tuple) -> dict:
@@ -157,13 +171,76 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get("/api/settings")
     def settings():
+        workspace = active_workspace()
+        is_saved = workspace["revision"] > 0
         return {
-            "profile_configured": config.profile_path is not None,
-            "facts_configured": config.facts_path is not None,
+            "profile_configured": bool(workspace["profile"]["name"]) if is_saved else config.profile_path is not None,
+            "facts_configured": (
+                any(fact["verified_by_candidate"] for fact in workspace["facts"])
+                if is_saved else config.facts_path is not None
+            ),
+            "workspace_initialized": is_saved,
+            "legacy_import_available": bool(config.profile_path and config.facts_path and not is_saved),
             "filings_configured": config.filings_path is not None,
             "runtime": "local_single_user",
             "application_submission_enabled": False,
         }
+
+    @app.get("/api/workspace")
+    def get_workspace():
+        return {"workspace": active_workspace()}
+
+    @app.get("/api/workspace/history")
+    def workspace_history():
+        with Store(config.db_path) as store:
+            return {"revisions": CandidateWorkspace(store).history()}
+
+    @app.put("/api/workspace")
+    async def save_workspace(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Workspace must be a JSON object")
+        with Store(config.db_path) as store:
+            try:
+                saved = CandidateWorkspace(store).save(
+                    data.get("expected_revision"), data.get("profile"), data.get("facts")
+                )
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"workspace": saved}
+
+    @app.post("/api/workspace/facts/{fact_id}/verification")
+    async def verify_workspace_fact(fact_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Verification decision must be an object")
+        with Store(config.db_path) as store:
+            try:
+                updated = CandidateWorkspace(store).verify(
+                    data.get("expected_revision"),
+                    fact_id,
+                    data.get("verified"),
+                    data.get("acknowledged"),
+                )
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"workspace": updated}
+
+    @app.post("/api/workspace/import")
+    async def import_legacy_workspace(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise HTTPException(status_code=422, detail="Explicit legacy import acknowledgement is required")
+        if config.profile_path is None or config.facts_path is None:
+            raise HTTPException(status_code=412, detail="Configure --profile and --facts before importing")
+        profile = CandidateProfile.load(config.profile_path)
+        facts = FactBank.load(config.facts_path)
+        with Store(config.db_path) as store:
+            try:
+                imported = CandidateWorkspace(store).import_legacy(profile, facts)
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail="Workspace already exists; import would overwrite it") from error
+        return {"workspace": imported}
 
     @app.get("/api/jobs")
     def list_jobs():
