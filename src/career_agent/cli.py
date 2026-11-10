@@ -164,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
                 ), indent=2))
             elif args.command in {"draft", "workflow"}:
                 job = store.get_job(args.job_id)
+                if store.stage_of(job.id) == "submitted":
+                    raise ValueError("Cannot regenerate a reviewed packet after submission is recorded")
                 preferences = CandidateProfile.load(args.profile)
                 bank = FactBank.load(args.facts)
                 records = load_filing_evidence(args.filings)
