@@ -9,6 +9,8 @@ from __future__ import annotations
 import hmac
 import html
 import json
+import io
+import csv
 import re
 import secrets
 from threading import Lock
@@ -27,6 +29,7 @@ from .candidate import FactBank
 from .crm import ApplicationCRM
 from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
+from .h1b import H1BResearch
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
@@ -74,6 +77,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     )
     token = secrets.token_urlsafe(32)
     discovery_lock = Lock()
+    h1b_import_lock = Lock()
 
     @app.middleware("http")
     async def protect(request: Request, call_next):
@@ -90,6 +94,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     return JSONResponse({"detail": "Use application/json"}, status_code=415)
                 body = await request.body()
                 limit = (
+                    10 * 1024 * 1024 if request.url.path == "/api/h1b/import" else
                     WORKSPACE_BODY_LIMIT
                     if request.url.path == "/api/workspace" and request.method == "PUT"
                     else API_BODY_LIMIT
@@ -191,6 +196,51 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get("/assets/app.css")
     def stylesheet():
         return Response(assets("app.css"), media_type="text/css")
+
+    @app.get("/assets/h1b.js")
+    def h1b_script():
+        return Response(assets("h1b.js"), media_type="text/javascript")
+
+    @app.get("/api/h1b")
+    def h1b_settings():
+        with Store(config.db_path) as store:
+            research = H1BResearch(store)
+            return {"settings": research.settings(), "coverage": research.coverage()}
+
+    @app.put("/api/h1b")
+    async def h1b_configure(request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return H1BResearch(store).configure(data)
+
+    @app.post("/api/h1b/import")
+    async def h1b_import(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True or not isinstance(data.get("csv"), str):
+            raise ValueError("Choose a public DOL CSV and confirm its provenance")
+        if not h1b_import_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="An H-1B import is already running; wait before retrying")
+        def import_records():
+            try:
+                with Store(config.db_path) as store:
+                    return H1BResearch(store).import_csv(io.StringIO(data["csv"].lstrip('\ufeff')),
+                                                       data.get("source_url"), data.get("captured_on"))
+            except csv.Error as error:
+                raise ValueError("Invalid CSV structure or field size") from error
+        try:
+            return await run_in_threadpool(import_records)
+        finally:
+            h1b_import_lock.release()
+
+    @app.get("/api/h1b/search")
+    def h1b_search(q: str, offset: int = 0):
+        with Store(config.db_path) as store:
+            return H1BResearch(store).search(q, offset)
+
+    @app.get("/api/jobs/{job_id}/h1b")
+    def h1b_job(job_id: str):
+        with Store(config.db_path) as store:
+            return H1BResearch(store).job(_get_job(store, job_id))
 
     @app.get("/api/settings")
     def settings():

@@ -22,10 +22,13 @@ jobs:
       - name: Test
         env:
           CAREER_AGENT_TEST_PDF: "1"
+          CAREER_AGENT_TEST_BROWSER: "1"
         run: python -m unittest discover -s tests -v
       - name: Compile
         run: python -m compileall -q src
       - name: Check frontend JavaScript
-        run: node --check src/career_agent/web/app.js
+        run: |
+          node --check src/career_agent/web/app.js
+          node --check src/career_agent/web/h1b.js
       - name: Test async dashboard UI state
         run: node --test tests/test_dashboard_js.cjs

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 import uuid
@@ -47,6 +48,11 @@ def parser() -> argparse.ArgumentParser:
     sponsor = cmd.add_parser("sponsorship", help="Research job sponsorship and dated employer records")
     sponsor.add_argument("job_id")
     sponsor.add_argument("--filings", help="CSV with employer, fiscal_year, source_url")
+
+    h1b = cmd.add_parser("h1b-import", help="Import a public DOL LCA CSV into local H-1B research")
+    h1b.add_argument("csv")
+    h1b.add_argument("--source-url", required=True)
+    h1b.add_argument("--captured-on", required=True, help="Source capture date YYYY-MM-DD")
 
     draft = cmd.add_parser("draft", help="Prepare a local, fact-grounded application packet")
     draft.add_argument("job_id")
@@ -132,7 +138,11 @@ def main(argv: list[str] | None = None) -> int:
             jobs = discover_jobspy(args.query, args.location, args.results)
 
         with Store(args.db) as store:
-            if jobs is not None:
+            if args.command == "h1b-import":
+                from .h1b import H1BResearch
+                with Path(args.csv).open(encoding="utf-8-sig", newline="") as stream:
+                    print(json.dumps(H1BResearch(store).import_csv(stream, args.source_url, args.captured_on)))
+            elif jobs is not None:
                 added = store.add_jobs(jobs)
                 print(json.dumps({
                     "imported": len(jobs),
@@ -235,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                     for job in store.list_jobs(limit=max(0, args.limit))
                 ], indent=2))
         return 0
-    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, EOFError) as error:
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, EOFError, csv.Error) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 

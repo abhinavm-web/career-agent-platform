@@ -88,6 +88,31 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_h1b_settings_import_search_and_job_assessment(self):
+        from test_h1b import lca_csv
+        from career_agent.h1b import DOL_URL
+
+        self.assertEqual(self.client.get('/api/h1b').status_code, 403)
+        settings = {'need': 'new', 'min_year': 2024, 'include_unknown': True}
+        self.assertEqual(self.call('PUT', '/api/h1b', settings).json(), settings)
+        self.assertEqual(self.call('GET', '/api/h1b').json()['settings'], settings)
+        data = {'csv': lca_csv([{'EMPLOYER_NAME': self.job.company}]), 'source_url': DOL_URL,
+                'captured_on': '2025-06-01', 'acknowledged': True}
+        self.assertEqual(self.call('POST', '/api/h1b/import', {**data, 'acknowledged': False}).status_code, 422)
+        self.assertEqual(self.call('POST', '/api/h1b/import', data, headers={'Origin': 'https://example.invalid'}).status_code, 403)
+        self.assertEqual(self.call('POST', '/api/h1b/import', data).json()['added'], 1)
+        response = self.call('GET', '/api/h1b/search?q=Example')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['cache-control'], 'no-store')
+        self.assertEqual(response.json()['companies'][0]['recent_certified_cases'], 1)
+        self.assertEqual(response.json()['jobs'][0]['policy'], 'possible')
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['need'], 'new')
+        self.assertEqual(self.call('GET', '/api/h1b/search?q=x').status_code, 422)
+        self.assertEqual(self.call('GET', '/api/h1b/search?q=Example&offset=-1').status_code, 422)
+        self.assertEqual(self.call('GET', '/api/jobs/' + 'f' * 16 + '/h1b').status_code, 404)
+        self.assertEqual(self.call('POST', '/api/h1b/import', {**data, 'csv': data['csv'] + '\n"unterminated'}).status_code, 422)
+        self.assertEqual(self.call('GET', '/api/h1b').json()['coverage']['records'], 1)
+
     def test_tracker_export_is_private_download_and_excludes_career_files(self):
         from career_agent.crm import ApplicationCRM
 
