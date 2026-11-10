@@ -8,7 +8,8 @@
   const token = root.dataset.session;
   const state = {
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
-    packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs"
+    packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs",
+    workspace: null, editingFactId: null
   };
 
   const byId = (id) => document.getElementById(id);
@@ -80,18 +81,14 @@
 
   function showScreen(screen) {
     state.screen = screen;
-    byId("jobs-screen").hidden = screen !== "jobs";
-    byId("activity-screen").hidden = screen !== "activity";
-    byId("nav-jobs").classList.toggle("active", screen === "jobs");
-    byId("nav-activity").classList.toggle("active", screen === "activity");
-    if (screen === "jobs") {
-      byId("nav-jobs").setAttribute("aria-current", "page");
-      byId("nav-activity").removeAttribute("aria-current");
-    } else {
-      byId("nav-activity").setAttribute("aria-current", "page");
-      byId("nav-jobs").removeAttribute("aria-current");
+    const screens = {jobs: "Opportunity board", activity: "Review history", profile: "Career profile"};
+    for (const name of Object.keys(screens)) {
+      byId(name + "-screen").hidden = screen !== name;
+      byId("nav-" + name).classList.toggle("active", screen === name);
+      if (screen === name) byId("nav-" + name).setAttribute("aria-current", "page");
+      else byId("nav-" + name).removeAttribute("aria-current");
     }
-    byId("section-name").textContent = screen === "jobs" ? "Opportunity board" : "Review history";
+    byId("section-name").textContent = screens[screen];
   }
 
   function renderMetrics() {
@@ -378,6 +375,144 @@
     }
   }
 
+  function linesFromText(value) {
+    return value.split("\n").map((line) => line.trim()).filter(Boolean);
+  }
+
+  function readCareerPreferences() {
+    return {
+      name: byId("career-name").value.trim(),
+      headline: byId("career-headline").value.trim(),
+      target_titles: linesFromText(byId("career-targets").value),
+      skills: linesFromText(byId("career-skills").value),
+      preferred_locations: linesFromText(byId("career-locations").value),
+      allow_remote: byId("career-remote").checked
+    };
+  }
+
+  function resetFactEditor() {
+    state.editingFactId = null;
+    byId("fact-form-heading").textContent = "Add career fact";
+    byId("fact-category").value = "experience";
+    byId("fact-statement").value = "";
+    byId("fact-keywords").value = "";
+    byId("fact-source").value = "";
+  }
+
+  function editFact(fact) {
+    state.editingFactId = fact.id;
+    byId("fact-form-heading").textContent = "Edit fact " + fact.id;
+    byId("fact-category").value = fact.section;
+    byId("fact-statement").value = fact.statement;
+    byId("fact-keywords").value = fact.keywords.join("\n");
+    byId("fact-source").value = fact.source_note;
+    byId("career-fact-form").scrollIntoView?.({behavior: "smooth", block: "center"});
+  }
+
+  async function loadWorkspace() {
+    try {
+      const [data, history] = await Promise.all([
+        api("/api/workspace"), api("/api/workspace/history")
+      ]);
+      if (state.screen !== "profile") return;
+      state.workspace = data.workspace;
+      renderWorkspace(history.revisions);
+    } catch (error) {
+      notice("Unable to load private career workspace: " + error.message, true);
+    }
+  }
+
+  function renderWorkspace(revisions) {
+    const workspace = state.workspace;
+    if (!workspace) return;
+    const profile = workspace.profile;
+    byId("profile-revision").textContent = "Revision " + workspace.revision;
+    byId("career-name").value = profile.name;
+    byId("career-headline").value = profile.headline;
+    byId("career-targets").value = profile.target_titles.join("\n");
+    byId("career-skills").value = profile.skills.join("\n");
+    byId("career-locations").value = profile.preferred_locations.join("\n");
+    byId("career-remote").checked = profile.allow_remote;
+    byId("legacy-import").hidden = workspace.revision !== 0 || !state.settings.legacy_import_available;
+    const list = byId("career-facts-list");
+    list.replaceChildren();
+    if (!workspace.facts.length) {
+      list.append(node("p", "muted", "No career facts yet. Save a statement and explicitly verify it before drafting."));
+    }
+    for (const fact of workspace.facts) {
+      const card = node("article", "career-fact");
+      const heading = node("div", "career-fact-heading");
+      heading.append(
+        node("strong", "", fact.section + " · " + fact.id),
+        chip(fact.verified_by_candidate ? "Candidate verified" : "Not verified", fact.verified_by_candidate ? "teal" : "amber")
+      );
+      card.append(heading, node("p", "", fact.statement));
+      card.append(node("small", "muted", "Private evidence: " + fact.source_note));
+      const actions = node("div", "button-row");
+      actions.append(button("Edit", "button", () => editFact(fact)));
+      actions.append(button(fact.verified_by_candidate ? "Revoke verification" : "Verify this fact", fact.verified_by_candidate ? "button" : "button button-primary", () => toggleFactVerification(fact)));
+      actions.append(button("Delete", "button button-danger", () => deleteFact(fact.id)));
+      card.append(actions);
+      list.append(card);
+    }
+    const history = byId("career-revision-list");
+    history.replaceChildren();
+    if (!revisions.length) history.append(node("p", "muted", "Your first saved change will appear here."));
+    for (const revision of revisions) {
+      const row = node("div", "career-history-row");
+      row.append(node("strong", "", "Revision " + revision.revision + " · " + revision.change_type), node("small", "muted", revision.created_at));
+      history.append(row);
+    }
+  }
+
+  async function saveCareerWorkspace(profile, facts, actionLabel) {
+    if (!state.workspace) return notice("Open the career profile first.", true);
+    try {
+      const response = await api("/api/workspace", "PUT", {
+        expected_revision: state.workspace.revision, profile, facts
+      });
+      state.workspace = response.workspace;
+      resetFactEditor();
+      notice(actionLabel + " saved locally. Any added or changed career fact must be verified separately.");
+      await refresh();
+    } catch (error) {
+      notice(error.status === 409 ? "Another edit was saved. Reload the profile before editing." : error.message, true);
+    }
+  }
+
+  async function toggleFactVerification(fact) {
+    if (!state.workspace) return;
+    if (!fact.verified_by_candidate && !window.confirm(
+      "Confirm this career statement is accurate and supported by your private evidence?"
+    )) return;
+    try {
+      const result = await api("/api/workspace/facts/" + encodeURIComponent(fact.id) + "/verification", "POST", {
+        expected_revision: state.workspace.revision,
+        verified: !fact.verified_by_candidate,
+        acknowledged: true
+      });
+      state.workspace = result.workspace;
+      notice(fact.verified_by_candidate ? "Fact verification revoked." : "Fact verified. It can now appear in drafts.");
+      await refresh();
+    } catch (error) {notice(error.message, true);}
+  }
+
+  async function deleteFact(factId) {
+    if (!state.workspace || !window.confirm("Delete this fact from the current career profile? Its historical revisions remain stored locally.")) return;
+    await saveCareerWorkspace(state.workspace.profile, state.workspace.facts.filter((fact) => fact.id !== factId), "Fact");
+  }
+
+  async function importConfiguredProfile() {
+    if (!window.confirm("Copy your configured profile and verified facts into this private local workspace? Your original files will remain unchanged.")) return;
+    try {
+      const response = await api("/api/workspace/import", "POST", {acknowledged: true});
+      state.workspace = response.workspace;
+      resetFactEditor();
+      notice("Existing career files imported into your local workspace.");
+      await refresh();
+    } catch (error) {notice(error.message, true);}
+  }
+
   async function refresh(keepSelected) {
     try {
       const results = await Promise.all([
@@ -395,6 +530,7 @@
       const selectedId = state.selectedId;
       if (selectedId) await loadPacket(selectedId); else state.packet = null;
       if (state.selectedId === selectedId) renderDetail();
+      if (state.screen === "profile") await loadWorkspace();
     } catch (error) {
       notice("Unable to load local workspace: " + error.message, true);
     }
@@ -402,6 +538,32 @@
 
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
   byId("nav-activity").addEventListener("click", () => showScreen("activity"));
+  byId("nav-profile").addEventListener("click", async () => {showScreen("profile"); await loadWorkspace();});
+  byId("import-career-data").addEventListener("click", importConfiguredProfile);
+  byId("career-profile-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!state.workspace) return;
+    await saveCareerWorkspace(readCareerPreferences(), state.workspace.facts, "Preferences");
+  });
+  byId("career-fact-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!state.workspace) return;
+    const existing = state.workspace.facts.find((fact) => fact.id === state.editingFactId);
+    const id = existing ? existing.id : "fact-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+    const updated = {
+      id,
+      section: byId("fact-category").value,
+      statement: byId("fact-statement").value.trim(),
+      keywords: linesFromText(byId("fact-keywords").value),
+      source_note: byId("fact-source").value.trim(),
+      verified_by_candidate: existing ? existing.verified_by_candidate : false
+    };
+    const facts = existing
+      ? state.workspace.facts.map((fact) => fact.id === id ? updated : fact)
+      : [...state.workspace.facts, updated];
+    await saveCareerWorkspace(state.workspace.profile, facts, "Career fact");
+  });
+  byId("fact-reset").addEventListener("click", resetFactEditor);
   byId("refresh").addEventListener("click", () => refresh());
   byId("search").addEventListener("input", (event) => {state.search = event.target.value; renderJobs();});
   byId("filter").addEventListener("change", (event) => {state.filter = event.target.value; renderJobs();});
