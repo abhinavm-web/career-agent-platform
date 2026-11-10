@@ -1,0 +1,23 @@
+/* Adapted from career-ops/templates/resume-template.html, commit
+   605a1e61ee2b0d269b371ebe4351180993ebbfee.
+   Copyright (c) 2026 Santiago Fernández de Valderrama. MIT license:
+   ../third_party/CareerOps-LICENSE.txt
+   Adaptations: system fonts, Letter paper, plain verified-fact sections,
+   no photos/contact placeholders or external assets, larger text and safe wrapping. */
+:root { --secondary-color: hsl(270, 70%, 45%); }
+* {
+  margin: 0; padding: 0; box-sizing: border-box;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "clig" 0, "dlig" 0;
+}
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@page { size: Letter; margin: 0.6in; }
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #1a1a2e; background: #fff; }
+.page { width: 100%; margin: 0 auto; padding: 2px 0; overflow-wrap: anywhere; }
+.header { margin-bottom: 20px; break-inside: avoid; }
+.header h1 { font-size: 28px; font-weight: 700; color: #1a1a2e; letter-spacing: -0.02em; margin-bottom: 6px; line-height: 1.1; }
+.header-gradient { height: 2px; background: linear-gradient(to right, hsl(187, 74%, 32%), var(--secondary-color)); border-radius: 1px; margin-bottom: 10px; }
+.section-title { font-size: 12pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: hsl(187, 74%, 32%); border-bottom: 1.5px solid #e2e2e2; padding-bottom: 4px; margin: 18px 0 10px; line-height: 1.2; break-after: avoid; }
+.summary-text { line-height: 1.7; color: #2f2f2f; margin-bottom: 6px; orphans: 3; widows: 3; }
+.job { padding-left: 18px; margin-top: 6px; }
+.job li { line-height: 1.6; color: #333; margin-bottom: 4px; orphans: 3; widows: 3; }

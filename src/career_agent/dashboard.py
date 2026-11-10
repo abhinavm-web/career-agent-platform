@@ -26,6 +26,7 @@ from .candidate import FactBank
 from .crm import ApplicationCRM
 from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
+from .resume_pdf import PDFUnavailable, resume_pdf
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store
@@ -396,6 +397,26 @@ def create_app(config: DashboardConfig) -> FastAPI:
         with Store(config.db_path) as store:
             result = store.record_review(job_id, fingerprint, approved=data["approved"])
         return {**result, "submission_sent": False}
+
+    @app.get("/api/jobs/{job_id}/resume.pdf")
+    def export_resume(job_id: str, packet_sha256: str = ""):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            packet = current_packet(job_id)
+            if packet is None:
+                raise HTTPException(status_code=404, detail="Draft and review a packet before exporting")
+            if not re.fullmatch(r"[a-f0-9]{64}", packet_sha256) or not hmac.compare_digest(packet_sha256, packet["packet_sha256"]) or packet_stale(packet):
+                raise HTTPException(status_code=409, detail="Packet changed; reload, regenerate and review before export")
+            decision = store.latest_review(job_id, packet_sha256)
+            if not decision or decision["decision"] != "approved_for_manual_submission":
+                raise HTTPException(status_code=412, detail="Approve this packet before downloading its resume")
+        try:
+            content = resume_pdf(packet)
+        except PDFUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        return Response(content, media_type="application/pdf", headers={
+            "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.pdf"',
+        })
 
     @app.post("/api/jobs/{job_id}/submitted")
     async def mark_submitted(job_id: str, request: Request):

@@ -78,7 +78,7 @@ Optional source-backed sponsorship history:
 
     career-agent sponsorship JOB_ID --filings my-private-filings.csv
 
-Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This pipeline uses deterministic keyword heuristics, not an external LLM. It does not generate PDF or DOCX resumes, download DOL workbooks, operate ATS sites, or submit applications.
+Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This pipeline uses deterministic keyword heuristics, not an external LLM. The dashboard supports [reviewed résumé PDF export](docs/RESUME_PDF.md) with optional dependencies. DOCX exports, DOL workbook downloads, ATS form operations and application submission are not implemented.
 
 Original source code license is not yet selected; public visibility does not grant reuse rights. Upstream projects retain their MIT licenses. Not employment or immigration legal advice.
 

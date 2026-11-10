@@ -270,6 +270,36 @@
     const tools = node("div", "button-row");
     tools.append(button("Copy resume text", "button", () => copyText(packet.resume_markdown)));
     tools.append(button("Copy cover note", "button", () => copyText(packet.cover_note)));
+    if (!stale && review?.decision === "approved_for_manual_submission") {
+      const download = button("Download reviewed resume PDF", "button button-primary", async () => {
+        download.disabled = true;
+        try {
+          const response = await fetch("/api/jobs/" + job.id + "/resume.pdf?packet_sha256=" + packet.packet_sha256, {
+            headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || "PDF export failed");
+          }
+          const url = URL.createObjectURL(await response.blob());
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "resume-" + job.id + "-" + packet.packet_sha256.slice(0, 12) + ".pdf";
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          notice("Reviewed resume downloaded. Inspect the PDF before using it; no application was sent.");
+        } catch (error) {
+          notice(error.message, true);
+        } finally {
+          download.disabled = false;
+        }
+      });
+      tools.append(download);
+    } else {
+      tools.append(node("span", "muted", "Approve the current packet to download a resume PDF."));
+    }
     card.append(tools);
 
     const questions = node("details");

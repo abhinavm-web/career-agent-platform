@@ -150,6 +150,49 @@ class DashboardTests(unittest.TestCase):
         with patch("career_agent.dashboard.discover_jobspy", side_effect=provider):
             self.assertEqual(self.call("POST", "/api/discover", payload).status_code, 200)
 
+    def test_pdf_export_requires_exact_current_approved_packet(self):
+        self.assertEqual(self.call("GET", f"/api/jobs/{self.job.id}/resume.pdf").status_code, 404)
+        self.assertEqual(self.call("POST", f"/api/jobs/{self.job.id}/draft", {}).status_code, 200)
+        packet = self.call("GET", f"/api/jobs/{self.job.id}/packet").json()["packet"]
+        fingerprint = packet["packet_sha256"]
+        path = f"/api/jobs/{self.job.id}/resume.pdf?packet_sha256={fingerprint}"
+        with patch("career_agent.dashboard.resume_pdf", return_value=b"%PDF-test") as renderer:
+            self.assertEqual(self.call("GET", path, token="bad").status_code, 403)
+            self.assertEqual(self.call("GET", path).status_code, 412)
+            self.call("POST", f"/api/jobs/{self.job.id}/decision", {
+                "approved": True, "acknowledged": True, "packet_sha256": fingerprint,
+            })
+            for invalid in ("", "a" * 64, "é"):
+                self.assertEqual(self.call("GET", f"/api/jobs/{self.job.id}/resume.pdf?packet_sha256={invalid}").status_code, 409)
+            renderer.assert_not_called()
+            response = self.call("GET", path)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content, b"%PDF-test")
+            self.assertEqual(response.headers["content-type"], "application/pdf")
+            self.assertIn(fingerprint[:12], response.headers["content-disposition"])
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            renderer.assert_called_once_with(packet)
+            with patch("career_agent.dashboard.CandidateWorkspace.latest", return_value={"revision": 99}):
+                self.assertEqual(self.call("GET", path).status_code, 409)
+            self.call("POST", f"/api/jobs/{self.job.id}/decision", {
+                "approved": False, "acknowledged": True, "packet_sha256": fingerprint,
+            })
+            self.assertEqual(self.call("GET", path).status_code, 412)
+
+    def test_pdf_missing_renderer_is_reported_without_changing_approval(self):
+        from career_agent.resume_pdf import PDFUnavailable
+        self.assertEqual(self.call("POST", f"/api/jobs/{self.job.id}/draft", {}).status_code, 200)
+        packet = self.call("GET", f"/api/jobs/{self.job.id}/packet").json()["packet"]
+        fingerprint = packet["packet_sha256"]
+        self.call("POST", f"/api/jobs/{self.job.id}/decision", {
+            "approved": True, "acknowledged": True, "packet_sha256": fingerprint,
+        })
+        with patch("career_agent.dashboard.resume_pdf", side_effect=PDFUnavailable("Install Playwright Chromium")):
+            self.assertEqual(self.call("GET", f"/api/jobs/{self.job.id}/resume.pdf?packet_sha256={fingerprint}").status_code, 503)
+        with Store(self.db) as store:
+            self.assertEqual(store.latest_review(self.job.id)["decision"], "approved_for_manual_submission")
+            self.assertNotEqual(store.stage_of(self.job.id), "submitted")
+
     def test_no_token_cannot_read_jobs_or_write(self):
         denied = self.client.get("/api/jobs")
         self.assertEqual(denied.status_code, 403)

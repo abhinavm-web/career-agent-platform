@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -128,7 +128,14 @@ function createHarness({olderTrackedJob = false, discovery = () => Promise.resol
   let crmPriority = "none";
   const interviewNotes = [];
   const discoveryRequests = [];
+  const downloads = [];
   const fetch = (url, options = {}) => {
+    if (url.includes("/resume.pdf?")) {
+      assert.equal(options.headers["X-Session-Token"], "testing-only");
+      return Promise.resolve(pdfError
+        ? {ok: false, json: async () => ({detail: "Install PDF renderer"})}
+        : {ok: true, blob: async () => ({})});
+    }
     if (url === "/api/discover") {
       discoveryRequests.push(JSON.parse(options.body));
       return discovery();
@@ -242,8 +249,13 @@ function createHarness({olderTrackedJob = false, discovery = () => Promise.resol
     throw new Error("Unexpected API request: " + url);
   };
   const document = {
+    body: new Element("body"),
     getElementById: get,
-    createElement: (tag) => new Element(tag),
+    createElement: (tag) => {
+      const element = new Element(tag);
+      if (tag === "a") element.handlers.click = () => downloads.push(element.download);
+      return element;
+    },
     createTextNode: (text) => {
       const el = new Element("text");
       el.textContent = String(text);
@@ -251,7 +263,11 @@ function createHarness({olderTrackedJob = false, discovery = () => Promise.resol
     },
   };
   const context = {
-    document, fetch, URL,
+    document, fetch, URL: class extends URL {
+      static createObjectURL() { return "blob:local-pdf"; }
+      static revokeObjectURL() {}
+    },
+    setTimeout: (callback) => callback(),
     navigator: {clipboard: {writeText: async () => {}}},
     FormData: class {},
     window: {confirm: () => true},
@@ -259,10 +275,39 @@ function createHarness({olderTrackedJob = false, discovery = () => Promise.resol
     console,
   };
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
-  return {get, waiting, discoveryRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
+  return {get, waiting, downloads, discoveryRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("PDF download is limited to reviewed current packets and reports renderer errors", async () => {
+  const findButton = (element) => element.textContent === "Download reviewed resume PDF" && element.tagName === "button"
+    ? element : element.children.map(findButton).find(Boolean);
+  for (const scenario of [{approved: false}, {approved: true, stale: true}, {approved: true}, {approved: true, pdfError: true}]) {
+    const harness = createHarness({pdfError: scenario.pdfError});
+    await flush();
+    harness.get("job-list").children[0].click();
+    const packet = fakePacket(ID_A, "Fictional resume");
+    packet.stale = scenario.stale;
+    packet.review = scenario.approved ? {decision: "approved_for_manual_submission"} : null;
+    harness.waiting.get(ID_A)(ok(packet));
+    await flush();
+    const download = findButton(harness.get("detail-panel"));
+    if (!scenario.approved || scenario.stale) {
+      assert.equal(download, undefined);
+    } else {
+      assert.ok(download);
+      await download.click();
+      assert.equal(download.disabled, false);
+      if (scenario.pdfError) {
+        assert.equal(harness.downloads.length, 0);
+        assert.match(harness.get("notice").textContent, /Install PDF renderer/);
+      } else {
+        assert.equal(harness.downloads[0], "resume-" + ID_A + "-" + "a".repeat(12) + ".pdf");
+      }
+    }
+  }
+});
 
 test("JobSpy search requires consent, blocks duplicate clicks and reports imports", async () => {
   let finish;
