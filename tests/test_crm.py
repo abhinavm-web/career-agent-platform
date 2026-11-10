@@ -53,6 +53,71 @@ class CRMStoreTests(unittest.TestCase):
             self.crm.change_stage(self.job.id, "applied")
         self.assertEqual(self.store.stage_of(self.job.id), "discovered")
 
+    def test_export_preserves_full_history_links_and_current_records(self):
+        self.store.add_jobs([sample_job(str(i)) for i in range(501)])
+        contact = self.crm.add_contact(self.job.id, "Fictional Renée", notes="Private CRM note")
+        task = self.crm.add_followup(self.job.id, "Follow up", "2026-11-15", contact["contact_id"])
+        self.crm.update_followup(task["followup_id"], due_date="2026-11-16")
+        self.crm.update_followup(task["followup_id"], complete=True)
+        self.crm.add_interview_note(self.job.id, "2026-11-14", "Screen", "Fictional discussion")
+        self.crm.set_priority(self.job.id, "high")
+        for i in range(102):
+            self.crm.change_stage(self.job.id, "saved" if i % 2 == 0 else "shortlisted")
+            self.crm.add_contact(self.job.id, f"Fictional contact {i}")
+            self.crm.add_followup(self.job.id, f"Task {i}", "2026-11-20")
+            self.store.record_review(self.job.id, "a" * 64, approved=i % 2 == 0)
+        self.store.stage(self.job.id)
+        self.store.confirm(self.job.id, "Fictional receipt", attested=True)
+        self.crm.change_stage(self.job.id, "interview")
+        with self.store.connection:
+            self.store.connection.execute("CREATE TABLE private_future_data (secret TEXT)")
+            self.store.connection.execute("INSERT INTO private_future_data VALUES ('never export')")
+        before = self.store.connection.total_changes
+        exported = self.crm.export_history()
+        self.assertEqual(exported["schema_version"], 1)
+        self.assertEqual(exported["format"], "career-agent-tracker-history")
+        rows = exported["records"]
+        self.assertEqual(len(rows["jobs"]), 503)
+        for collection in ("stage_events", "contacts", "followups"):
+            self.assertEqual(len(rows[collection]), 103)
+        self.assertEqual(len(rows["reviews"]), 102)
+        self.assertEqual(rows["stage_events"][-1]["stage"], "interview")
+        self.assertEqual(rows["contacts"][0]["name"], "Fictional Renée")
+        self.assertEqual(rows["followups"][0]["contact_id"], rows["contacts"][0]["contact_id"])
+        self.assertIsNotNone(rows["followups"][0]["completed_at"])
+        self.assertEqual([r["action"] for r in rows["followup_events"][:3]],
+                         ["created", "rescheduled", "completed"])
+        self.assertEqual(rows["applications"][0]["receipt"], "Fictional receipt")
+        self.assertEqual(rows["interview_notes"][0]["notes"], "Fictional discussion")
+        self.assertEqual(rows["priority_events"][0]["priority"], "high")
+        self.assertNotIn("private_future_data", rows)
+        self.assertEqual(self.store.connection.total_changes, before)
+
+    def test_export_empty_store_has_all_collections(self):
+        with Store(Path(self.tmp.name) / "empty.sqlite3") as store:
+            rows = ApplicationCRM(store).export_history()["records"]
+        self.assertEqual(len(rows), 9)
+        self.assertTrue(all(value == [] for value in rows.values()))
+
+    def test_export_uses_one_snapshot_during_concurrent_edit(self):
+        self.store.connection.execute("PRAGMA journal_mode=WAL")
+        with Store(self.db) as other:
+            writer = ApplicationCRM(other)
+            written = []
+
+            def edit_during_export(sql):
+                if "FROM crm_contacts" in sql and not written:
+                    written.append(writer.add_contact(self.job.id, "Concurrent contact"))
+
+            self.store.connection.set_trace_callback(edit_during_export)
+            try:
+                snapshot = self.crm.export_history()
+            finally:
+                self.store.connection.set_trace_callback(None)
+        self.assertEqual(len(written), 1)
+        self.assertEqual(snapshot["records"]["contacts"], [])
+        self.assertEqual(len(self.crm.export_history()["records"]["contacts"]), 1)
+
     def test_postapplication_interview_and_offer_events(self):
         self.crm.change_stage(self.job.id, "saved")
         self.store.stage(self.job.id)

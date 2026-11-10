@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -130,6 +130,14 @@ function createHarness({olderTrackedJob = false, pdfError = false, discovery = (
   const discoveryRequests = [];
   const downloads = [];
   const fetch = (url, options = {}) => {
+    if (url === "/api/crm/export") {
+      assert.equal(options.headers["X-Session-Token"], "testing-only");
+      assert.equal(options.cache, "no-store");
+      assert.equal(options.credentials, "same-origin");
+      return Promise.resolve(exportError
+        ? {ok: false, json: async () => ({detail: "Export unavailable"})}
+        : {ok: true, blob: async () => ({})});
+    }
     if (url.includes("/resume.pdf?")) {
       assert.equal(options.headers["X-Session-Token"], "testing-only");
       return Promise.resolve(pdfError
@@ -279,6 +287,26 @@ function createHarness({olderTrackedJob = false, pdfError = false, discovery = (
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("tracker history download ignores filters and recovers from errors", async () => {
+  for (const exportError of [false, true]) {
+    const harness = createHarness({exportError});
+    await flush();
+    harness.get("crm-search").value = "no matches";
+    const control = harness.get("crm-export");
+    const pending = control.click();
+    assert.equal(control.disabled, true);
+    await pending;
+    assert.equal(control.disabled, false);
+    assert.equal(harness.get("crm-search").value, "no matches");
+    if (exportError) {
+      assert.equal(harness.downloads.length, 0);
+      assert.match(harness.get("notice").textContent, /Export unavailable/);
+    } else {
+      assert.equal(harness.downloads[0], "career-tracker-history.json");
+    }
+  }
+});
 
 test("PDF download is limited to reviewed current packets and reports renderer errors", async () => {
   const findButton = (element) => element.textContent === "Download reviewed resume PDF" && element.tagName === "button"

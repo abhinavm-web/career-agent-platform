@@ -7,7 +7,7 @@ Application submission remains the independent Store.confirm() boundary.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from .storage import Store
@@ -347,6 +347,33 @@ class ApplicationCRM:
                 "SELECT * FROM crm_priority_events WHERE job_id=? ORDER BY event_id DESC", (job_id,),
             ).fetchall()],
             "interview_notes": self.interview_notes(job_id),
+        }
+
+    def export_history(self) -> dict:
+        """Export a consistent, uncapped tracker snapshot, not the candidate vault.
+
+        Explicit columns keep future private tables/fields out of this format.
+        IDs link the normalized collections; event IDs preserve recorded order.
+        """
+        queries = {
+            "jobs": "SELECT job_id,company,title,location,url,description,source,remote FROM jobs ORDER BY job_id",
+            "applications": "SELECT job_id,stage,receipt,updated_at FROM applications ORDER BY job_id",
+            "reviews": "SELECT review_id,job_id,packet_sha256,decision,decided_at FROM packet_reviews ORDER BY review_id",
+            "stage_events": "SELECT event_id,job_id,stage,note,actor,created_at FROM crm_stage_events ORDER BY event_id",
+            "priority_events": "SELECT event_id,job_id,priority,actor,created_at FROM crm_priority_events ORDER BY event_id",
+            "contacts": "SELECT contact_id,job_id,name,role,email,notes,created_at FROM crm_contacts ORDER BY contact_id",
+            "interview_notes": "SELECT note_id,job_id,interview_date,round,notes,actor,created_at FROM crm_interview_notes ORDER BY note_id",
+            "followups": "SELECT followup_id,job_id,contact_id,title,due_date,completed_at,created_at FROM crm_followups ORDER BY followup_id",
+            "followup_events": "SELECT event_id,followup_id,action,due_date,actor,created_at FROM crm_followup_events ORDER BY event_id",
+        }
+        with self.conn:
+            self.conn.execute("BEGIN")
+            records = {name: [dict(row) for row in self.conn.execute(query)]
+                       for name, query in queries.items()}
+        return {
+            "format": "career-agent-tracker-history", "schema_version": 1,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "records": records,
         }
 
     def outcomes(self) -> dict:
