@@ -234,6 +234,24 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/overview").json()["submitted_recorded"], 1)
         with Store(self.db) as store:
             self.assertEqual(store.stage_of(job_id), "submitted")
+        submitted_packet_path = self.packet_dir / f"{job_id}.json"
+        original_contents = submitted_packet_path.read_bytes()
+        updated_facts = fake_fact_bank()
+        updated_facts["facts"][0]["statement"] = "Delivered a fictional revised cloud automation program."
+        self.facts_path.write_text(json.dumps(updated_facts))
+        locked = self.call("POST", f"/api/jobs/{job_id}/draft", {})
+        self.assertEqual(locked.status_code, 409)
+        self.assertEqual(submitted_packet_path.read_bytes(), original_contents)
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from career_agent.cli import main
+        with redirect_stderr(StringIO()):
+            self.assertEqual(main([
+                "--db", str(self.db), "draft", job_id,
+                "--profile", str(self.profile_path), "--facts", str(self.facts_path),
+                "--output", str(submitted_packet_path),
+            ]), 1)
+        self.assertEqual(submitted_packet_path.read_bytes(), original_contents)
         self.assertEqual(self.call("POST", f"/api/jobs/{job_id}/decision", {
             "approved": False, "acknowledged": True, "packet_sha256": draft_id,
         }).status_code, 422)
