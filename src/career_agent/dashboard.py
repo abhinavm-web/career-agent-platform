@@ -61,7 +61,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     )
     app.add_middleware(
         TrustedHostMiddleware,
-        allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"],
+        allowed_hosts=["localhost", "127.0.0.1", "[::1]"],
     )
     token = secrets.token_urlsafe(32)
 
