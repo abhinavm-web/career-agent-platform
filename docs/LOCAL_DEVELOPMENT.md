@@ -32,6 +32,14 @@ This uses `.local/career_agent.sqlite3` and `.local/packets`. Both demo and pers
 
 ## Test
 
+To enable **Find jobs with JobSpy** on the Opportunity board:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[jobspy]"
+```
+
+Restart the server after installation. Each search contacts external job sources only after you acknowledge the form's disclosure; tests below mock those requests.
+
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 node --check src/career_agent/web/app.js
