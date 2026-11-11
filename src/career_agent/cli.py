@@ -217,22 +217,29 @@ def main(argv: list[str] | None = None) -> int:
                     job, load_filing_evidence(args.filings)
                 ), indent=2))
             elif args.command in {"draft", "workflow"}:
+                store.connection.execute('BEGIN IMMEDIATE' if args.command == 'draft' else 'BEGIN')
                 job = store.get_job(args.job_id)
                 if store.stage_of(job.id) == "submitted":
                     raise ValueError("Cannot regenerate a reviewed packet after submission is recorded")
                 preferences = CandidateProfile.load(args.profile)
                 bank = FactBank.load(args.facts)
                 records = load_filing_evidence(args.filings)
+                job_revision = store.description_revision(job.id) or None
                 if args.command == "draft":
-                    packet = build_packet(job, preferences, bank, records)
+                    packet = build_packet(job, preferences, bank, records, job_description_revision=job_revision)
                 else:
                     from .workflows import Workflows, inputs, signature
+                    store.connection.commit()
                     manager = Workflows(args.db, _packet_destination(job.id, args.output).parent)
-                    state = inputs(job, preferences, bank, records)
+                    state = inputs(job, preferences, bank, records, job_description_revision=job_revision)
                     run = manager.advance(args.resume_run, signature(state)) if args.resume_run else manager.start(state)
                     packet = run['packet']
                     print(json.dumps({'run_id': run['run_id'], 'status': run['status']}))
+                    store.connection.execute('BEGIN IMMEDIATE')
+                    if store.stage_of(job.id) == 'submitted' or store.description_revision(job.id) != (job_revision or 0):
+                        raise ValueError('Job changed or was submitted before packet publication')
                 path = save_packet(packet, _packet_destination(job.id, args.output))
+                store.connection.commit()
                 print(json.dumps({
                     "packet_path": str(path),
                     "job_id": job.id,

@@ -67,9 +67,14 @@ class ApplicationJourneyTests(unittest.TestCase):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
         from career_agent.dashboard import DashboardConfig, create_app
+        from career_agent.models import Job
+        from career_agent.storage import Store
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            with Store(root / 'fictional.sqlite3') as store:
+                store.add_jobs([Job.from_mapping({'company': 'Other Fictional Co', 'title': 'Other role',
+                    'job_url': 'https://example.invalid/jobs/other'})])
             app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets'))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
@@ -116,6 +121,27 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(approve).to_be_disabled()
                         page.get_by_label('I have personally reviewed this draft and its claims.').check()
                         approve.click()
+                        expect(page.locator('#detail-panel')).to_contain_text('approved for manual submission', timeout=20000)
+                        page.get_by_text('Correct saved description', exact=True).click()
+                        page.get_by_label('Corrected job description').fill('Python data analysis. No visa sponsorship.')
+                        page.get_by_label('Source note (optional)').fill('Fictional posting reviewed today')
+                        page.get_by_label('I reviewed this corrected description.').check()
+                        old_heading = page.locator('#detail-panel h3').element_handle()
+                        page.locator('#refresh').click()
+                        page.wait_for_function('(element) => !element.isConnected', arg=old_heading)
+                        expect(page.get_by_label('Corrected job description')).to_have_value('Python data analysis. No visa sponsorship.')
+                        expect(page.get_by_label('Source note (optional)')).to_have_value('Fictional posting reviewed today')
+                        expect(page.get_by_label('I reviewed this corrected description.')).to_be_checked()
+                        page.once('dialog', lambda dialog: dialog.dismiss())
+                        page.get_by_role('button', name='View Other role at Other Fictional Co').click()
+                        expect(page.get_by_label('Corrected job description')).to_have_value('Python data analysis. No visa sponsorship.')
+                        page.get_by_role('button', name='Save corrected description').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Posting excludes sponsorship')
+                        expect(page.locator('#detail-panel')).to_contain_text('job description changed')
+                        page.get_by_role('button', name='Regenerate draft').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Application packet', timeout=20000)
+                        page.get_by_label('I have personally reviewed this draft and its claims.').check()
+                        page.get_by_role('button', name='Approve for manual submission').click()
                         expect(page.locator('#detail-panel')).to_contain_text('approved for manual submission', timeout=20000)
                         page.reload()
                         page.locator('#job-list button').first.click()

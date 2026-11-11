@@ -101,9 +101,12 @@ def build_packet(
     filing_records: tuple[FilingEvidence, ...] = (),
     *,
     workspace_revision: int | None = None,
+    job_description_revision: int | None = None,
 ) -> dict[str, Any]:
     if workspace_revision is not None and (type(workspace_revision) is not int or workspace_revision < 1):
         raise ValueError("workspace_revision must be a positive integer")
+    if job_description_revision is not None and (type(job_description_revision) is not int or job_description_revision < 1):
+        raise ValueError("job_description_revision must be a positive integer")
     selected = select_facts(job, bank)
     selected_ids = {fact.fact_id for fact in selected}
     fit = score_job(job, preferences)
@@ -146,6 +149,8 @@ def build_packet(
         # Bind the draft/review fingerprint to the candidate facts and preferences
         # version that produced the packet.
         packet["candidate_workspace_revision"] = workspace_revision
+    if job_description_revision is not None:
+        packet["job_description_revision"] = job_description_revision
     packet["packet_sha256"] = packet_fingerprint(packet)
     return packet
 

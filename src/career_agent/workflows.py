@@ -12,13 +12,16 @@ from .storage import Store
 from .models import Job
 
 
-def inputs(job, profile, bank, records, revision=None):
-    return {'job': asdict(job), 'preferences': asdict(profile),
+def inputs(job, profile, bank, records, revision=None, job_description_revision=None):
+    state = {'job': asdict(job), 'preferences': asdict(profile),
             'fact_bank': {'name': bank.name, 'headline': bank.headline, 'facts': [
                 {'id': f.fact_id, 'section': f.section, 'statement': f.statement,
                  'keywords': list(f.keywords), 'source_note': f.source_note,
                  'verified_by_candidate': True} for f in bank.facts]},
             'filing_records': [asdict(r) for r in records], 'workspace_revision': revision}
+    if job_description_revision:
+        state['job_description_revision'] = job_description_revision
+    return state
 
 
 def signature(state):
@@ -68,6 +71,8 @@ class Workflows:
                 raise ValueError('This run was superseded by a newer draft')
             if row['input_sha256'] != current_signature:
                 raise ValueError('Workflow inputs changed; create a new draft and review it')
+            if json.loads(row['input_json']).get('job_description_revision', 0) != store.description_revision(row['job_id']):
+                raise ValueError('Job description changed; create a new draft and review it')
             if store.stage_of(row['job_id']) == 'submitted':
                 raise ValueError('Submitted application is locked')
             config = {'configurable': {'thread_id': run_id}}
