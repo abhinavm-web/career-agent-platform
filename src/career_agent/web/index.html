@@ -67,7 +67,7 @@
 
         <div id="profile-prompt" class="setup-banner" hidden><div><strong>Set up your workspace</strong><p id="setup-progress">Add your goals for matching. Verify a career fact to enable AI analysis and application drafts.</p></div><button type="button" class="button" id="open-profile">Continue setup</button></div>
 
-        <details class="panel profile-editor discovery-quick">
+        <details id="discovery-panel" class="panel profile-editor discovery-quick">
           <summary>Find jobs with JobSpy</summary>
           <form id="discover-form">
             <p class="muted">Search Indeed, LinkedIn and ZipRecruiter for US roles. Only your search query and location are sent to job sources; your career facts and notes are not included. Returned jobs are added to this local board. Sources may return partial or no results.</p>
@@ -115,7 +115,8 @@
                 <label>Posting observation<select id="freshness-filter"><option value="all">All observations</option><option value="listed">Listed at last check</option><option value="expired">Deadline passed</option><option value="stale">Stale observation</option><option value="unknown">Unknown or not checked</option></select></label>
               </div><button id="clear-board-filters" type="button" class="button">Clear all filters</button><p class="muted">A live check is an observation, not a guarantee of hiring or sponsorship. Unchecked and stale jobs remain uncertain.</p></details>
             </div>
-            <div class="list-count"><span id="visible-count">0 opportunities</span><span id="sort-label">Recently added</span></div>
+            <p id="board-limit" class="board-limit" hidden></p>
+            <div class="list-count"><span id="visible-count" role="status" aria-live="polite">0 opportunities</span><span id="sort-label">Recently added</span></div>
             <div id="job-list" class="job-list" aria-label="Job postings"><div class="loading">Loading your local jobs…</div></div>
             <div class="pagination" aria-label="Opportunity pages"><button id="jobs-prev" class="button" type="button">Previous</button><span id="jobs-page" aria-live="polite"></span><button id="jobs-next" class="button" type="button">Next</button></div>
           </div>
