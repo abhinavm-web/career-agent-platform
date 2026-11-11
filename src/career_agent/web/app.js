@@ -13,6 +13,8 @@
     crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0,
     boardFilters: {location: "", source: "", remote: "all", sponsor: "all", freshness: "all"}
   };
+  let freshnessTimer = null;
+  let selectedAvailabilityUpdater = null;
 
   const byId = (id) => document.getElementById(id);
   const node = (tag, cls, content) => {
@@ -38,7 +40,10 @@
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(data.detail || "Request failed");
+      const message = response.status === 403 && data.detail === "Session token required"
+        ? "Your local session expired after the server restarted. Copy any unsaved changes, refresh this page, then try again."
+        : data.detail || "Request failed";
+      const error = new Error(message);
       error.status = response.status;
       throw error;
     }
@@ -145,6 +150,22 @@
   }
 
   function renderJobs() {
+    if (freshnessTimer !== null) clearTimeout(freshnessTimer);
+    freshnessTimer = null;
+    const now = Date.now();
+    const expirations = state.jobs.map((job) => {
+      const observation = job.live_check;
+      const timestamp = observation && Date.parse(observation.checked_at);
+      return observation && !observation.stale && Number.isFinite(timestamp) && timestamp <= now
+        && now - timestamp <= 86400000 ? timestamp + 86400001 : null;
+    }).filter((value) => value !== null);
+    if (expirations.length) {
+      freshnessTimer = setTimeout(() => {
+        freshnessTimer = null;
+        renderJobs();
+        if (selectedAvailabilityUpdater) selectedAvailabilityUpdater();
+      }, Math.max(1, Math.min(...expirations) - now));
+    }
     const jobs = filteredJobs();
     const truncated = (state.overview?.total_jobs ?? 0) > state.jobs.length;
     byId("board-limit").hidden = !truncated;
@@ -245,6 +266,7 @@
   }
 
   function renderDetail() {
+    selectedAvailabilityUpdater = null;
     const detail = byId("detail-panel");
     detail.replaceChildren();
     const job = state.jobs.find((value) => value.id === state.selectedId);
@@ -288,26 +310,34 @@
     const availability = section("Posting availability");
     const availabilityStatus = node("div", "availability-status");
     availabilityStatus.setAttribute("role", "status");
+    let checkingAvailability = false;
+    let checkFailure = null;
     const showAvailability = () => {
+      if (checkingAvailability) return;
       const observation = postingObservation(job);
       availabilityStatus.replaceChildren(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""),
         node("p", "", observation.detail));
+      if (checkFailure) availabilityStatus.append(node("p", "", "Check failed: " + checkFailure + ". Previous observation remains unchanged."));
       if (job.live_check && job.live_check.checked_at) availabilityStatus.append(node("p", "", "Checked: " + job.live_check.checked_at));
       if (job.live_check && job.live_check.source_url) availabilityStatus.append(safeLink("Observation source", job.live_check.source_url));
     };
+    selectedAvailabilityUpdater = showAvailability;
     showAvailability();
     availability.append(availabilityStatus);
     if (job.live_check_supported) {
       const check = button("Check live availability", "button", async () => {
         if (check.disabled) return;
         check.disabled = true;
+        checkingAvailability = true;
+        checkFailure = null;
         availabilityStatus.textContent = "Checking the public posting…";
         try {
           job.live_check = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
+          checkingAvailability = false;
           showAvailability();
           renderJobs();
-        } catch (error) { availabilityStatus.textContent = "Check failed: " + error.message; }
-        finally { check.disabled = false; }
+        } catch (error) { checkingAvailability = false; checkFailure = error.message; showAvailability(); }
+        finally { checkingAvailability = false; check.disabled = false; }
       });
       availability.append(node("p", "", "Checks the public ATS posting. No candidate information is sent."), check);
     } else {

@@ -86,3 +86,15 @@ class PostingTests(unittest.TestCase):
             self.assertEqual(store.get_job(sample.id).description, 'Saved original text')
             self.assertEqual(store.stage_of(sample.id), 'discovered')
             self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM posting_checks').fetchone()[0], 2)
+
+    def test_invalid_naive_and_future_timestamps_remain_unknown(self):
+        with tempfile.TemporaryDirectory() as directory, Store(Path(directory) / 'test.db') as store:
+            sample = job(); store.add_jobs([sample]); checks = PostingChecks(store)
+            for timestamp in ('bad', None, '2025-01-01T12:00:00',
+                              (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()):
+                with self.subTest(timestamp=timestamp):
+                    checks.save(sample.id, {'availability': 'listed', 'checked_at': timestamp, 'reason': 'Fictional observation'})
+                    current = checks.latest(sample.id)
+                    self.assertTrue(current['stale'])
+                    self.assertEqual(current['availability'], 'unknown')
+                    self.assertEqual(current['observed_availability'], 'listed')

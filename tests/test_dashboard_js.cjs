@@ -281,7 +281,8 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs 
       static createObjectURL() { return "blob:local-pdf"; }
       static revokeObjectURL() {}
     },
-    setTimeout: (callback) => callback(),
+    setTimeout: (callback, delay) => delay > 1000 ? 1 : callback(),
+    clearTimeout: () => {},
     navigator: {clipboard: {writeText: async () => {}}},
     FormData: class {},
     window: {confirm: () => true},
@@ -293,6 +294,20 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs 
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("expired session explains how to recover without discarding input", async () => {
+  const h = createHarness({discovery: () => Promise.resolve({
+    ok: false, status: 403, json: async () => ({detail: "Session token required"})
+  })});
+  await flush();
+  h.get("discover-consent").checked = true;
+  h.get("discover-query").value = "Fictional role";
+  h.get("discover-location").value = "United States";
+  h.get("discover-results").value = "5";
+  await h.get("discover-form").handlers.submit({preventDefault() {}});
+  assert.match(h.get("discover-status").textContent, /session expired.*unsaved changes.*refresh/i);
+  assert.equal(h.get("discover-query").value, "Fictional role");
+});
 
 test("career assistant shares session context only after consent and can clear it", async () => {
   const h = createHarness(); await flush();

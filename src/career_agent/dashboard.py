@@ -28,10 +28,10 @@ from starlette.concurrency import run_in_threadpool
 from .application import _reject_symlink_components, load_packet
 from .candidate import FactBank
 from . import ai
-from .automation import Automation
+from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM
-from .discovery import DiscoveryUnavailable, discover_jobspy
+from .discovery import DiscoveryUnavailable, discover_isolated
 from .models import CandidateProfile, Job
 from .h1b import H1BResearch
 from .uscis import USCISRecords
@@ -524,9 +524,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=409, detail="A job search is already running. Wait for it to finish.")
         try:
             try:
-                jobs = await run_in_threadpool(discover_jobspy, query.strip(), location.strip(), results)
+                jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop)
             except DiscoveryUnavailable as error:
                 raise HTTPException(status_code=503, detail='Job discovery unavailable. Install the jobspy extra and retry.') from error
+            except DiscoveryTimedOut as error:
+                raise HTTPException(status_code=504, detail='Job discovery timed out; no results were imported. Try again or narrow the search.') from error
+            except DiscoveryStopped as error:
+                raise HTTPException(status_code=503, detail='Job discovery stopped; no results were imported.') from error
             except Exception as error:
                 raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
             with Store(config.db_path) as store:

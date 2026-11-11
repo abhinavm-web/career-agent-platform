@@ -50,6 +50,13 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
         for loc in profile.preferred_locations if loc.strip()
     )
     location_points = 10 if place_ok else 0
+    location_note = (
+        "confirmed remote matches your preference" if profile.allow_remote and job.remote else
+        "a preferred location appears in the posting" if place_ok else
+        "no location preference configured; work arrangement was not matched" if not profile.preferred_locations else
+        "location is unspecified; work arrangement was not matched" if not job.location.strip() else
+        "no preferred location or confirmed remote match; verify the posting"
+    )
     return Fit(
         score=min(100, title_points + skill_points + location_points),
         matched_skills=matches,
@@ -57,6 +64,7 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
         reasons=(
             f"Title overlap: {title_points}/40",
             f"Profile skills mentioned: {len(matches)}/{len(profile.skills)} ({skill_points}/50)",
-            f"Location/remote preference: {location_points}/10",
+            f"Skills found in posting: {', '.join(matches)}" if matches else "No configured profile skills found in the posting; this does not establish a qualification gap.",
+            f"Location/remote preference: {location_points}/10 — {location_note}.",
         ),
     )

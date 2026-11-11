@@ -128,10 +128,16 @@ class PostingChecks:
         if not row:
             return None
         result = json.loads(row['result_json'])
-        age = (datetime.now(timezone.utc) - datetime.fromisoformat(result['checked_at'])).total_seconds()
-        result['stale'] = age > 86400 or age < 0
+        try:
+            observed_at = datetime.fromisoformat(result.get('checked_at'))
+            if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+                raise ValueError('Timestamp has no timezone')
+            age = (datetime.now(timezone.utc) - observed_at).total_seconds()
+            result['stale'] = age > 86400 or age < 0
+        except (ValueError, TypeError, OverflowError):
+            result['stale'] = True
         if result['stale']:
-            result['observed_availability'] = result['availability']
+            result['observed_availability'] = result.get('availability', 'unknown')
             result['availability'] = 'unknown'
-            result['reason'] = 'Previous observation is stale or has an invalid future timestamp; check again. ' + result['reason']
+            result['reason'] = 'Previous observation is stale or has an invalid timestamp; check again. ' + str(result.get('reason', ''))
         return result

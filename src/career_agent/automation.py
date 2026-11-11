@@ -18,6 +18,14 @@ class DiscoveryState(TypedDict, total=False):
     counts: dict
 
 
+class DiscoveryTimedOut(ValueError):
+    """The isolated discovery process exceeded its deadline."""
+
+
+class DiscoveryStopped(ValueError):
+    """The server stopped while discovery was in progress."""
+
+
 def fetch(settings, stop):
     """Kill the child on shutdown or after two minutes, including slow reads."""
     with subprocess.Popen([sys.executable, '-m', 'career_agent.discovery_worker'], stdin=subprocess.PIPE,
@@ -25,9 +33,12 @@ def fetch(settings, stop):
                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)) as child:
         started, payload = time.monotonic(), json.dumps(settings)
         while True:
-            if stop.is_set() or time.monotonic() - started > 120:
+            if stop.is_set():
                 child.kill(); child.communicate()
-                raise ValueError('Discovery stopped or timed out; no results imported')
+                raise DiscoveryStopped('Discovery stopped; no results imported')
+            if time.monotonic() - started > 120:
+                child.kill(); child.communicate()
+                raise DiscoveryTimedOut('Discovery timed out; no results imported')
             try:
                 output, _ = child.communicate(payload, timeout=1)
                 break

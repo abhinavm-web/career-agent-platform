@@ -91,6 +91,21 @@ class USCISTests(unittest.TestCase):
                 self.records.refresh(url, 2025, '2025-06-30')
             fetch.assert_not_called()
 
+    def test_invalid_release_metadata_is_rejected_before_a_public_request(self):
+        with patch('career_agent.uscis.public_get') as fetch:
+            for year, as_of in ((2024, '2024-09-30'), (2025, '2026-01-01'), (True, '2025-09-30'), (2025, 'bad')):
+                with self.subTest(year=year, as_of=as_of), self.assertRaises(ValueError):
+                    self.records.refresh(URL, year, as_of)
+            fetch.assert_not_called()
+
+    def test_uscis_block_reports_recovery_without_implying_a_token(self):
+        with patch('career_agent.uscis.public_get', return_value=(403, b'', 'text/html')):
+            with self.assertRaises(SourceUnavailable) as error:
+                self.records.refresh(URL, 2025, '2025-09-30')
+        self.assertIn('HTTP 403', str(error.exception))
+        self.assertIn('No USCIS API token is needed', str(error.exception))
+        self.assertIn('import it locally', str(error.exception))
+
 
 class PublicSourceTests(unittest.TestCase):
     def test_rejects_private_dns_and_arbitrary_hosts_without_connecting(self):

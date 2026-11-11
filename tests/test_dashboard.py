@@ -290,20 +290,22 @@ class DashboardTests(unittest.TestCase):
 
     def test_discovery_imports_deduplicated_jobs_without_sending_candidate_data(self):
         new_job = fake_job("https://example.invalid/jobs/new")
-        with patch("career_agent.dashboard.discover_jobspy", return_value=[self.job, new_job]) as discover:
+        with patch("career_agent.dashboard.discover_isolated", return_value=[self.job, new_job]) as discover:
             response = self.call("POST", "/api/discover", {
                 "query": " AI Lead ", "location": " United States ", "results": 5, "acknowledged": True,
             })
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json(), {"found": 2, "new": 1, "duplicates": 1})
-        discover.assert_called_once_with("AI Lead", "United States", 5)
+        self.assertEqual(discover.call_count, 1)
+        self.assertEqual(discover.call_args.args[:3], ("AI Lead", "United States", 5))
+        self.assertFalse(discover.call_args.args[3].is_set())
         with Store(self.db) as store:
             self.assertEqual(len(store.list_jobs()), 2)
             self.assertEqual(store.stage_of(new_job.id), "discovered")
 
     def test_discovery_requires_valid_input_consent_and_session(self):
         valid = {"query": "AI Lead", "location": "United States", "results": 5, "acknowledged": True}
-        with patch("career_agent.dashboard.discover_jobspy") as discover:
+        with patch("career_agent.dashboard.discover_isolated") as discover:
             self.assertEqual(self.call("POST", "/api/discover", valid, token="bad").status_code, 403)
             self.assertEqual(self.call("POST", "/api/discover", valid, headers={"Origin": "https://example.invalid"}).status_code, 403)
             for change in ({"acknowledged": False}, {"acknowledged": "true"}, {"query": " "},
@@ -316,14 +318,17 @@ class DashboardTests(unittest.TestCase):
 
     def test_discovery_failure_is_sanitized_and_can_be_retried(self):
         from career_agent.discovery import DiscoveryUnavailable
+        from career_agent.automation import DiscoveryStopped, DiscoveryTimedOut
         payload = {"query": "AI Lead", "location": "USA", "acknowledged": True}
         for error, status in ((DiscoveryUnavailable("missing dependency"), 503),
+                              (DiscoveryTimedOut("private upstream details"), 504),
+                              (DiscoveryStopped("private upstream details"), 503),
                               (RuntimeError("private upstream details"), 502)):
-            with patch("career_agent.dashboard.discover_jobspy", side_effect=error):
+            with patch("career_agent.dashboard.discover_isolated", side_effect=error):
                 response = self.call("POST", "/api/discover", payload)
             self.assertEqual(response.status_code, status)
             self.assertNotIn("private upstream details", response.text)
-        with patch("career_agent.dashboard.discover_jobspy", return_value=[]):
+        with patch("career_agent.dashboard.discover_isolated", return_value=[]):
             self.assertEqual(self.call("POST", "/api/discover", payload).json()["new"], 0)
         with Store(self.db) as store:
             self.assertEqual(len(store.list_jobs()), 1)
@@ -334,7 +339,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call("GET", "/api/jobs").status_code, 200)
             self.assertEqual(self.call("POST", "/api/discover", payload).status_code, 409)
             return []
-        with patch("career_agent.dashboard.discover_jobspy", side_effect=provider):
+        with patch("career_agent.dashboard.discover_isolated", side_effect=provider):
             self.assertEqual(self.call("POST", "/api/discover", payload).status_code, 200)
 
     def test_pdf_export_requires_exact_current_approved_packet(self):

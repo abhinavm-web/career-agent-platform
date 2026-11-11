@@ -43,6 +43,22 @@ def number(value):
     return int(value)
 
 
+def validate_release(url, year, data_as_of):
+    """Reject inconsistent release metadata before any network or database work."""
+    url = source_url(url)
+    if type(year) is not int or not 2009 <= year <= fiscal_year():
+        raise ValueError('Select a valid USCIS fiscal year from 2009 through the current year')
+    if not url.lower().endswith(f'-{year}.csv'):
+        raise ValueError('USCIS source filename year does not match the selected fiscal year')
+    try:
+        as_of = date.fromisoformat(data_as_of)
+    except (ValueError, TypeError):
+        raise ValueError('Data as of must be YYYY-MM-DD') from None
+    if as_of.isoformat() != data_as_of or not date(year - 1, 10, 1) <= as_of <= min(date(year, 9, 30), date.today()):
+        raise ValueError('Data as of must be within the selected fiscal year and not in the future')
+    return url
+
+
 class USCISRecords:
     def __init__(self, store):
         self.conn = store.connection
@@ -63,17 +79,7 @@ class USCISRecords:
         ''')
 
     def import_bytes(self, content, url, year, data_as_of, transport='user_imported_not_independently_verified'):
-        url = source_url(url)
-        if type(year) is not int or not 2009 <= year <= fiscal_year():
-            raise ValueError('Select a valid USCIS fiscal year from 2009 through the current year')
-        if not url.lower().endswith(f'-{year}.csv'):
-            raise ValueError('USCIS source filename year does not match the selected fiscal year')
-        try:
-            as_of = date.fromisoformat(data_as_of)
-        except (ValueError, TypeError):
-            raise ValueError('Data as of must be YYYY-MM-DD') from None
-        if as_of.isoformat() != data_as_of or not date(year - 1, 10, 1) <= as_of <= min(date(year, 9, 30), date.today()):
-            raise ValueError('Data as of must be within the selected fiscal year and not in the future')
+        url = validate_release(url, year, data_as_of)
         if len(content) > 32 * 1024 * 1024:
             raise ValueError('USCIS CSV exceeds 32 MB')
         try:
@@ -126,10 +132,10 @@ class USCISRecords:
         return {'rows': len(rows), 'unchanged': False, 'fiscal_year': year}
 
     def refresh(self, url, year, data_as_of):
-        url = source_url(url)
+        url = validate_release(url, year, data_as_of)
         status, content, content_type = public_get(url, {'www.uscis.gov', 'uscis.gov'}, maximum=32 * 1024 * 1024)
         if status != 200:
-            raise SourceUnavailable(f'USCIS returned HTTP {status}; saved records were kept. Import the official CSV if direct access is blocked.')
+            raise SourceUnavailable(f'USCIS returned HTTP {status}; saved records were kept. No USCIS API token is needed. Download the official complete annual CSV in your browser and import it locally if available.')
         if 'html' in content_type.lower() or content.lstrip().startswith(b'<'):
             raise SourceUnavailable('USCIS returned a page instead of CSV; saved records were kept')
         return self.import_bytes(content, url, year, data_as_of, 'downloaded_from_uscis_https')
