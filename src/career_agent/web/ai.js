@@ -59,8 +59,10 @@
     ids.forEach((id) => { el(id).disabled = true; });
     el("ai-results").replaceChildren();
     el("ai-status").textContent = "Analyzing with the selected provider…";
+    const jobId = el("ai-job").value;
     try {
-      const r = await api(`/api/jobs/${encodeURIComponent(el("ai-job").value)}/ai-analysis`, {route: el("ai-route").value, acknowledged: true});
+      const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/ai-analysis`, {route: el("ai-route").value, acknowledged: true});
+      if (el("ai-job").dataset.requestedJob && el("ai-job").dataset.requestedJob !== jobId) return;
       el("ai-status").textContent = `${r.notice} Model: ${r.model}. Checked: ${r.observed_at}.`;
       if (!r.requirements.length) el("ai-results").append(text("p", "No requirements returned. This does not establish a match or absence of requirements."));
       for (const row of r.requirements) {
@@ -70,7 +72,9 @@
         if (!row.fact_ids.length) section.append(text("p", "Evidence unknown; no candidate deficit inferred."));
         el("ai-results").append(section);
       }
-    } catch (e) { el("ai-status").textContent = e.message; }
+    } catch (e) {
+      if (!el("ai-job").dataset.requestedJob || el("ai-job").dataset.requestedJob === jobId) el("ai-status").textContent = e.message;
+    }
     finally {
       busy = false; ids.forEach((id) => { el(id).disabled = false; }); el("ai-consent").checked = false;
       if (el("ai-job").dataset.requestedJob) el("ai-load").click();

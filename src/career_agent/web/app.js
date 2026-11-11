@@ -229,6 +229,11 @@
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
     actions.append(button("Analyze with AI", "button", () => {
+      if (byId("ai-job").value !== job.id) {
+        byId("ai-results").replaceChildren();
+        byId("ai-consent").checked = false;
+        byId("ai-status").textContent = "Loading selected opportunity…";
+      }
       byId("ai-job").dataset.requestedJob = job.id;
       byId("nav-ai").click();
     }));

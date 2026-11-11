@@ -167,6 +167,31 @@ class H1BBrowserTests(unittest.TestCase):
                             expect(page.locator('#ai-job')).to_have_value(selected)
                             expect(page.locator('#ai-results')).to_contain_text('<script>unsafe()</script>')
                             self.assertEqual(complete.call_count, 1)
+                            # A delayed result for another job must not appear under the newly selected role.
+                            page.get_by_role('button', name='Opportunity board', exact=True).click()
+                            page.get_by_role('button', name='View Transfer role at Example Inc.').click()
+                            page.get_by_role('button', name='Analyze with AI').click()
+                            expect(page.locator('#ai-run')).to_be_enabled()
+                            expect(page.locator('#ai-results')).to_be_empty()
+                            started, release = threading.Event(), threading.Event()
+                            def delayed(_route, _prompt):
+                                started.set()
+                                if not release.wait(5): raise RuntimeError('Timed out waiting for test')
+                                return '{"requirements":[]}'
+                            complete.side_effect = delayed
+                            try:
+                                page.locator('#ai-consent').check()
+                                page.locator('#ai-run').click()
+                                self.assertTrue(started.wait(5))
+                                page.get_by_role('button', name='Opportunity board', exact=True).click()
+                                page.get_by_role('button', name='View Unknown role at Example Inc.').click()
+                                page.get_by_role('button', name='Analyze with AI').click()
+                            finally:
+                                release.set()
+                            expect(page.locator('#ai-run')).to_be_enabled()
+                            expect(page.locator('#ai-job')).to_have_value(selected)
+                            expect(page.locator('#ai-results')).to_be_empty()
+                            complete.side_effect = None
                             with patch('career_agent.ai.complete', side_effect=ValueError('Provider unavailable')):
                                 page.locator('#ai-consent').check()
                                 page.locator('#ai-run').click()
