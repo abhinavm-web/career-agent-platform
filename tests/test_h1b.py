@@ -3,6 +3,7 @@ import csv
 import io
 import tempfile
 import unittest
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -81,6 +82,123 @@ class ResearchTests(unittest.TestCase):
 
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
+
+    def test_original_workbook_import_preserves_dates_and_rolls_back_invalid_rows(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'fictional.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE', 'JOB_TITLE'])
+        sheet.append(['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', date(2025, 4, 15), 'Engineer'])
+        sheet.append(['I-200-25123-000002', 'Fictional Employer', 'H-1B', 'Denied', date(2025, 4, 16), 'Analyst'])
+        book.save(path); book.close()
+        result = self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+        self.assertEqual(result['added'], 2)
+        self.assertEqual(self.research.company('Fictional Employer')['recent_certified_cases'], 1)
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        sheet.append(['I-200-25123-000003', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15'])
+        sheet.append(['invalid', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15'])
+        book.save(path); book.close()
+        with self.assertRaises(ValueError):
+            self.research.import_xlsx(path, DOL_URL, '2025-06-02')
+        self.assertEqual(self.research.coverage()['records'], 2)
+
+    def test_workbook_requires_one_unambiguous_disclosure_sheet(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'fictional.xlsx'
+        book = Workbook(); header = ['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE']
+        book.active.append(header); book.create_sheet('Another').append(header)
+        book.save(path); book.close()
+        with self.assertRaisesRegex(ValueError, 'exactly one'):
+            self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+        self.assertEqual(self.research.coverage()['records'], 0)
+
+        book = Workbook(); book.active.append(header + ['unused'] * 1020)
+        book.save(path); book.close()
+        with self.assertRaisesRegex(ValueError, 'too many columns'):
+            self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+
+    def test_malformed_workbook_xml_fails_cleanly_without_import(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        import zipfile
+        path = Path(self.tmp.name) / 'valid.xlsx'
+        book = Workbook(); book.active.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        book.save(path); book.close()
+        for entry in ('xl/workbook.xml', 'xl/worksheets/sheet1.xml'):
+            bad = Path(self.tmp.name) / 'bad.xlsx'
+            with zipfile.ZipFile(path) as source, zipfile.ZipFile(bad, 'w') as target:
+                for name in source.namelist():
+                    target.writestr(name, b'<broken>' if name == entry else source.read(name))
+            with self.subTest(entry=entry), self.assertRaisesRegex(ValueError, 'Unable to read this XLSX'):
+                self.research.import_xlsx(bad, DOL_URL, '2025-06-01')
+            self.assertEqual(self.research.coverage()['records'], 0)
+
+    def test_cli_accepts_xlsx_without_creating_csv(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        from contextlib import redirect_stdout
+        from career_agent.cli import main
+        path = Path(self.tmp.name) / 'fictional.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        sheet.append(['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', date(2025, 4, 15)])
+        book.save(path); book.close()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = main(['--db', str(Path(self.tmp.name) / 'cli.sqlite3'), 'h1b-import', str(path),
+                         '--source-url', DOL_URL, '--captured-on', '2025-06-01'])
+        self.assertEqual(code, 0)
+        self.assertIn('"added": 1', output.getvalue())
+        self.assertEqual(list(Path(self.tmp.name).glob('*.csv')), [])
+
+    def test_workbook_dimensions_are_verified_against_actual_cells(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'fictional.xlsx'
+        original = Path(self.tmp.name) / 'original.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        sheet.append(['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15'])
+        sheet.append(['I-200-25123-000002', 'Fictional Employer', 'H-1B', 'Denied', '2025-04-16'])
+        book.save(original); book.close()
+        def rewrite(transform):
+            with zipfile.ZipFile(original) as source, zipfile.ZipFile(path, 'w') as target:
+                for entry in source.infolist():
+                    data = source.read(entry.filename)
+                    if entry.filename == 'xl/worksheets/sheet1.xml':
+                        data = transform(data)
+                    target.writestr(entry, data)
+        for dimension in (b'<dimension ref="A1:A1"/>', b'', b'<dimension ref="A1:XFD999999999"/>'):
+            rewrite(lambda data: data.replace(b'<dimension ref="A1:E3"/>', dimension))
+            result = self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+            self.assertEqual(result['added'] + result['duplicates'], 2)
+        before = self.research.coverage()['records']
+        for mutate in (
+            lambda data: data.replace(b'<row r="3"', b'<row r="1048577"'),
+            lambda data: data.replace(b'r="E3"', b'r="AMK3"'),
+        ):
+            rewrite(mutate)
+            with self.assertRaises(ValueError):
+                self.research.import_xlsx(path, DOL_URL, '2025-06-02')
+            self.assertEqual(self.research.coverage()['records'], before)
 
     def test_opportunities_need_no_filings_and_respect_need_and_pagination(self):
         descriptions = ['Visa sponsorship is available.', 'H-1B transfers only.',

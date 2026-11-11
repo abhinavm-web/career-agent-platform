@@ -37,6 +37,7 @@ from .h1b import H1BResearch
 from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
+from .resume_docx import DOCXUnavailable, resume_docx
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store
@@ -633,8 +634,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             result = store.latest_review(job_id, fingerprint) if handled else store.record_review(job_id, fingerprint, approved=data["approved"])
         return {**result, "submission_sent": False}
 
-    @app.get("/api/jobs/{job_id}/resume.pdf")
-    def export_resume(job_id: str, packet_sha256: str = ""):
+    def approved_resume_packet(job_id: str, packet_sha256: str):
         with Store(config.db_path) as store:
             _get_job(store, job_id)
             packet = current_packet(job_id)
@@ -645,12 +645,28 @@ def create_app(config: DashboardConfig) -> FastAPI:
             decision = store.latest_review(job_id, packet_sha256)
             if not decision or decision["decision"] != "approved_for_manual_submission":
                 raise HTTPException(status_code=412, detail="Approve this packet before downloading its resume")
+        return packet
+
+    @app.get("/api/jobs/{job_id}/resume.pdf")
+    def export_resume(job_id: str, packet_sha256: str = ""):
+        packet = approved_resume_packet(job_id, packet_sha256)
         try:
             content = resume_pdf(packet)
         except PDFUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
         return Response(content, media_type="application/pdf", headers={
             "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.pdf"',
+        })
+
+    @app.get("/api/jobs/{job_id}/resume.docx")
+    def export_resume_docx(job_id: str, packet_sha256: str = ""):
+        packet = approved_resume_packet(job_id, packet_sha256)
+        try:
+            content = resume_docx(packet)
+        except DOCXUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={
+            "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.docx"',
         })
 
     @app.post("/api/jobs/{job_id}/submitted")

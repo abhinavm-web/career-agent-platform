@@ -56,8 +56,8 @@ def parser() -> argparse.ArgumentParser:
     sponsor.add_argument("job_id")
     sponsor.add_argument("--filings", help="CSV with employer, fiscal_year, source_url")
 
-    h1b = cmd.add_parser("h1b-import", help="Import a public DOL LCA CSV into local H-1B research")
-    h1b.add_argument("csv")
+    h1b = cmd.add_parser("h1b-import", help="Import a local DOL LCA CSV or XLSX into H-1B research")
+    h1b.add_argument("csv", help="Path to the downloaded CSV or original XLSX workbook")
     h1b.add_argument("--source-url", required=True)
     h1b.add_argument("--captured-on", required=True, help="Source capture date YYYY-MM-DD")
 
@@ -180,8 +180,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(USCISRecords(store).import_bytes(content, args.source_url, args.fiscal_year, args.data_as_of)))
             elif args.command == "h1b-import":
                 from .h1b import H1BResearch
-                with Path(args.csv).open(encoding="utf-8-sig", newline="") as stream:
-                    print(json.dumps(H1BResearch(store).import_csv(stream, args.source_url, args.captured_on)))
+                source_path = Path(args.csv)
+                if source_path.suffix.casefold() == '.xlsx':
+                    print(json.dumps(H1BResearch(store).import_xlsx(source_path, args.source_url, args.captured_on)))
+                else:
+                    with source_path.open(encoding="utf-8-sig", newline="") as stream:
+                        print(json.dumps(H1BResearch(store).import_csv(stream, args.source_url, args.captured_on)))
             elif jobs is not None:
                 added = store.add_jobs(jobs)
                 print(json.dumps({

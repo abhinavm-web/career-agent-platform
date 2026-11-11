@@ -9,6 +9,16 @@ Search uses a company-name substring against imported legal employer names and c
 ## Load public records
 
 1. Visit the official [DOL OFLC performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance) page and download an LCA disclosure workbook.
+   The command below accepts the original XLSX file directly, without a CSV conversion. Install workbook support first:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e '.[lca]'
+.\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 h1b-import .local/lca.xlsx --source-url "https://www.dol.gov/agencies/eta/foreign-labor/performance" --captured-on YYYY-MM-DD
+```
+
+Use the date you downloaded the file, not an assumed reporting cutoff. The file is parsed locally in read-only mode, and the entire import rolls back on invalid records. It remains labeled user-imported and not independently verified. The workbook must have exactly one sheet with the required LCA headers and be no larger than 512 MB; large workbooks can take time and memory, and Excel-compressed data is bounded. Worksite and appendix sheets do not substitute for the main disclosure data. Direct government download is not performed by this command.
+
+For the existing dashboard import, or if you prefer CSV:
 2. Export the disclosure sheet as **UTF-8 CSV**, preserving its DOL column headers. Do not use the worksite/appendix sheet as the main disclosure sheet.
 3. In the import panel, supply the original DOL source URL and the date you captured that source, select the CSV and confirm provenance. The browser accepts files up to 8 MB (the encoded API request is limited to 10 MB). Larger CSVs can be streamed through the CLI:
 
@@ -18,7 +28,7 @@ Search uses a company-name substring against imported legal employer names and c
 
 Replace the date with the actual capture date and preferably cite the specific disclosure workbook URL. All storage remains in the selected local SQLite database. Imports are labeled **user_imported_not_independently_verified**: an official-domain URL is provenance supplied by you, not proof that the file was fetched or verified. The app makes no government requests and does not scrape third-party sponsorship sites. No API credentials are needed.
 
-Required columns are `CASE_NUMBER`, `EMPLOYER_NAME`, `VISA_CLASS`, `CASE_STATUS`, `DECISION_DATE`. Optional displayed columns are `EMPLOYER_CITY`, `EMPLOYER_STATE`, `JOB_TITLE`. Other columns, including FEINs, attorney details and personal contacts, are not stored. ISO dates, ISO dates with midnight time, and `MM/DD/YYYY` are supported. Raw XLSX files and USCIS employer CSVs are not supported by this importer.
+Required columns are `CASE_NUMBER`, `EMPLOYER_NAME`, `VISA_CLASS`, `CASE_STATUS`, `DECISION_DATE`. Optional displayed columns are `EMPLOYER_CITY`, `EMPLOYER_STATE`, `JOB_TITLE`. Other columns, including FEINs, attorney details and personal contacts, are not stored. ISO dates, ISO dates with midnight time, `MM/DD/YYYY`, and Excel date cells are supported. USCIS employer CSVs are not supported by this importer.
 
 ## Evidence and edge cases
 

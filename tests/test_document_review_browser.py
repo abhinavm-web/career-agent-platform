@@ -54,6 +54,14 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                         page.get_by_text('I have personally reviewed this draft and its claims.').click()
                         page.get_by_role('button', name='Approve for manual submission').click()
                         expect(page.locator('.review-card')).to_contain_text('approved for manual submission')
+                        with page.expect_download() as received:
+                            page.get_by_role('button', name='Download reviewed resume Word').click()
+                        from docx import Document
+                        downloaded = Document(received.value.path())
+                        content = '\n'.join(item.text for item in downloaded.paragraphs)
+                        self.assertIn('Delivered a fictional AI program', content)
+                        self.assertNotIn('Private fictional evidence', content)
+                        expect(page.locator('#notice')).to_contain_text('not tracked')
                         expect(page.locator('#detail-panel')).not_to_contain_text('Submission recorded')
                     finally:
                         browser.close()

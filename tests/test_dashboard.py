@@ -385,6 +385,26 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(store.latest_review(self.job.id)["decision"], "approved_for_manual_submission")
             self.assertNotEqual(store.stage_of(self.job.id), "submitted")
 
+    def test_word_export_requires_exact_current_approval(self):
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/resume.docx').status_code, 404)
+        fingerprint = self._draft()
+        path = f'/api/jobs/{self.job.id}/resume.docx?packet_sha256={fingerprint}'
+        self.assertEqual(self.call('GET', path, token='bad').status_code, 403)
+        self.assertEqual(self.call('GET', path).status_code, 412)
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/resume.docx?packet_sha256=' + 'a' * 64).status_code, 409)
+        response = self.call('GET', path)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content.startswith(b'PK'))
+        self.assertEqual(response.headers['content-type'], 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        self.assertIn(fingerprint[:12], response.headers['content-disposition'])
+        with patch('career_agent.dashboard.CandidateWorkspace.latest', return_value={'revision': 99}):
+            self.assertEqual(self.call('GET', path).status_code, 409)
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': False, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(self.call('GET', path).status_code, 412)
+
     def test_no_token_cannot_read_jobs_or_write(self):
         denied = self.client.get("/api/jobs")
         self.assertEqual(denied.status_code, 403)
