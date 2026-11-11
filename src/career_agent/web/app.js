@@ -15,6 +15,7 @@
   };
   let freshnessTimer = null;
   let selectedAvailabilityUpdater = null;
+  let workspaceMutationBusy = false;
 
   const byId = (id) => document.getElementById(id);
   const node = (tag, cls, content) => {
@@ -661,8 +662,22 @@
     }
   }
 
+  function setWorkspaceMutationBusy(busy) {
+    workspaceMutationBusy = busy;
+    byId("profile-screen").inert = busy;
+    byId("career-facts-list").inert = busy;
+    byId("profile-screen").setAttribute("aria-busy", String(busy));
+    for (const id of ["career-profile-form", "career-fact-form"]) {
+      const submit = byId(id).querySelector?.('button[type="submit"]');
+      if (submit) submit.disabled = busy;
+    }
+    byId("import-career-data").disabled = busy;
+  }
+
   async function saveCareerWorkspace(profile, facts, actionLabel) {
+    if (workspaceMutationBusy) return;
     if (!state.workspace) return notice("Open the career profile first.", true);
+    setWorkspaceMutationBusy(true);
     try {
       const response = await api("/api/workspace", "PUT", {
         expected_revision: state.workspace.revision, profile, facts
@@ -675,14 +690,15 @@
       await refresh(undefined, true);
     } catch (error) {
       notice(error.status === 409 ? "Another edit was saved. Reload the profile before editing." : error.message, true);
-    }
+    } finally {setWorkspaceMutationBusy(false);}
   }
 
   async function toggleFactVerification(fact) {
-    if (!state.workspace) return;
+    if (!state.workspace || workspaceMutationBusy) return;
     if (!fact.verified_by_candidate && !window.confirm(
       "Confirm this career statement is accurate and supported by your private evidence?"
     )) return;
+    setWorkspaceMutationBusy(true);
     try {
       const result = await api("/api/workspace/facts/" + encodeURIComponent(fact.id) + "/verification", "POST", {
         expected_revision: state.workspace.revision,
@@ -693,16 +709,19 @@
       notice(fact.verified_by_candidate ? "Fact verification revoked." : "Fact verified. It can now appear in drafts.");
       await refresh(undefined, true);
     } catch (error) {notice(error.message, true);}
+    finally {setWorkspaceMutationBusy(false);}
   }
 
   async function deleteFact(factId) {
-    if (!state.workspace || !window.confirm("Delete this fact from the current career profile? Its historical revisions remain stored locally.")) return;
+    if (workspaceMutationBusy || !state.workspace || !window.confirm("Delete this fact from the current career profile? Its historical revisions remain stored locally.")) return;
     if (state.editingFactId === factId) resetFactEditor();
     await saveCareerWorkspace(state.workspace.profile, state.workspace.facts.filter((fact) => fact.id !== factId), "Fact");
   }
 
   async function importConfiguredProfile() {
+    if (workspaceMutationBusy) return;
     if (!window.confirm("Copy your configured profile and verified facts into this private local workspace? Your original files will remain unchanged.")) return;
+    setWorkspaceMutationBusy(true);
     try {
       const response = await api("/api/workspace/import", "POST", {acknowledged: true});
       state.workspace = response.workspace;
@@ -710,6 +729,7 @@
       notice("Existing career files imported into your local workspace.");
       await refresh();
     } catch (error) {notice(error.message, true);}
+    finally {setWorkspaceMutationBusy(false);}
   }
 
 
@@ -1145,7 +1165,16 @@
     }
   });
   byId("nav-activity").addEventListener("click", () => showScreen("activity"));
-  byId("nav-profile").addEventListener("click", async () => {showScreen("profile"); await loadWorkspace();});
+  byId("nav-profile").addEventListener("click", async () => {
+    if (state.screen === "profile") return;
+    showScreen("profile");
+    if (workspaceMutationBusy) return;
+    const profileScreen = byId("profile-screen");
+    profileScreen.inert = true;
+    profileScreen.setAttribute("aria-busy", "true");
+    try { await loadWorkspace(); }
+    finally { profileScreen.inert = false; profileScreen.setAttribute("aria-busy", "false"); }
+  });
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});
   byId("crm-export").addEventListener("click", async () => {
     const control = byId("crm-export");
