@@ -49,7 +49,7 @@ def create_backup(db, packets, destination, *, offline=False):
     packet_files = sorted(packets.glob('*.json'))
     for path in packet_files:
         _regular(path)
-    if len(packet_files) + len(DATABASES) > MAX_ENTRIES:
+    if len(packet_files) + len(DATABASES) + 1 > MAX_ENTRIES:
         raise ValueError('Too many backup files')
     if any(path.stat().st_size > MAX_FILE for path in packet_files):
         raise ValueError('A packet exceeds the backup file size limit')

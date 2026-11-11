@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from career_agent.backup import create_backup, restore_backup
 from career_agent.cli import main
@@ -120,3 +121,11 @@ class BackupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unsafe'):
             restore_backup(malicious, self.root / 'evil', offline=True)
         self.assertFalse((self.root / 'outside.json').exists())
+
+    def test_entry_limit_accounts_for_manifest(self):
+        with patch('career_agent.backup.MAX_ENTRIES', 4), self.assertRaisesRegex(ValueError, 'Too many'):
+            create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertFalse(self.archive.exists())
+        with patch('career_agent.backup.MAX_ENTRIES', 5):
+            create_backup(self.db, self.packets, self.archive, offline=True)
+            restore_backup(self.archive, self.root / 'limit-restore', offline=True)
