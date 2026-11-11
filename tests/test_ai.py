@@ -78,6 +78,17 @@ class AITests(unittest.TestCase):
 
 @unittest.skipUnless(all(importlib.util.find_spec(m) for m in ('anthropic', 'openai', 'boto3', 'httpx')), 'Install optional AI dependencies')
 class SDKContracts(unittest.TestCase):
+    def test_incomplete_and_tool_responses_are_rejected(self):
+        import httpx
+        route = {'provider': 'lmstudio', 'model': 'fictional', 'base_url': 'http://127.0.0.1:1234/v1'}
+        for finish in ('length', 'tool_calls', 'content_filter'):
+            def handler(request):
+                return httpx.Response(200, json={'id': 'fictional', 'object': 'chat.completion', 'created': 0,
+                    'model': 'fictional', 'choices': [{'index': 0, 'finish_reason': finish,
+                    'message': {'role': 'assistant', 'content': '{"requirements":[]}'}}]})
+            with self.subTest(finish=finish), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))), self.assertRaises(ValueError):
+                ai.complete(route, 'fictional prompt')
+
     def test_openai_compatible_providers_and_azure_token_parameter(self):
         import httpx
         original = httpx.Client
@@ -135,4 +146,3 @@ class SDKContracts(unittest.TestCase):
             self.assertEqual(options.retries['total_max_attempts'], 1)
             self.assertTrue(options.ignore_configured_endpoint_urls)
             stub.assert_no_pending_responses()
-

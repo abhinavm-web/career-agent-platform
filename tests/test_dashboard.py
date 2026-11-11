@@ -89,7 +89,6 @@ class DashboardTests(unittest.TestCase):
         return self.client.request(method, path, headers=values, json=payload)
 
     def test_ai_analysis_requires_consent_and_preserves_application_state(self):
-        from career_agent.ai import analyze
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='{"requirements":[]}') as complete:
             result = self.call('GET', '/api/ai/routes')
