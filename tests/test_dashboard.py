@@ -425,6 +425,26 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(overview["submitted_recorded"], 0)
         self.assertFalse(overview["submission_sent_by_application"])
 
+    def test_jobs_pages_cover_old_jobs_despite_concurrent_insert(self):
+        with Store(self.db) as store:
+            jobs = [fake_job(f'https://example.invalid/jobs/{i}') for i in range(505)]
+            store.add_jobs(jobs)
+        first = self.call('GET', '/api/jobs?limit=100').json()
+        self.assertEqual(len(first['jobs']), 100)
+        self.assertIsNotNone(first['next_before'])
+        with Store(self.db) as store:
+            store.add_jobs([fake_job('https://example.invalid/jobs/new-concurrent')])
+        pages, cursor = list(first['jobs']), first['next_before']
+        while cursor is not None:
+            result = self.call('GET', f'/api/jobs?limit=100&before={cursor}').json()
+            pages.extend(result['jobs']); cursor = result['next_before']
+        self.assertEqual(len(pages), 506)
+        ids = [job['id'] for job in pages]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertIn(self.job.id, ids)
+        self.assertEqual(self.call('GET', '/api/jobs?limit=501').status_code, 422)
+        self.assertEqual(self.call('GET', '/api/jobs?before=-1').status_code, 422)
+
     def test_add_job_dedup_and_validation(self):
         value = {
             "company": "Second Company",

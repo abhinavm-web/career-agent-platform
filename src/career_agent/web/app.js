@@ -10,7 +10,7 @@
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
     packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs",
     workspace: null, editingFactId: null,
-    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0,
+    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0, refreshSequence: 0, boardTruncated: false,
     boardFilters: {location: "", source: "", remote: "all", sponsor: "all", freshness: "all"}
   };
   let freshnessTimer = null;
@@ -165,14 +165,14 @@
         freshnessTimer = null;
         renderJobs();
         if (selectedAvailabilityUpdater) selectedAvailabilityUpdater();
-      }, Math.max(1, Math.min(...expirations) - now));
+      }, Math.max(1, expirations.reduce((earliest, value) => Math.min(earliest, value), Infinity) - now));
     }
     const jobs = filteredJobs();
-    const truncated = (state.overview?.total_jobs ?? 0) > state.jobs.length;
+    const truncated = state.boardTruncated || (state.overview?.total_jobs ?? 0) > state.jobs.length;
     byId("board-limit").hidden = !truncated;
-    byId("board-limit").textContent = truncated
-      ? "Showing the most recent " + state.jobs.length + " opportunities. Board filters do not search older jobs."
-      : "";
+    byId("board-limit").textContent = state.boardTruncated
+      ? "The board reached its loading limit. Filters only search the " + state.jobs.length + " loaded opportunities; older jobs are not included."
+      : truncated ? "The board may have changed while loading. Refresh to include newly added opportunities." : "";
     byId("visible-count").textContent = String(jobs.length) + (jobs.length === 1 ? " opportunity" : " opportunities");
     byId("sort-label").textContent = jobs.some((job) => job.fit_score !== null) ? "Match score first" : "Recently added";
     const pageCount = Math.max(1, Math.ceil(jobs.length / 10));
@@ -490,6 +490,7 @@
       const receiptLabel = node("label", "field", "Employer confirmation reference");
       const receipt = document.createElement("input");
       receipt.type = "text"; receipt.minLength = 4; receipt.maxLength = 200;
+      receipt.id = "submission-reference";
       receipt.placeholder = "Reference from employer application";
       receiptLabel.append(receipt);
       submitted.append(receiptLabel);
@@ -629,14 +630,16 @@
     byId("career-fact-form").scrollIntoView?.({behavior: "smooth", block: "center"});
   }
 
-  async function loadWorkspace() {
+  async function loadWorkspace(preserveEditor = false) {
     try {
       const [data, history] = await Promise.all([
         api("/api/workspace"), api("/api/workspace/history")
       ]);
       if (state.screen !== "profile") return;
+      const draft = preserveEditor && state.workspace ? snapshotEditorInputs() : null;
       state.workspace = data.workspace;
       renderWorkspace(history.revisions);
+      if (draft) restoreEditorInputs(draft);
     } catch (error) {
       notice("Unable to load private career workspace: " + error.message, true);
     }
@@ -750,7 +753,7 @@
       state.workspace = response.workspace;
       resetFactEditor();
       notice("Existing career files imported into your local workspace.");
-      await refresh();
+      await refresh(undefined, false);
     } catch (error) {notice(error.message, true);}
     finally {setWorkspaceMutationBusy(false);}
   }
@@ -1120,14 +1123,41 @@
     }
   }
 
-  async function refresh(keepSelected, preserveEditor = false) {
-    const draft = preserveEditor && state.screen === "profile" && state.workspace
-      ? snapshotEditorInputs() : null;
+  async function loadBoardJobs(sequence) {
+    let cursor = null, previous = Infinity;
+    let characters = 0;
+    const jobs = [], maxJobs = 10000, maxCharacters = 32 * 1024 * 1024;
+    do {
+      const page = await api("/api/jobs?limit=100" + (cursor === null ? "" : "&before=" + cursor));
+      if (sequence !== state.refreshSequence) return null;
+      if (!Array.isArray(page.jobs) || page.jobs.length > 100) throw new Error("Invalid opportunity page");
+      const pageCharacters = JSON.stringify(page.jobs).length;
+      if (characters + pageCharacters > maxCharacters) {
+        if (!jobs.length) throw new Error("Opportunity data exceeds the board loading limit");
+        return {jobs, truncated: true};
+      }
+      characters += pageCharacters;
+      jobs.push(...page.jobs);
+      cursor = page.next_before ?? null;
+      if (cursor !== null && !page.jobs.length) throw new Error("Invalid empty opportunity page");
+      if (cursor !== null && (!Number.isSafeInteger(cursor) || cursor < 1 || cursor >= previous)) {
+        throw new Error("Invalid opportunity cursor; refresh to retry");
+      }
+      if (cursor !== null) previous = cursor;
+      if (jobs.length >= maxJobs && cursor !== null) return {jobs, truncated: true};
+    } while (cursor !== null);
+    return {jobs, truncated: false};
+  }
+
+  async function refresh(keepSelected, preserveEditor = true) {
+    const sequence = ++state.refreshSequence;
     try {
       const results = await Promise.all([
-        api("/api/jobs"), api("/api/overview"), api("/api/settings"), api("/api/reviews")
+        loadBoardJobs(sequence), api("/api/overview"), api("/api/settings"), api("/api/reviews")
       ]);
+      if (sequence !== state.refreshSequence || results[0] === null) return;
       state.jobs = results[0].jobs;
+      state.boardTruncated = results[0].truncated;
       state.overview = results[1];
       state.settings = results[2];
       state.reviews = results[3].reviews;
@@ -1141,15 +1171,23 @@
       renderJobs();
       renderActivity();
       const selectedId = state.selectedId;
+      const previousPacketHash = state.packet?.packet?.packet_sha256;
       if (selectedId) await loadPacket(selectedId); else state.packet = null;
-      if (state.selectedId === selectedId) renderDetail();
+      if (sequence !== state.refreshSequence) return;
+      if (state.selectedId === selectedId) {
+        const receipt = byId("detail-panel").querySelector?.("#submission-reference")?.value;
+        renderDetail();
+        if (receipt !== undefined && previousPacketHash && previousPacketHash === state.packet?.packet?.packet_sha256) {
+          const input = byId("detail-panel").querySelector?.("#submission-reference");
+          if (input) input.value = receipt;
+        }
+      }
       if (state.screen === "profile") {
-        await loadWorkspace();
-        if (draft) restoreEditorInputs(draft);
+        await loadWorkspace(preserveEditor);
       }
       if (state.screen === "tracker") await loadCRM();
     } catch (error) {
-      notice("Unable to load local workspace: " + error.message, true);
+      if (sequence === state.refreshSequence) notice("Unable to load local workspace: " + error.message, true);
     }
   }
 
@@ -1195,7 +1233,7 @@
     const profileScreen = byId("profile-screen");
     profileScreen.inert = true;
     profileScreen.setAttribute("aria-busy", "true");
-    try { await loadWorkspace(); }
+    try { await loadWorkspace(true); }
     finally { profileScreen.inert = false; profileScreen.setAttribute("aria-busy", "false"); }
   });
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});

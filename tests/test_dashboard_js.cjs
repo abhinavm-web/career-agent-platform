@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage = null, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -245,7 +245,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs 
       revisions.unshift({revision: workspace.revision, change_type: "verified", created_at: "now"});
       return Promise.resolve(ok({workspace}));
     }
-    if (url === "/api/jobs") return Promise.resolve(ok({
+    if (url === "/api/jobs?limit=100" || url.startsWith("/api/jobs?limit=100&before=")) return jobsPage ? jobsPage(url) : Promise.resolve(ok({
       jobs: jobsOverride || (olderTrackedJob ? [fakeJob(ID_B, "Role Beta")]
         : [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")]),
     }));
@@ -323,6 +323,70 @@ test("expired session explains how to recover without discarding input", async (
   assert.equal(h.get("discover-query").value, "Fictional role");
 });
 
+test("board loads older pages before applying filters", async () => {
+  const calls = [];
+  const h = createHarness({jobsPage: (url) => {
+    calls.push(url);
+    return Promise.resolve(ok(url.includes("before=")
+      ? {jobs: [fakeJob(ID_B, "Older target")], next_before: null}
+      : {jobs: [fakeJob(ID_A, "Recent role")], next_before: 900}));
+  }});
+  await flush();
+  assert.deepEqual(calls, ["/api/jobs?limit=100", "/api/jobs?limit=100&before=900"]);
+  h.get("search").value = "Older target";
+  h.get("search").handlers.input({target: h.get("search")});
+  assert.match(h.get("job-list").textContent, /Older target/);
+  assert.doesNotMatch(h.get("job-list").textContent, /Recent role/);
+});
+
+test("older board refresh cannot overwrite a newer refresh", async () => {
+  let firstResolve, calls = 0;
+  const h = createHarness({jobsPage: () => {
+    calls++;
+    if (calls === 1) return new Promise((resolve) => {firstResolve = resolve;});
+    return Promise.resolve(ok({jobs: [fakeJob(ID_B, "Newer response")], next_before: null}));
+  }});
+  await h.get("refresh").click();
+  firstResolve(ok({jobs: [fakeJob(ID_A, "Outdated response")], next_before: null}));
+  await flush();
+  assert.match(h.get("job-list").textContent, /Newer response/);
+  assert.doesNotMatch(h.get("job-list").textContent, /Outdated response/);
+});
+
+test("profile edits typed during a slow board refresh survive", async () => {
+  let finish, calls = 0;
+  const h = createHarness({jobsPage: () => {
+    calls++;
+    if (calls === 2) return new Promise((resolve) => {finish = resolve;});
+    return Promise.resolve(ok({jobs: [fakeJob(ID_A, "Role")], next_before: null}));
+  }});
+  await flush();
+  await h.get("nav-profile").click();
+  const refreshing = h.get("refresh").click();
+  h.get("career-headline").value = "Unfinished fictional edit";
+  h.get("fact-statement").value = "A draft being typed";
+  finish(ok({jobs: [fakeJob(ID_A, "Role")], next_before: null}));
+  await refreshing;
+  assert.equal(h.get("career-headline").value, "Unfinished fictional edit");
+  assert.equal(h.get("fact-statement").value, "A draft being typed");
+});
+
+test("nondecreasing board cursor fails rather than looping or hiding data", async () => {
+  const h = createHarness({jobsPage: () => Promise.resolve(ok({jobs: [fakeJob(ID_A, "Role")], next_before: 1}))});
+  await flush();
+  assert.match(h.get("notice").textContent, /Invalid opportunity cursor/);
+});
+
+test("board explicitly discloses its memory limit", async () => {
+  let page = 0;
+  const jobs = Array.from({length: 100}, (_, i) => fakeJob(String(i).padStart(16, "0"), "Role"));
+  const h = createHarness({totalJobs: 10000, jobsPage: () => Promise.resolve(ok({jobs, next_before: 10000 - ++page}))});
+  await flush();
+  assert.equal(page, 100);
+  assert.equal(h.get("board-limit").hidden, false);
+  assert.match(h.get("board-limit").textContent, /10000 loaded opportunities; older jobs are not included/);
+});
+
 test("career assistant shares session context only after consent and can clear it", async () => {
   const h = createHarness(); await flush();
   await h.get("profile-chat-load").click();
@@ -367,7 +431,7 @@ test("board explicitly warns when older jobs are outside its filter scope", asyn
   const limited = createHarness({totalJobs: 501});
   await flush();
   assert.equal(limited.get("board-limit").hidden, false);
-  assert.match(limited.get("board-limit").textContent, /filters do not search older jobs/);
+  assert.match(limited.get("board-limit").textContent, /changed while loading/);
   const complete = createHarness();
   await flush();
   assert.equal(complete.get("board-limit").hidden, true);
