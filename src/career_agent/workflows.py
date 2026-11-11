@@ -12,7 +12,7 @@ from .storage import Store
 from .models import Job
 
 
-def inputs(job, profile, bank, records, revision=None, job_description_revision=None):
+def inputs(job, profile, bank, records, revision=None, job_description_revision=None, tailored_fact_ids=None):
     state = {'job': asdict(job), 'preferences': asdict(profile),
             'fact_bank': {'name': bank.name, 'headline': bank.headline, 'facts': [
                 {'id': f.fact_id, 'section': f.section, 'statement': f.statement,
@@ -21,6 +21,8 @@ def inputs(job, profile, bank, records, revision=None, job_description_revision=
             'filing_records': [asdict(r) for r in records], 'workspace_revision': revision}
     if job_description_revision:
         state['job_description_revision'] = job_description_revision
+    if tailored_fact_ids is not None:
+        state['tailored_fact_ids'] = list(tailored_fact_ids)
     return state
 
 

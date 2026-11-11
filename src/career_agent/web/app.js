@@ -243,8 +243,17 @@
     state.packet = null;
     renderJobs();
     renderDetail();
+    const initialWorkspaceRevision = state.workspace?.revision ?? null;
+    const initialDescriptionRevision = state.jobs.find((job) => job.id === id)?.description_revision ?? 0;
     await loadPacket(id);
-    if (state.selectedId === id) renderDetailPreservingEditor();
+    if (state.selectedId === id) {
+      const comparison = byId("detail-panel").querySelector?.("#fit-evidence");
+      const preserve = comparison?.dataset.started === "true" &&
+        (state.workspace?.revision ?? null) === initialWorkspaceRevision &&
+        (state.jobs.find((job) => job.id === id)?.description_revision ?? 0) === initialDescriptionRevision;
+      renderDetailPreservingEditor();
+      if (preserve) byId("detail-panel").querySelector?.("#fit-evidence")?.replaceWith(comparison);
+    }
   }
 
   async function loadPacket(requestedJobId) {
@@ -278,7 +287,13 @@
   function renderDetailPreservingEditor() {
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
     const keep = editor?.open && editor.dataset.jobId === state.selectedId;
+    const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
+    const keepPicker = picker?.open && picker.dataset.jobId === state.selectedId;
     renderDetail();
+    if (keepPicker) {
+      const replacement = byId("detail-panel").querySelector?.(".tailoring-picker");
+      if (replacement) replacement.replaceWith(picker);
+    }
     if (keep) {
       const replacement = byId("detail-panel").querySelector?.("#job-description-editor");
       if (replacement) replacement.replaceWith(editor);
@@ -390,6 +405,38 @@
       detail.append(fit);
     }
 
+    const evidence = section("Review explicit requirements");
+    evidence.id = "fit-evidence";
+    evidence.append(node("p", "", "Compare clearly labeled requirement bullets with your verified facts. Keyword links are suggestions, not qualification decisions."));
+    const evidenceResult = node("div");
+    evidenceResult.setAttribute("role", "status");
+    const evidenceButton = button("Compare requirements", "button", async () => {
+      if (evidenceButton.disabled) return;
+      evidence.dataset.started = "true";
+      evidenceButton.disabled = true;
+      evidenceResult.textContent = "Comparing saved posting text with verified facts…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/fit-evidence");
+        if (result.job_id !== job.id || result.description_revision !== (job.description_revision ?? 0)) {
+          throw new Error("The posting changed; refresh the board and compare again.");
+        }
+        evidenceResult.replaceChildren(node("p", "muted", result.notice));
+        evidenceResult.append(node("p", "muted", "Snapshot of saved posting revision " + result.description_revision + " and profile revision " + result.workspace_revision + ". Compare again after changes."));
+        if (!result.requirements.length) evidenceResult.append(node("p", "", "No clearly labeled requirement bullets found; review the full posting manually."));
+        for (const row of result.requirements) {
+          const item = node("div", "fit-evidence-item");
+          item.append(node("strong", "", row.category === "required" ? "Labeled required" : "Labeled preferred"), node("blockquote", "", row.quote));
+          if (!row.suggested_facts.length) item.append(node("p", "", "No verified fact matched by keyword; evidence remains unknown."));
+          for (const fact of row.suggested_facts) item.append(node("p", "", "Potentially relevant verified fact " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));
+          evidenceResult.append(item);
+        }
+        if (result.truncated) evidenceResult.append(node("p", "", "Some content exceeded review limits; inspect the full posting."));
+      } catch (error) {evidenceResult.textContent = "Unable to compare requirements: " + error.message;}
+      finally {evidenceButton.disabled = false;}
+    });
+    evidence.append(evidenceButton, evidenceResult);
+    detail.append(evidence);
+
     const desc = section("Job description");
     desc.append(node("p", "description", job.description || "No description saved."));
     if (job.description_correction) {
@@ -445,6 +492,45 @@
       drafts.append(node("p", "", "This submitted application's reviewed packet is locked. Draft regeneration is disabled."));
     } else {
       drafts.append(button(job.packet_available ? "Regenerate draft" : "Create application draft", "button button-primary", createDraft));
+      const choose = node("details", "tailoring-picker");
+      choose.dataset.jobId = job.id;
+      choose.append(node("summary", "", "Choose facts for a tailored draft"));
+      choose.append(node("p", "muted", "Select up to 12 verified facts. Statements are copied verbatim and the new draft needs a fresh review."));
+      const choices = node("div");
+      const status = node("p", "muted"); status.setAttribute("role", "status");
+      const load = button("Load verified facts", "button", async () => {
+        if (load.disabled) return;
+        load.disabled = true;
+        try {
+          const result = await api("/api/tailoring/facts");
+          choices.replaceChildren();
+          const selected = [];
+          for (const fact of result.facts) {
+            const label = node("label", "check-label");
+            const box = document.createElement("input"); box.type = "checkbox";
+            label.append(box, document.createTextNode(fact.section + " · " + fact.statement));
+            choices.append(label); selected.push({box, id: fact.id});
+          }
+          const submit = button("Create tailored draft", "button button-primary", async () => {
+            const fact_ids = selected.filter((item) => item.box.checked).map((item) => item.id);
+            if (!fact_ids.length || fact_ids.length > 12) {status.textContent = "Select between 1 and 12 facts."; return;}
+            if (submit.disabled) return;
+            submit.disabled = true; load.disabled = true;
+            selected.forEach((item) => {item.box.disabled = true;});
+            try {
+              await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256});
+              notice("Tailored draft created locally. Review it before using.");
+              if (state.selectedId === job.id) await refresh(job.id);
+            } catch (error) {status.textContent = error.message;}
+            finally {submit.disabled = false; load.disabled = false; selected.forEach((item) => {item.box.disabled = false;});}
+          });
+          choices.append(submit);
+          status.textContent = result.facts.length ? "Choose the facts to include." : "No verified facts available.";
+          submit.disabled = !result.facts.length;
+        } catch (error) {status.textContent = error.message;}
+        finally {load.disabled = false;}
+      });
+      choose.append(load, choices, status); drafts.append(choose);
     }
     detail.append(drafts);
     if (state.packet) renderPacket(detail, job, state.packet);

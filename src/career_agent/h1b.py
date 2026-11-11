@@ -95,6 +95,12 @@ class H1BResearch:
                 source_url TEXT NOT NULL, captured_on TEXT NOT NULL, imported_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS h1b_employer ON h1b_lca(employer_key,fiscal_year);
+            CREATE TABLE IF NOT EXISTS h1b_employer_links (
+                job_id TEXT NOT NULL REFERENCES jobs(job_id), revision INTEGER NOT NULL,
+                employer TEXT NOT NULL, source_note TEXT NOT NULL,
+                changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(job_id,revision)
+            );
         ''')
         from .uscis import USCISRecords
         from .posting_checks import PostingChecks
@@ -272,14 +278,47 @@ class H1BResearch:
                 'counts': [dict(row) for row in rows], 'records': [dict(row) for row in recent],
                 'record_limit': 20, 'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
 
+    def employer_link(self, job_id):
+        row = self.conn.execute('SELECT revision,employer,source_note,changed_at FROM h1b_employer_links WHERE job_id=? ORDER BY revision DESC LIMIT 1', (job_id,)).fetchone()
+        return dict(row) if row else None
+
+    def link_employer(self, job, data):
+        """Save an explicitly selected imported entity; never assert legal equivalence."""
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm that this employer name is a candidate-provided association')
+        revision, name, note = data.get('expected_revision'), data.get('employer'), data.get('source_note')
+        if type(revision) is not int or revision < 0:
+            raise ValueError('Expected employer association revision must be a nonnegative integer')
+        if not isinstance(name, str) or len(name) > 300 or '\x00' in name:
+            raise ValueError('Employer name must be text of at most 300 characters')
+        name = name.strip()
+        note = text(note, 'Source note', 500)
+        with self.conn:
+            self.conn.execute('BEGIN IMMEDIATE')
+            current = self.employer_link(job.id)
+            if revision != (current['revision'] if current else 0):
+                raise ValueError('Employer association changed; reload before editing')
+            if name:
+                key = employer_key(name)
+                row = self.conn.execute('''SELECT MIN(employer) FROM (
+                    SELECT employer FROM h1b_lca WHERE employer_key=? UNION ALL
+                    SELECT employer FROM uscis_employers WHERE employer_key=?)''', (key, key)).fetchone()
+                if not row or not row[0]:
+                    raise ValueError('Choose the exact legal employer name from imported DOL or USCIS records')
+                name = row[0]
+            self.conn.execute('INSERT INTO h1b_employer_links(job_id,revision,employer,source_note) VALUES(?,?,?,?)',
+                              (job.id, revision + 1, name, note))
+        return self.job(job)
+
     def job(self, job, settings=None):
         from .posting_checks import target
         settings = settings or self.settings()
-        history = self.company(job.company, settings)
+        association = self.employer_link(job.id)
+        history = self.company(association['employer'] if association and association['employer'] else job.company, settings)
         policy = h1b_policy(job.description, settings['need'])
         return {**policy, 'id': job.id, 'company': job.company, 'title': job.title, 'url': job.url,
                 'live_check': self.posting_checks.latest(job.id), 'live_check_supported': target(job.url) is not None,
-                'location': job.location, 'history': history, 'posting_freshness': 'not_revalidated',
+                'location': job.location, 'history': history, 'employer_association': association, 'posting_freshness': 'not_revalidated',
                 'eligibility': 'not_determined', 'need': settings['need']}
 
     def opportunities(self, query='', category='all', offset=0):

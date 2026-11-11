@@ -102,12 +102,21 @@ def build_packet(
     *,
     workspace_revision: int | None = None,
     job_description_revision: int | None = None,
+    tailored_fact_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     if workspace_revision is not None and (type(workspace_revision) is not int or workspace_revision < 1):
         raise ValueError("workspace_revision must be a positive integer")
     if job_description_revision is not None and (type(job_description_revision) is not int or job_description_revision < 1):
         raise ValueError("job_description_revision must be a positive integer")
-    selected = select_facts(job, bank)
+    if tailored_fact_ids is None:
+        selected = select_facts(job, bank)
+    else:
+        claims = {fact.fact_id: fact for fact in bank.facts}
+        if (not isinstance(tailored_fact_ids, list) or not 1 <= len(tailored_fact_ids) <= 12
+                or not all(isinstance(item, str) and item in claims for item in tailored_fact_ids)
+                or len(set(tailored_fact_ids)) != len(tailored_fact_ids)):
+            raise ValueError('Select 1–12 distinct verified career facts')
+        selected = tuple(sorted((claims[item] for item in tailored_fact_ids), key=lambda fact: SECTIONS.index(fact.section)))
     selected_ids = {fact.fact_id for fact in selected}
     fit = score_job(job, preferences)
     packet = {
@@ -151,6 +160,8 @@ def build_packet(
         packet["candidate_workspace_revision"] = workspace_revision
     if job_description_revision is not None:
         packet["job_description_revision"] = job_description_revision
+    if tailored_fact_ids is not None:
+        packet["tailored_fact_ids"] = list(tailored_fact_ids)
     packet["packet_sha256"] = packet_fingerprint(packet)
     return packet
 
