@@ -36,7 +36,8 @@
 - [ ] Live provider qualification and model-quality evaluation dataset
 - [ ] Durable AI run history, cancellation, token/cost budgets and health diagnostics
 
-- [ ] LangGraph typed state and checkpointing
+- [x] LangGraph typed state, synchronous SQLite checkpoints and durable draft/review recovery
+- [x] Saved JobSpy schedules, isolated deadline-bound fetching, import receipts and failure backoff
 - [ ] Human interrupt before application transmission
 - [ ] Multi-source discovery, retry and duplicate clustering
 - [ ] Supervised ATS connectors for Greenhouse, Lever and Ashby

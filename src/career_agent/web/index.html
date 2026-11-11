@@ -10,6 +10,7 @@
   <script defer src="/assets/app.js"></script>
   <script defer src="/assets/h1b.js"></script>
   <script defer src="/assets/ai.js"></script>
+  <script defer src="/assets/automation.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -260,6 +261,30 @@
         </div>
       </section>
 
+      <details class="panel profile-editor" id="automation-panel">
+        <summary>Automatic job discovery and workflow runs</summary>
+        <p>Save a search once. JobSpy pulls jobs on schedule while this app runs, including when your browser is closed. Overdue searches run after restart. Existing jobs are preserved and duplicates skipped. Source availability and terms vary; no access-control bypass is used.</p>
+        <form id="schedule-form">
+          <label>Job titles / query<input id="schedule-query" required maxlength="160" placeholder="AI Program Manager"></label>
+          <label>Location<input id="schedule-location" required maxlength="160" value="United States"></label>
+          <label>Every (hours)<input id="schedule-hours" type="number" min="1" max="168" value="6" required></label>
+          <label>Results per source<input id="schedule-results" type="number" min="1" max="50" value="20" required></label>
+          <fieldset><legend>Job boards</legend>
+            <label><input type="checkbox" id="schedule-indeed" checked> Indeed</label>
+            <label><input type="checkbox" id="schedule-linkedin"> LinkedIn</label>
+            <label><input type="checkbox" id="schedule-zip_recruiter"> ZipRecruiter</label>
+          </fieldset>
+          <label><input type="checkbox" id="schedule-consent" required> Enable recurring requests with these search filters to the selected sources. I have checked that my intended use is permitted.</label>
+          <button type="submit" id="schedule-save" class="button button-primary">Enable automatic search</button>
+        </form>
+        <button type="button" id="automation-refresh" class="button">Refresh runs and searches</button>
+        <p id="automation-status" role="status" aria-live="polite"></p>
+        <div id="automation-searches"></div>
+        <h3>Recent discovery runs</h3><div id="automation-runs"></div>
+        <h3>Application workflows</h3>
+        <p>Create a draft on the opportunity board to start a durable workflow. Review pauses survive restarts. Failed local workflows can be resumed if their inputs are unchanged.</p>
+        <div id="workflow-runs"></div>
+      </details>
       <details class="panel profile-editor" id="ai-panel">
         <summary>AI requirement analyst</summary>
         <p>Read-only suggestions from a model you choose. Sends the selected posting and verified fact statements; excludes your name and private evidence notes as separate fields. Statements themselves may contain personal information. No application changes.</p>

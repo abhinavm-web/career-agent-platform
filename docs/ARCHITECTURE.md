@@ -28,9 +28,9 @@
 - storage.py: local database and safe application state transitions.
 - cli.py: manually invoked commands.
 
-## Intended LangGraph implementation (not built yet)
+## Implemented core LangGraph orchestration
 
-A future orchestration layer will add typed state and checkpoints for discover, dedupe, enrich, sponsorship research, score, truthful résumé tailoring, review and tracking. An interrupt must require candidate authorization immediately before any external submission. LangGraph is an architectural direction, not part of the current MVP.
+`automation.py` runs scheduled discover → normalize/dedupe → import graphs. `workflows.py` manages analyze → sponsorship → draft → validate → review graphs. Both use synchronous SQLite checkpoints. Application reviews resume after restart; discovery retries are safe through deduplication and transactional import receipts. Additional follow-up/interview agents and external submission remain unimplemented. See [operational details](AUTOMATION.md).
 
 ## Trust boundaries
 
@@ -45,7 +45,7 @@ Before hosting the service, add identity management, encryption, explicit consen
 - `sponsor_evidence.py`: dated employer-source records, exact entity matching, explicit limitations.
 - `graph_review.py`: optional LangGraph analyze → draft → interrupt → resume. The graph cannot send an application.
 
-Both the standard `draft` command and the optional `workflow` graph write application packets to a gitignored local directory. An approval only authorizes manual submission by the candidate. These in-memory checkpoints are not persistent and must not be treated as hosted-production security or auditing.
+Both the standard `draft` command and the `workflow` graph write application packets to a gitignored local directory. An approval only authorizes manual submission by the candidate. The dashboard and CLI `workflow` use durable local SQLite checkpoints; the standalone `review` command remains an in-memory utility. This is not hosted-production security.
 
 
 ## Phase 3.5: local-only HTTP dashboard
@@ -55,7 +55,7 @@ Both the standard `draft` command and the optional `workflow` graph write applic
 - storage.py: append-only packet_reviews table, keyed by job ID and the current packet fingerprint.
 - CLI serve: binds to 127.0.0.1 and does not accept a public host override.
 
-The server does not invoke JobSpy, LangGraph, external LLMs, or ATS websites. Its local web reviews are persisted independently of the in-memory LangGraph graph. The server never submits an application, and a submitted status requires explicit user attestation of a real external submission.
+The server invokes JobSpy through explicit searches or saved opt-in schedules, LangGraph for durable draft/review workflows, selected model providers after per-request consent, and supported ATS APIs after explicit live-check requests. The server never submits an application, and submitted status requires explicit user attestation of a real external submission.
 
 This architecture is only for a trusted single user. API session tokens are not replacement identity or user isolation in hosted multi-user deployments. See [Dashboard](DASHBOARD.md).
 

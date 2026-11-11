@@ -8,6 +8,7 @@ Working name only. Final product branding awaits trademark clearance.
 
 - Imports CSV job listings and deduplicates them by stable normalized URLs.
 - Optionally discovers US jobs via JobSpy through an explicit CLI command or the dashboard search form.
+- Runs [saved JobSpy searches automatically and persists LangGraph draft/review workflows](docs/AUTOMATION.md), with restart recovery, run history and pause/resume controls.
 - Scores title, verified profile skills, and location against job descriptions, with an explanation and candidate skills not mentioned in the posting; this is not a qualification-gap assessment.
 - Flags apparent sponsorship exclusions, sponsorship claims and source-backed historical employer records separately. A past LCA is **not** an H-1B sponsorship offer.
 - Stores jobs and application stages in local SQLite.
@@ -73,7 +74,7 @@ Or run the full `analyze → draft → human_review` graph in one command:
 
     career-agent workflow JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json
 
-The CLI prints the draft and requires you to type `APPROVE JOB_ID` before marking the packet approved **for manual submission only**. It does not apply to any jobs. The graph is an in-memory local demonstration, not a persistent cloud service.
+The CLI prints the draft and requires you to type `APPROVE JOB_ID` before marking the packet approved **for manual submission only**. It does not apply to any jobs. The `workflow` command now persists SQLite checkpoints and accepts `--resume-run RUN_ID`; Enter leaves review pending. The standalone `review` utility remains in-memory. See [durable workflows](docs/AUTOMATION.md).
 
 Optional source-backed sponsorship history:
 

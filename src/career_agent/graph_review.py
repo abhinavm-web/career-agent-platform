@@ -1,7 +1,7 @@
-"""LangGraph scoring → sponsorship → draft → human review.
+"""LangGraph scoring → sponsorship → draft → validation → human review.
 
-No application submission occurs. Local demonstration uses in-memory
-checkpoints: restarting a process loses its pending interrupt.
+Callers supply durable SQLite checkpoints; in-memory storage remains available
+for isolated tests and the legacy standalone review command. No submissions.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ class CareerState(TypedDict, total=False):
     analysis: dict[str, Any]
     packet: dict[str, Any]
     review_status: str
+    workspace_revision: int | None
 
 
 def _imports():
@@ -94,7 +95,7 @@ def _review_node(state: CareerState, interrupt) -> dict[str, str]:
     }
 
 
-def build_career_graph():
+def build_career_graph(checkpointer=None):
     """A real multi-node LangGraph pipeline with explicit review interrupt."""
     InMemorySaver, END, START, StateGraph, _, interrupt = _imports()
 
@@ -103,26 +104,41 @@ def build_career_graph():
         return {
             "analysis": {
                 "fit": asdict(score_job(job, preferences)),
-                "sponsorship": sponsorship_report(job, records),
             }
         }
 
+    def sponsorship(state: CareerState) -> dict[str, Any]:
+        job, _, _, records = _decode(state)
+        return {'analysis': {**state['analysis'], 'sponsorship': sponsorship_report(job, records)}}
+
     def draft(state: CareerState) -> dict[str, Any]:
         job, preferences, bank, records = _decode(state)
-        return {"packet": build_packet(job, preferences, bank, records)}
+        return {"packet": build_packet(job, preferences, bank, records,
+                                       workspace_revision=state.get('workspace_revision'))}
+
+    def validate(state: CareerState) -> dict:
+        validate_packet(state['packet'])
+        _, _, bank, _ = _decode(state)
+        if not set(state['packet']['selected_fact_ids']).issubset(bank.public_claims()):
+            raise ValueError('Draft references unsupported facts')
+        return {}
 
     def human_review(state: CareerState) -> dict[str, str]:
         return _review_node(state, interrupt)
 
     builder = StateGraph(CareerState)
     builder.add_node("analyze", analyze)
+    builder.add_node("sponsorship", sponsorship)
     builder.add_node("draft", draft)
+    builder.add_node("validate", validate)
     builder.add_node("human_review", human_review)
     builder.add_edge(START, "analyze")
-    builder.add_edge("analyze", "draft")
-    builder.add_edge("draft", "human_review")
+    builder.add_edge("analyze", "sponsorship")
+    builder.add_edge("sponsorship", "draft")
+    builder.add_edge("draft", "validate")
+    builder.add_edge("validate", "human_review")
     builder.add_edge("human_review", END)
-    return builder.compile(checkpointer=InMemorySaver())
+    return builder.compile(checkpointer=checkpointer if checkpointer is not None else InMemorySaver())
 
 
 def build_review_graph():
