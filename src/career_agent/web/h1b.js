@@ -121,6 +121,7 @@
         const check = node("button", "Check live ATS posting");
         check.type = "button";
         check.className = "button";
+        check.disabled = !job.live_check_supported;
         check.addEventListener("click", async () => {
           check.disabled = true;
           observation.textContent = "Checking public ATS data…";
@@ -128,7 +129,7 @@
           catch (error) { observation.textContent = error.message; }
           finally { check.disabled = false; }
         });
-        card.append(node("p", "This contacts Greenhouse or Lever for the public posting only. Other sites remain unknown. Observations become stale after 24 hours."), check, observation);
+        card.append(node("p", job.live_check_supported ? "This contacts the public ATS for this posting. Observations become stale after 24 hours." : "Live checks support Greenhouse and Lever postings. Check this original posting manually; availability remains unknown."), check, observation);
         results.append(card);
       }
     } catch (error) {

@@ -34,7 +34,7 @@ $env:ANTHROPIC_API_KEY = Read-Host 'Anthropic API key' -MaskInput
 
 AWS uses the normal SDK credential chain (prefer a signed-in profile/role). No credentials are read from JSON. An explicitly configured region is required; inference profiles may route across regions according to AWS configuration. Azure supports key-authenticated Azure OpenAI v1 chat completions, not arbitrary Foundry endpoints or Entra ID yet. Local routes require literal loopback HTTP addresses. Optional `key_env` can name a local server token; otherwise a dummy local credential is used. A loopback endpoint does not guarantee local inference: Ollama cloud models, proxies and LM Studio remote links may forward requests. Check that server's settings.
 
-Expand **AI requirement analyst** at the bottom of the workspace, load routes/jobs, select a route and job, and explicitly consent per request. The selected destination is shown. No provider is contacted merely by loading the page or configuration. Alternatively:
+Open **AI analysis** in the workspace navigation, select a route and job, and explicitly consent per request. You can also open analysis from an opportunity's detail; it carries the selected job into the analysis screen. At least one verified career fact is required. The selected destination is shown. No provider is contacted merely by loading the page or configuration. Alternatively:
 
 ```powershell
 career-agent --db .local/demo.sqlite3 ai-analyze JOB_ID --facts .local/facts.json --route claude --acknowledge-data-sharing

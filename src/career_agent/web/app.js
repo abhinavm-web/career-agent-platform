@@ -10,7 +10,7 @@
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
     packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs",
     workspace: null, editingFactId: null,
-    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0
+    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0
   };
 
   const byId = (id) => document.getElementById(id);
@@ -84,7 +84,7 @@
 
   function showScreen(screen) {
     state.screen = screen;
-    const screens = {jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker", h1b: "H-1B research"};
+    const screens = {jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker", h1b: "H-1B research", automation: "Saved searches", ai: "AI analysis"};
     for (const name of Object.keys(screens)) {
       byId(name + "-screen").hidden = screen !== name;
       byId("nav-" + name).classList.toggle("active", screen === name);
@@ -92,6 +92,7 @@
       else byId("nav-" + name).removeAttribute("aria-current");
     }
     byId("section-name").textContent = screens[screen];
+    window.scrollTo?.(0, 0);
   }
 
   function renderMetrics() {
@@ -104,6 +105,7 @@
     const ready = s.profile_configured && s.facts_configured;
     el.textContent = ready ? "Candidate profile configured" : "Profile / facts not configured";
     el.classList.toggle("warn", !ready);
+    byId("profile-prompt").hidden = ready;
   }
 
   function filteredJobs() {
@@ -123,13 +125,19 @@
   function renderJobs() {
     const jobs = filteredJobs();
     byId("visible-count").textContent = String(jobs.length) + (jobs.length === 1 ? " opportunity" : " opportunities");
+    byId("sort-label").textContent = jobs.some((job) => job.fit_score !== null) ? "Match score first" : "Recently added";
+    const pageCount = Math.max(1, Math.ceil(jobs.length / 10));
+    state.jobsPage = Math.min(state.jobsPage, pageCount - 1);
+    byId("jobs-page").textContent = "Page " + (state.jobsPage + 1) + " of " + pageCount;
+    byId("jobs-prev").disabled = state.jobsPage === 0;
+    byId("jobs-next").disabled = state.jobsPage >= pageCount - 1;
     const list = byId("job-list");
     list.replaceChildren();
     if (!jobs.length) {
       list.append(node("p", "loading", "No matching opportunities. Add a job or change filters."));
       return;
     }
-    for (const job of jobs) {
+    for (const job of jobs.slice(state.jobsPage * 10, (state.jobsPage + 1) * 10)) {
       const item = button("", "job-item" + (state.selectedId === job.id ? " selected" : ""), () => selectJob(job.id));
       item.setAttribute("aria-label", "View " + job.title + " at " + job.company);
       item.setAttribute("aria-pressed", String(state.selectedId === job.id));
@@ -141,6 +149,7 @@
       const lower = node("div", "job-item-bottom");
       const signal = sponsorshipLabel(job.sponsorship_status);
       lower.append(chip(signal[0], signal[1]));
+      if (job.source) lower.append(chip("Source: " + job.source));
       if (job.packet_available) lower.append(chip(
         job.packet_stale ? "Draft outdated" : (job.review_decision ? "Reviewed" : "Draft ready"),
         job.review_decision && !job.packet_stale ? "teal" : "amber"
@@ -219,6 +228,15 @@
     detail.append(info);
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
+    actions.append(button("Analyze with AI", "button", () => {
+      if (byId("ai-job").value !== job.id) {
+        byId("ai-results").replaceChildren();
+        byId("ai-consent").checked = false;
+        byId("ai-status").textContent = "Loading selected opportunity…";
+      }
+      byId("ai-job").dataset.requestedJob = job.id;
+      byId("nav-ai").click();
+    }));
     detail.append(actions);
 
     const sponsor = section("Sponsorship assessment");
@@ -965,6 +983,10 @@
       state.reviews = results[3].reviews;
       const previous = keepSelected || state.selectedId;
       state.selectedId = state.jobs.some((job) => job.id === previous) ? previous : null;
+      if (keepSelected && state.selectedId) {
+        const index = filteredJobs().findIndex((job) => job.id === state.selectedId);
+        if (index >= 0) state.jobsPage = Math.floor(index / 10);
+      }
       renderMetrics();
       renderJobs();
       renderActivity();
@@ -983,6 +1005,10 @@
 
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
   byId("nav-h1b").addEventListener("click", () => showScreen("h1b"));
+  byId("nav-automation").addEventListener("click", () => {showScreen("automation"); byId("automation-panel").open = true; byId("automation-refresh").click();});
+  byId("nav-ai").addEventListener("click", () => {showScreen("ai"); byId("ai-panel").open = true; byId("ai-load").click();});
+  byId("open-profile").addEventListener("click", () => byId("nav-profile").click());
+  byId("ai-open-profile").addEventListener("click", () => byId("nav-profile").click());
   byId("discover-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const submit = byId("discover-submit");
@@ -1073,8 +1099,10 @@
   });
   byId("fact-reset").addEventListener("click", resetFactEditor);
   byId("refresh").addEventListener("click", () => refresh());
-  byId("search").addEventListener("input", (event) => {state.search = event.target.value; renderJobs();});
-  byId("filter").addEventListener("change", (event) => {state.filter = event.target.value; renderJobs();});
+  byId("search").addEventListener("input", (event) => {state.search = event.target.value; state.jobsPage = 0; renderJobs();});
+  byId("filter").addEventListener("change", (event) => {state.filter = event.target.value; state.jobsPage = 0; renderJobs();});
+  byId("jobs-prev").addEventListener("click", () => {state.jobsPage = Math.max(0, state.jobsPage - 1); renderJobs();});
+  byId("jobs-next").addEventListener("click", () => {state.jobsPage += 1; renderJobs();});
   byId("show-add-job").addEventListener("click", () => {byId("add-job-form").hidden = false;});
   byId("close-add-job").addEventListener("click", () => {byId("add-job-form").hidden = true;});
   byId("add-job-form").addEventListener("submit", async (event) => {

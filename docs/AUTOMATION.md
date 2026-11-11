@@ -2,7 +2,7 @@
 
 ## Automatic JobSpy searches
 
-Install `pip install -e ".[web,jobspy]"`, then run the local server normally. Expand **Automatic job discovery and workflow runs**, enter a query/location, choose job boards and frequency, acknowledge recurring requests, and enable the search. No CSV is needed. The first run becomes due immediately; the worker checks every 15 seconds. New jobs appear on the opportunity board after Refresh.
+Install `pip install -e ".[web,jobspy]"`, then run the local server normally. Open **Saved searches** in the navigation, enter a query/location, choose job boards and frequency, acknowledge recurring requests, and enable the search. No CSV is needed. The first run becomes due immediately; the worker checks every 15 seconds. New jobs appear on the opportunity board after Refresh.
 
 Up to five saved searches are supported, with 1–50 results requested per source, intervals of 1 hour to 7 days (default 6 hours), and a shared one-minute cooldown between searches. Pause/resume settings survive restarts. Pause a search before removing it; run history remains. Search filters are sent to selected sources, not candidate facts, notes or API keys. Use only sources whose terms permit your intended use; this feature adds no proxy rotation, login automation or access-control bypass.
 

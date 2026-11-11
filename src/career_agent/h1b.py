@@ -143,11 +143,12 @@ class H1BResearch:
                 'record_limit': 20, 'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
 
     def job(self, job, settings=None):
+        from .posting_checks import target
         settings = settings or self.settings()
         history = self.company(job.company, settings)
         policy = h1b_policy(job.description, settings['need'])
         return {**policy, 'id': job.id, 'company': job.company, 'title': job.title, 'url': job.url,
-                'live_check': self.posting_checks.latest(job.id),
+                'live_check': self.posting_checks.latest(job.id), 'live_check_supported': target(job.url) is not None,
                 'location': job.location, 'history': history, 'posting_freshness': 'not_revalidated',
                 'eligibility': 'not_determined', 'need': settings['need']}
 

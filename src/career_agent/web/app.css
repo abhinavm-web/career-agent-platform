@@ -239,3 +239,49 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .crm-record p {font-size:12px;color:#bdcbe0;margin:6px 0;}
 .crm-record .button-row input[type="date"] {background:#0d192a;border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px;}
 @media(max-width:900px) {.crm-summary{grid-template-columns:1fr;}}
+
+/* Focused workspace: task navigation and a more legible opportunity workbench. */
+.sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+.screen {padding-top:34px;}
+.section-heading {align-items:center;margin-bottom:22px;}
+.section-heading h2 {font-size:26px;letter-spacing:-.03em;}
+.section-description {margin:7px 0 0;color:var(--muted);font-size:13px;}
+.setup-banner {display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 20px;margin-bottom:16px;border:1px solid #67532e;background:#2b271f;border-radius:12px;}
+.setup-banner strong {color:#ffe0a7;font-size:14px;}
+.setup-banner p {color:#e0d1b9;font-size:12px;margin:4px 0 0;}
+.setup-banner .button {white-space:nowrap;}
+.discovery-quick {margin:0 0 16px;padding:17px 20px;}
+.board {grid-template-columns:minmax(285px, 0.9fr) minmax(0, 1.4fr);gap:18px;}
+.job-list {max-height:none;overflow:visible;}
+.job-item {padding:16px 19px;}
+.job-item h3 {font-size:14px;}
+.job-item small {font-size:12px;}
+.list-count {font-size:11px;}
+.pagination {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;color:var(--muted);font-size:12px;}
+.pagination .button {padding:8px 12px;}
+.detail-panel {position:sticky;top:20px;max-height:calc(100vh - 40px);overflow:auto;min-height:490px;}
+.empty-detail {min-height:400px;}
+.detail-section p,.detail-section li {font-size:13px;line-height:1.6;}
+#ai-form {display:grid;gap:14px;margin-top:18px;}
+#ai-form > label:not(.check-label) {display:grid;gap:7px;color:var(--muted);font-size:12px;}
+#ai-form .button {justify-self:start;}
+#ai-destination {margin:0;color:var(--muted);font-size:12px;overflow-wrap:anywhere;}
+#schedule-form {display:grid;gap:12px;margin:18px 0;}
+#schedule-form label {display:grid;gap:6px;color:var(--muted);font-size:12px;}
+#schedule-form fieldset label {display:inline-flex;align-items:center;gap:6px;margin-right:18px;}
+#schedule-form .button {justify-self:start;}
+#automation-searches section,#workflow-runs section {padding:12px 0;border-bottom:1px solid var(--border);line-height:1.6;}
+#automation-searches .button,#workflow-runs .button {margin-left:10px;}
+@media(max-width:780px) {
+  .rail {gap:12px;}
+  .navigation {overflow-x:auto;min-width:0;}
+  .nav-item {width:auto;flex:0 0 auto;white-space:nowrap;}
+  .board {display:flex;flex-direction:column;}
+  .detail-panel {position:static;max-height:none;overflow:visible;}
+  .job-list {max-height:none;}
+}
+@media(max-width:440px) {
+  .nav-item {font-size:11px;gap:6px;}
+  .nav-glyph {font-size:18px;}
+  .setup-banner {align-items:flex-start;flex-direction:column;}
+}

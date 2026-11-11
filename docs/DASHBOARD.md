@@ -26,7 +26,7 @@ All private candidate files should be outside the public repository or under a g
 - After **manually applying on an employer site**, record a confirmation reference and attestation to update application status.
 - Show dashboard counts and recent review decisions.
 
-The app **does not** fetch jobs automatically, perform ATS submissions, or answer visa screening questions. JobSpy discovery is available through both the CLI and the Opportunity board's **Find jobs with JobSpy** form. Each dashboard search requires explicit acknowledgement that its query and location will be sent to external sources. Profile facts, recruiter contacts and private notes are not included in the discovery request.
+JobSpy discovery is available through the CLI, the Opportunity board's **Find jobs with JobSpy** form, and opted-in recurring searches under **Saved searches**. Each dashboard search requires explicit acknowledgement that its query and location will be sent to external sources. Profile facts, recruiter contacts and private notes are not included in discovery requests. The app does not submit applications or answer visa screening questions.
 
 Install discovery with `python -m pip install -e ".[web,jobspy]"`, restart the server, then enter a role, location and requested results per source (1–100). The manual JobSpy adapter searches Indeed, LinkedIn and ZipRecruiter for US jobs. Returned jobs are normalized and deduplicated by the existing job store. Saved automatic searches have separate source selection, stricter limits, an isolated worker deadline and failure backoff; see [Automation](AUTOMATION.md). Manual searches remain separately invoked and may take several minutes.
 

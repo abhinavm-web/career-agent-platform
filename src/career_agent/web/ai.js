@@ -25,14 +25,29 @@
     if (busy) return;
     busy = true; el("ai-load").disabled = true; el("ai-run").disabled = true;
     try {
-      const [models, jobs] = await Promise.all([api("/api/ai/routes"), api("/api/jobs")]);
+      const previousRoute = el("ai-route").value;
+      const previousJob = el("ai-job").value;
+      const [models, jobs, settings] = await Promise.all([api("/api/ai/routes"), api("/api/jobs"), api("/api/settings")]);
       routes = models.routes;
       for (const id of ["ai-route", "ai-job"]) el(id).replaceChildren();
       for (const r of routes) { const n = text("option", `${r.route} (${r.provider})`); n.value = r.route; el("ai-route").append(n); }
       for (const j of jobs.jobs) { const n = text("option", `${j.company} — ${j.title}`); n.value = j.id; el("ai-job").append(n); }
-      changed();
-      el("ai-run").disabled = !routes.length || !jobs.jobs.length;
-      el("ai-status").textContent = routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.";
+      if (previousRoute && routes.some((route) => route.route === previousRoute)) el("ai-route").value = previousRoute;
+      const requestedJob = el("ai-job").dataset.requestedJob;
+      if (requestedJob && jobs.jobs.some((job) => job.id === requestedJob)) el("ai-job").value = requestedJob;
+      else if (previousJob && jobs.jobs.some((job) => job.id === previousJob)) el("ai-job").value = previousJob;
+      delete el("ai-job").dataset.requestedJob;
+      const sameSelection = !requestedJob && previousRoute === el("ai-route").value && previousJob === el("ai-job").value;
+      if (!sameSelection) changed();
+      const ready = settings.facts_configured;
+      el("ai-consent").checked = false;
+      if (!ready) el("ai-results").replaceChildren();
+      el("ai-open-profile").hidden = ready;
+      el("ai-run").disabled = !routes.length || !jobs.jobs.length || !ready;
+      if (!sameSelection || !el("ai-results").children.length || !ready) {
+        el("ai-status").textContent = !ready ? "Verify at least one career fact before analysis." :
+          (routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.");
+      }
     } catch (e) { el("ai-status").textContent = e.message; }
     finally { busy = false; el("ai-load").disabled = false; }
   });
@@ -44,8 +59,10 @@
     ids.forEach((id) => { el(id).disabled = true; });
     el("ai-results").replaceChildren();
     el("ai-status").textContent = "Analyzing with the selected provider…";
+    const jobId = el("ai-job").value;
     try {
-      const r = await api(`/api/jobs/${encodeURIComponent(el("ai-job").value)}/ai-analysis`, {route: el("ai-route").value, acknowledged: true});
+      const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/ai-analysis`, {route: el("ai-route").value, acknowledged: true});
+      if (el("ai-job").dataset.requestedJob && el("ai-job").dataset.requestedJob !== jobId) return;
       el("ai-status").textContent = `${r.notice} Model: ${r.model}. Checked: ${r.observed_at}.`;
       if (!r.requirements.length) el("ai-results").append(text("p", "No requirements returned. This does not establish a match or absence of requirements."));
       for (const row of r.requirements) {
@@ -55,7 +72,12 @@
         if (!row.fact_ids.length) section.append(text("p", "Evidence unknown; no candidate deficit inferred."));
         el("ai-results").append(section);
       }
-    } catch (e) { el("ai-status").textContent = e.message; }
-    finally { busy = false; ids.forEach((id) => { el(id).disabled = false; }); el("ai-consent").checked = false; }
+    } catch (e) {
+      if (!el("ai-job").dataset.requestedJob || el("ai-job").dataset.requestedJob === jobId) el("ai-status").textContent = e.message;
+    }
+    finally {
+      busy = false; ids.forEach((id) => { el(id).disabled = false; }); el("ai-consent").checked = false;
+      if (el("ai-job").dataset.requestedJob) el("ai-load").click();
+    }
   });
 })();
