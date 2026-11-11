@@ -162,7 +162,11 @@ class H1BBrowserTests(unittest.TestCase):
                             self.assertNotIn('Private fictional evidence', complete.call_args.args[1])
                             page.get_by_role('button', name='Application tracker', exact=True).click()
                             page.get_by_role('button', name='AI analysis', exact=True).click()
+                            expect(page.locator('#ai-run')).to_be_enabled()
+                            expect(page.locator('#ai-route')).to_have_value('local')
+                            expect(page.locator('#ai-job')).to_have_value(selected)
                             expect(page.locator('#ai-results')).to_contain_text('<script>unsafe()</script>')
+                            self.assertEqual(complete.call_count, 1)
                             with patch('career_agent.ai.complete', side_effect=ValueError('Provider unavailable')):
                                 page.locator('#ai-consent').check()
                                 page.locator('#ai-run').click()
