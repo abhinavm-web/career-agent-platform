@@ -4,6 +4,8 @@ import tempfile
 import time
 import unittest
 import subprocess
+from contextlib import redirect_stdout
+from io import StringIO
 from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch
@@ -152,3 +154,18 @@ class DurableWorkflowTests(unittest.TestCase):
             self.manager.review(self.job.id, run['packet']['packet_sha256'], True, self.state)
         recovered = self.manager.advance(run['run_id'], signature(self.state))
         self.assertEqual(recovered['status'], 'awaiting_human_review')
+
+    def test_cli_can_leave_review_pending_and_resume_later(self):
+        from career_agent.cli import main
+        profile, facts = self.root / 'profile.json', self.root / 'facts.json'
+        profile.write_text(json.dumps(self.state['preferences']))
+        facts.write_text(json.dumps(self.state['fact_bank']))
+        args = ['--db', str(self.db), 'workflow', self.job.id, '--profile', str(profile),
+                '--facts', str(facts), '--output', str(self.packets / (self.job.id + '.json'))]
+        with patch('builtins.input', return_value=''), redirect_stdout(StringIO()):
+            self.assertEqual(main(args), 0)
+        run = self.manager.list()[0]
+        self.assertEqual(run['status'], 'awaiting_human_review')
+        with patch('builtins.input', return_value='APPROVE ' + self.job.id), redirect_stdout(StringIO()):
+            self.assertEqual(main(args + ['--resume-run', run['run_id']]), 0)
+        self.assertEqual(self.manager.list()[0]['status'], 'approved_for_manual_submission')
