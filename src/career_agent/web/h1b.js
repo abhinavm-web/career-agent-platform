@@ -5,6 +5,8 @@
   let sequence = 0;
   let nextOffset = null;
   let searchedQuery = "";
+  let opportunitySequence = 0;
+  let opportunityNext = null;
   const status = (message) => { get("h1b-status").textContent = message; };
   const node = (tag, content) => {
     const el = document.createElement(tag);
@@ -85,6 +87,51 @@
     }
     box.append(link("Checked source", result.source_url));
   }
+  function jobCard(job) {
+    const card = node("section");
+    card.className = "panel profile-editor";
+    card.append(node("h3", job.title + " · " + job.company));
+    if (job.location) card.append(node("p", job.location));
+    card.append(node("p", job.policy.replaceAll("_", " ") + " · " + job.reason));
+    card.append(node("p", "Recent exact-name certified LCA cases in local imports: " + job.history.recent_certified_cases + ". Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
+    for (const quote of job.quotes) card.append(node("blockquote", quote));
+    card.append(link("Check original job posting", job.url));
+    const observation = node("div");
+    observation.setAttribute("role", "status");
+    liveObservation(observation, job.live_check);
+    const check = node("button", "Check live ATS posting");
+    check.type = "button";
+    check.className = "button";
+    check.disabled = !job.live_check_supported;
+    check.addEventListener("click", async () => {
+      check.disabled = true;
+      observation.textContent = "Checking public ATS data…";
+      try { liveObservation(observation, await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true})); }
+      catch (error) { observation.textContent = "Check failed: " + error.message + ". Previous saved observation is unchanged."; }
+      finally { check.disabled = false; }
+    });
+    card.append(node("p", job.live_check_supported ? "This contacts the public ATS for this posting. Observations become stale after 24 hours." : "Live checks support Greenhouse and Lever postings. Check this original posting manually; availability remains unknown."), check, observation);
+    return card;
+  }
+  async function opportunities(offset = 0) {
+    const current = ++opportunitySequence;
+    const results = get("h1b-opportunities-results");
+    const message = get("h1b-opportunities-status");
+    const query = get("h1b-opportunities-query").value.trim();
+    const category = get("h1b-opportunities-category").value;
+    results.replaceChildren();
+    get("h1b-opportunities-next").hidden = true;
+    message.textContent = "Searching saved opportunities…";
+    try {
+      const result = await api("/api/h1b/opportunities?q=" + encodeURIComponent(query) + "&category=" + encodeURIComponent(category) + "&offset=" + offset);
+      if (current !== opportunitySequence) return;
+      opportunityNext = result.next_offset;
+      get("h1b-opportunities-next").hidden = opportunityNext === null;
+      message.textContent = result.total + " matching opportunities · " + result.counts.potential + " possible · " + result.counts.review + " need clarification · " + result.counts.excluded + " indicate a restriction. Counts cover all signals for your search.";
+      if (!result.jobs.length) results.append(node("p", "No saved opportunities match. Try another search or find more jobs with JobSpy."));
+      for (const job of result.jobs) results.append(jobCard(job));
+    } catch (error) { if (current === opportunitySequence) message.textContent = error.message; }
+  }
   async function search(offset = 0) {
     const query = get("h1b-query").value.trim();
     const current = ++sequence;
@@ -107,31 +154,7 @@
       for (const company of result.companies) results.append(companyCard(company));
       results.append(node("h3", "Jobs in your workspace"));
       if (!result.jobs.length) results.append(node("p", "No matching stored jobs with these preferences. Use Opportunity board search to discover jobs; no live job search was run here."));
-      for (const job of result.jobs) {
-        const card = node("section");
-        card.className = "panel profile-editor";
-        card.append(node("h3", job.title + " · " + job.company));
-        card.append(node("p", job.policy.replaceAll("_", " ") + " · " + job.reason));
-        card.append(node("p", "Recent exact-name certified LCA cases: " + job.history.recent_certified_cases + ". History does not determine job policy. The assessment above uses the saved posting."));
-        for (const quote of job.quotes) card.append(node("blockquote", quote));
-        card.append(link("Check original job posting", job.url));
-        const observation = node("div");
-        observation.setAttribute("role", "status");
-        liveObservation(observation, job.live_check);
-        const check = node("button", "Check live ATS posting");
-        check.type = "button";
-        check.className = "button";
-        check.disabled = !job.live_check_supported;
-        check.addEventListener("click", async () => {
-          check.disabled = true;
-          observation.textContent = "Checking public ATS data…";
-          try { liveObservation(observation, await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true})); }
-          catch (error) { observation.textContent = error.message; }
-          finally { check.disabled = false; }
-        });
-        card.append(node("p", job.live_check_supported ? "This contacts the public ATS for this posting. Observations become stale after 24 hours." : "Live checks support Greenhouse and Lever postings. Check this original posting manually; availability remains unknown."), check, observation);
-        results.append(card);
-      }
+      for (const job of result.jobs) results.append(jobCard(job));
     } catch (error) {
       if (current === sequence) status(error.message);
     } finally {
@@ -139,8 +162,22 @@
     }
   }
   get("nav-h1b").addEventListener("click", async () => {
-    try { await load(); if (get("h1b-query").value.trim()) await search(); }
+    try { await load(); await opportunities(); if (get("h1b-query").value.trim()) await search(); }
     catch (error) { status(error.message); }
+  });
+  get("h1b-opportunities-form").addEventListener("submit", (event) => { event.preventDefault(); opportunities(); });
+  for (const id of ["h1b-opportunities-query", "h1b-opportunities-category"]) get(id).addEventListener("input", () => {
+    opportunitySequence++;
+    opportunityNext = null;
+    get("h1b-opportunities-results").replaceChildren();
+    get("h1b-opportunities-next").hidden = true;
+    get("h1b-opportunities-status").textContent = "Find opportunities to apply the updated filters.";
+  });
+  get("h1b-opportunities-next").addEventListener("click", () => { if (opportunityNext !== null) opportunities(opportunityNext); });
+  get("h1b-find-jobs").addEventListener("click", () => {
+    get("nav-jobs").click();
+    get("discovery-panel").open = true;
+    get("discover-query").focus();
   });
   get("h1b-search").addEventListener("submit", (event) => { event.preventDefault(); search(); });
   get("h1b-query").addEventListener("input", () => {
@@ -164,6 +201,7 @@
     try {
       await api("/api/h1b", "PUT", {need: get("h1b-need").value, min_year: Number(get("h1b-min-year").value), include_unknown: get("h1b-unknown").checked});
       status("H-1B preferences saved. They guide research, not eligibility decisions.");
+      await opportunities();
       if (get("h1b-query").value.trim()) await search();
     } catch (error) { status(error.message); }
     finally { control.disabled = false; get("h1b-search-submit").disabled = false; }

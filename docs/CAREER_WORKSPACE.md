@@ -21,6 +21,10 @@ New or modified facts are *not verified*. A separate explicit acknowledgement is
 
 The current source note is only returned inside the local authenticated workspace. It is never inserted into the outward-facing draft.
 
+You can paste résumé text or extract it locally from a PDF, DOCX, or UTF-8 text file up to 2 MB (install `.[resume]` for PDF support). Extraction is limited to 30 PDF pages and 20,000 text characters; scanned images require OCR, which is not included. No file is sent to an AI provider or stored by this extraction. Choose an extracted line for review in the career fact editor. Selecting a line does not save or verify it. Review the statement, add a private evidence note, save it, and verify it separately when accurate.
+
+The career assistant uses a configured AI route. Each request requires consent and sends the question and current session's conversation to that route; an optional checkbox also shares saved, verified fact statements, which may contain personal information. Private source notes and unverified facts are not sent separately. Up to six exchanges remain in the browser until cleared or reloaded; they are not persisted. Switching providers sends the conversation to the newly selected provider on the next consented request. Answers are unverified suggestions and never change the profile. A local model server can itself forward requests, and cloud providers may charge for use.
+
 ## Migrating existing profile files
 
 If you already use --profile and --facts to launch the dashboard, those files remain read-only. When no editable workspace exists yet, the Career profile screen offers **Import configured files**. This copies the existing candidate-confirmed facts into SQLite after explicit acknowledgement. It leaves your original files untouched. The app refuses to overwrite a previously initialized workspace with a second import.
@@ -63,7 +67,7 @@ Install test extras and run: `python -m pip install -e ".[graph,web,dev]"`, then
 
 ## Still out of scope
 
-At-rest encryption, tenant-level authorization, secure document uploads, machine-extracted résumé fact confirmation, historical revision restoration, full application CRM, and managed cloud hosting. These need separately scoped, reviewed work.
+At-rest encryption, tenant-level authorization, OCR, automated résumé fact classification, historical revision restoration, and managed cloud hosting need separately scoped work.
 
 ## Previously approved packets after a change
 

@@ -4,6 +4,8 @@ The local dashboard and `ai-analyze` CLI command can send one job's title/descri
 
 The LangGraph application workflow remains deterministic and now uses durable SQLite checkpoints through the dashboard and CLI `workflow` command. This AI analyst is independently opt-in; it does not silently add model calls to scheduled discovery or application drafting. See [automation and durable runs](AUTOMATION.md).
 
+Career profile also offers a career assistant. Each request requires a selected route and explicit consent to send the question and current session's conversation to that provider; sharing candidate-verified fact statements is a separate opt-in. Source notes and candidate name are not included as separate fields, though conversation and facts can themselves contain private information. Answers are unverified advice and cannot edit the profile. Up to six exchanges are kept in the browser until cleared or the page is reloaded; they are not persisted. Changing providers sends the existing conversation to the newly selected provider on the next consented request.
+
 ## Setup
 
 Install optional provider SDKs:

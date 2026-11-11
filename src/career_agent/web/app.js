@@ -1151,6 +1151,149 @@
     renderCRMJobs();
   });
   byId("import-career-data").addEventListener("click", importConfiguredProfile);
+  let profileChatRoutes = [];
+  let profileChatBusy = false;
+  let profileChatHistory = [];
+  byId("profile-chat-clear").addEventListener("click", () => {
+    if (profileChatBusy) return;
+    profileChatHistory = [];
+    byId("profile-chat-answer").replaceChildren();
+    byId("profile-chat-consent").checked = false;
+    byId("profile-chat-submit").disabled = !profileChatRoutes.length;
+    byId("profile-chat-status").textContent = "Conversation cleared. Your question has been kept for editing.";
+  });
+  function updateProfileChatRoute() {
+    byId("profile-chat-consent").checked = false;
+    const route = profileChatRoutes.find((item) => item.route === byId("profile-chat-route").value);
+    byId("profile-chat-destination").textContent = route
+      ? `${route.provider} · ${route.model} · ${route.destination}` : "No model route selected.";
+  }
+  byId("profile-chat-route").addEventListener("change", updateProfileChatRoute);
+  byId("profile-chat-facts").addEventListener("change", () => {byId("profile-chat-consent").checked = false;});
+  byId("profile-chat-question").addEventListener("input", () => {byId("profile-chat-consent").checked = false;});
+  byId("profile-chat-load").addEventListener("click", async () => {
+    if (profileChatBusy) return;
+    profileChatBusy = true;
+    byId("profile-chat-load").disabled = true;
+    byId("profile-chat-submit").disabled = true;
+    try {
+      const response = await api("/api/ai/routes");
+      profileChatRoutes = response.routes;
+      const select = byId("profile-chat-route");
+      const previous = select.value;
+      select.replaceChildren();
+      for (const route of profileChatRoutes) {
+        const option = node("option", "", `${route.route} (${route.provider})`);
+        option.value = route.route;
+        select.append(option);
+      }
+      if (profileChatRoutes.some((route) => route.route === previous)) select.value = previous;
+      updateProfileChatRoute();
+      byId("profile-chat-status").textContent = profileChatRoutes.length ? "Review the provider and confirm sharing before asking." : "No model routes configured.";
+    } catch (error) {
+      profileChatRoutes = [];
+      byId("profile-chat-route").replaceChildren();
+      updateProfileChatRoute();
+      byId("profile-chat-status").textContent = error.message;
+    } finally {
+      profileChatBusy = false;
+      byId("profile-chat-load").disabled = false;
+      byId("profile-chat-submit").disabled = !profileChatRoutes.length || profileChatHistory.length >= 12;
+    }
+  });
+  byId("profile-chat-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (profileChatBusy || !byId("profile-chat-consent").checked || profileChatHistory.length >= 12) return;
+    profileChatBusy = true;
+    const ids = ["profile-chat-load", "profile-chat-submit", "profile-chat-route", "profile-chat-question", "profile-chat-facts", "profile-chat-consent", "profile-chat-clear"];
+    ids.forEach((id) => {byId(id).disabled = true;});
+    byId("profile-chat-status").textContent = "Waiting for the selected provider…";
+    const question = byId("profile-chat-question").value.trim();
+    try {
+      const response = await api("/api/workspace/chat", "POST", {
+        route: byId("profile-chat-route").value,
+        message: question,
+        history: profileChatHistory,
+        include_verified_facts: byId("profile-chat-facts").checked,
+        acknowledged: true
+      });
+      profileChatHistory.push({role: "user", content: question}, {role: "assistant", content: response.answer});
+      byId("profile-chat-answer").append(node("p", "", "You: " + question), node("p", "", "Assistant: " + response.answer));
+      byId("profile-chat-question").value = "";
+      byId("profile-chat-status").textContent = `Unverified suggestion · ${response.provider} · ${response.model}. No profile changes were made.` +
+        (profileChatHistory.length >= 12 ? " Conversation limit reached; clear it to start again." : "");
+    } catch (error) {
+      byId("profile-chat-status").textContent = error.message;
+    } finally {
+      profileChatBusy = false;
+      ids.forEach((id) => {byId(id).disabled = false;});
+      byId("profile-chat-submit").disabled = profileChatHistory.length >= 12 || !profileChatRoutes.length;
+      byId("profile-chat-consent").checked = false;
+    }
+  });
+  byId("resume-file-extract").addEventListener("click", async () => {
+    const control = byId("resume-file-extract"), file = byId("resume-file").files?.[0];
+    const status = byId("resume-file-status"), field = byId("resume-text");
+    if (!file || file.size > 2 * 1024 * 1024 || !file.size) {
+      status.textContent = "Choose a nonempty PDF, DOCX or text file of at most 2 MB.";
+      return;
+    }
+    if (field.value.trim()) {
+      status.textContent = "Clear the résumé text field before extracting a file, so existing text is not overwritten.";
+      return;
+    }
+    if (control.disabled) return;
+    control.disabled = true;
+    status.textContent = "Extracting text locally…";
+    try {
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",", 2)[1]);
+        reader.onerror = () => reject(new Error("Unable to read the selected file"));
+        reader.readAsDataURL(file);
+      });
+      const result = await api("/api/workspace/resume-extract", "POST", {filename: file.name, content});
+      if (field.value.trim() || byId("resume-file").files?.[0] !== file) {
+        status.textContent = "Text or file selection changed during extraction. Existing text was preserved; extract again.";
+        return;
+      }
+      field.value = result.text;
+      byId("resume-lines").replaceChildren();
+      byId("resume-use-line").disabled = true;
+      status.textContent = "Text extracted locally. Review it, then extract lines to choose a fact.";
+    } catch (error) { status.textContent = error.message; }
+    finally { control.disabled = false; }
+  });
+  byId("resume-text").addEventListener("input", () => {
+    byId("resume-lines").replaceChildren();
+    byId("resume-use-line").disabled = true;
+    byId("resume-status").textContent = "Extract lines again after editing the text.";
+  });
+  byId("resume-extract").addEventListener("click", () => {
+    const lines = byId("resume-text").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const select = byId("resume-lines");
+    select.replaceChildren();
+    for (const line of lines.slice(0, 200)) {
+      const option = node("option", "", line.length > 120 ? line.slice(0, 117) + "…" : line);
+      option.value = line;
+      select.append(option);
+    }
+    byId("resume-use-line").disabled = !lines.length;
+    byId("resume-status").textContent = lines.length > 200 ? "Showing the first 200 lines." : `${lines.length} lines found. Review each before saving.`;
+  });
+  byId("resume-use-line").addEventListener("click", () => {
+    const line = byId("resume-lines").value;
+    if (line.length < 8 || line.length > 1000) {
+      byId("resume-status").textContent = "Choose a line with 8–1,000 characters, or edit the pasted text first.";
+      return;
+    }
+    if ((state.editingFactId || byId("fact-statement").value || byId("fact-source").value) &&
+        !window.confirm("Replace the unsaved fact editor contents with this résumé line?")) return;
+    resetFactEditor();
+    byId("fact-statement").value = line;
+    byId("fact-statement").focus();
+    byId("resume-status").textContent = "Review the statement and add a private evidence note before saving it as an unverified fact.";
+  });
   byId("career-profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!state.workspace) return;

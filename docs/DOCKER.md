@@ -1,0 +1,57 @@
+# Run locally with Docker
+
+The Compose setup runs the existing single-user dashboard and stores its SQLite
+database, LangGraph checkpoints, AI route configuration and generated packets in
+the `career-data` Docker volume. The volume is separate from `.local` on the host;
+starting this container creates a new, empty workspace and does not migrate or
+modify an existing local workspace.
+
+1. Install Docker Engine on Linux, or Docker Desktop 4.34 or later with Linux
+   containers. On Docker Desktop, enable **Settings → Resources → Network →
+   Enable host networking**, apply and restart. See [Docker's host networking
+   instructions](https://docs.docker.com/engine/network/drivers/host/).
+2. Choose an unused port. If the existing local server already uses 8765, either
+   stop it or set `CAREER_AGENT_PORT` in the terminal that runs Compose. For
+   example, in PowerShell: `$env:CAREER_AGENT_PORT = '8766'`.
+3. Run `docker compose up --build -d` from the repository root. Open
+   `http://127.0.0.1:8765/`, or the chosen port, on the same computer.
+4. Use `docker compose logs -f` to inspect startup and `docker compose down` to
+   stop. The volume remains across container rebuilds and `down`; **`docker
+   compose down -v` deletes the volume and its private workspace data**.
+
+Host networking preserves the application's loopback-only server and allows
+loopback Ollama/LM Studio endpoints. It is required here; ordinary Docker port
+publishing cannot reach a server bound only to the container's loopback address.
+Do not expose the app to a network: it is not authenticated multi-user software.
+Docker Desktop's host-network feature must be enabled; if it is not, the app may
+start inside Docker but the host browser and host model servers will be unable to
+reach it. Port conflicts still apply. The app requires a trusted local computer;
+Docker administrators and local users with Docker access can read its data.
+
+## AI configuration
+
+Create a route configuration on the host as described in [AI models](AI_MODELS.md),
+then copy it to the running container's persistent volume:
+
+    docker compose cp .local/ai.json career-agent:/app/.local/ai.json
+
+Repeat the copy after editing the host file; the two copies are independent. The
+dashboard loads this configuration; it does not currently edit routes. The container passes through
+`ANTHROPIC_API_KEY` and `AZURE_OPENAI_API_KEY` only if set in the shell running
+Compose; never put a key in the Dockerfile, image, route configuration, or Git.
+Recreate the container after changing a key in the shell. Docker exposes container
+environment values to users with Docker access. Local models must be running on
+the host and use the existing literal-loopback `/v1` endpoint requirement.
+Other credentials or custom `key_env` variables require an explicit Compose
+override. The image includes JobSpy, the AI providers and PDF resume extraction;
+PDF export dependencies are not included.
+
+## Storage and backups
+
+SQLite is already the durable store; PostgreSQL is not supported by the current
+application or its SQLite-backed LangGraph checkpoints. Adding a PostgreSQL
+container without changing those integrations would not migrate the data. A future
+multi-user deployment would need a deliberate database and authentication design.
+The volume is plaintext and may contain private candidate information. Back it up
+using your normal encrypted backup process, and stop the application first so
+SQLite and workflow files are captured consistently. Do not commit backups.
