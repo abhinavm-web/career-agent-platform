@@ -244,7 +244,7 @@
     renderJobs();
     renderDetail();
     await loadPacket(id);
-    if (state.selectedId === id) renderDetail();
+    if (state.selectedId === id) renderDetailPreservingEditor();
   }
 
   async function loadPacket(requestedJobId) {
@@ -275,6 +275,17 @@
     return box;
   }
 
+  function renderDetailPreservingEditor() {
+    const editor = byId("detail-panel").querySelector?.("#job-description-editor");
+    const keep = editor?.open && editor.dataset.jobId === state.selectedId;
+    renderDetail();
+    if (keep) {
+      const replacement = byId("detail-panel").querySelector?.("#job-description-editor");
+      if (replacement) replacement.replaceWith(editor);
+      else byId("detail-panel").append(editor);
+    }
+  }
+
   function renderDetail() {
     selectedAvailabilityUpdater = null;
     const detail = byId("detail-panel");
@@ -282,7 +293,11 @@
     const job = state.jobs.find((value) => value.id === state.selectedId);
     if (!job) {
       const empty = node("div", "empty-detail");
-      empty.append(node("span", "empty-icon", "◎"), node("h3", "", "Select an opportunity"), node("p", "", "Inspect its details and prepare your review."));
+      if (state.selectedId) {
+        empty.append(node("h3", "", "Opportunity outside the loaded board"), node("p", "", "Your description editor is preserved below. Its saved revision will be checked before changes are accepted."));
+      } else {
+        empty.append(node("span", "empty-icon", "◎"), node("h3", "", "Select an opportunity"), node("p", "", "Inspect its details and prepare your review."));
+      }
       detail.append(empty);
       return;
     }
@@ -1239,7 +1254,9 @@
       state.settings = results[2];
       state.reviews = results[3].reviews;
       const previous = keepSelected || state.selectedId;
-      state.selectedId = state.jobs.some((job) => job.id === previous) ? previous : null;
+      const oldEditor = byId("detail-panel").querySelector?.("#job-description-editor");
+      const keepEditor = oldEditor?.open && oldEditor.dataset.jobId === previous;
+      state.selectedId = state.jobs.some((job) => job.id === previous) || keepEditor ? previous : null;
       if (keepSelected && state.selectedId) {
         const index = filteredJobs().findIndex((job) => job.id === state.selectedId);
         if (index >= 0) state.jobsPage = Math.floor(index / 10);
@@ -1252,14 +1269,8 @@
       if (selectedId) await loadPacket(selectedId); else state.packet = null;
       if (sequence !== state.refreshSequence) return;
       if (state.selectedId === selectedId) {
-        const oldEditor = byId("detail-panel").querySelector?.("#job-description-editor");
-        const keepEditor = oldEditor?.open && oldEditor.dataset.jobId === selectedId;
         const receipt = byId("detail-panel").querySelector?.("#submission-reference")?.value;
-        renderDetail();
-        if (keepEditor) {
-          const nextEditor = byId("detail-panel").querySelector?.("#job-description-editor");
-          nextEditor?.replaceWith(oldEditor);
-        }
+        renderDetailPreservingEditor();
         if (receipt !== undefined && previousPacketHash && previousPacketHash === state.packet?.packet?.packet_sha256) {
           const input = byId("detail-panel").querySelector?.("#submission-reference");
           if (input) input.value = receipt;

@@ -286,7 +286,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if row is None:
             raise ValueError('Unknown workflow run')
         state = current_workflow_inputs(row['job_id'])
-        result = await run_in_threadpool(workflows.advance, run_id, workflow_signature(state))
+        result = await run_in_threadpool(workflows.advance, run_id, workflow_signature(state),
+                                         expected_workspace_revision=state['workspace_revision'] or 0)
         return {'run_id': run_id, 'status': result['status']}
 
     @app.get("/api/ai/routes")
@@ -614,7 +615,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     status_code=409,
                     detail="This application is already recorded as submitted; its reviewed packet is locked",
                 )
-        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None))
+        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None), guard_workspace=True)
         packet = run['packet']
         return {
             "job_id": job.id,
@@ -661,7 +662,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             try:
                 result = store.latest_review(job_id, fingerprint) if handled else store.record_review(
                     job_id, fingerprint, approved=data["approved"],
-                    expected_description_revision=current.get('job_description_revision', 0))
+                    expected_description_revision=current.get('job_description_revision', 0),
+                    expected_workspace_revision=current.get('candidate_workspace_revision') or 0)
             except DescriptionConflict as error:
                 raise HTTPException(status_code=409, detail=str(error)) from None
         return {**result, "submission_sent": False}
@@ -684,6 +686,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             store.connection.execute('BEGIN IMMEDIATE')
             latest = current_packet(job_id)
             if (store.description_revision(job_id) != packet.get('job_description_revision', 0)
+                    or store.workspace_revision() != (packet.get('candidate_workspace_revision') or 0)
                     or latest is None or latest['packet_sha256'] != packet_sha256):
                 raise HTTPException(status_code=409, detail='Packet or job description changed during export; reload and review')
             decision = store.latest_review(job_id, packet_sha256)
@@ -734,6 +737,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             store.connection.execute('BEGIN IMMEDIATE')
             latest = current_packet(job_id)
             if (store.description_revision(job_id) != packet.get('job_description_revision', 0)
+                    or store.workspace_revision() != (packet.get('candidate_workspace_revision') or 0)
                     or latest is None or latest['packet_sha256'] != fingerprint):
                 raise HTTPException(status_code=409, detail='Job description or packet changed; regenerate and review')
             decision = store.latest_review(job_id, fingerprint)

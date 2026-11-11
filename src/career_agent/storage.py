@@ -128,6 +128,14 @@ class Store:
         row = self.connection.execute('SELECT MAX(revision) FROM job_description_revisions WHERE job_id=?', (job_id,)).fetchone()
         return row[0] or 0
 
+    def workspace_revision(self) -> int:
+        """Read the revision without initializing or committing within a transaction."""
+        exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_workspace_versions'").fetchone()
+        if not exists:
+            return 0
+        row = self.connection.execute('SELECT MAX(revision) FROM candidate_workspace_versions').fetchone()
+        return row[0] or 0
+
     def description_latest(self, job_id: str) -> dict | None:
         row = self.connection.execute('SELECT revision,source_note,changed_at FROM job_description_revisions WHERE job_id=? ORDER BY revision DESC LIMIT 1', (job_id,)).fetchone()
         return dict(row) if row else None
@@ -198,7 +206,8 @@ class Store:
             )
 
 
-    def record_review(self, job_id: str, packet_sha256: str, approved: bool, *, expected_description_revision: int | None = None) -> dict:
+    def record_review(self, job_id: str, packet_sha256: str, approved: bool, *, expected_description_revision: int | None = None,
+                      expected_workspace_revision: int | None = None) -> dict:
         """Append-only record of explicit human review. Does not send anything."""
         if type(approved) is not bool:
             raise ValueError("Review approval must be a boolean")
@@ -212,6 +221,8 @@ class Store:
                 raise ValueError("A submitted application cannot receive a new review decision")
             if expected_description_revision is not None and self.description_revision(job_id) != expected_description_revision:
                 raise DescriptionConflict('Job description changed; regenerate and review the draft')
+            if expected_workspace_revision is not None and self.workspace_revision() != expected_workspace_revision:
+                raise DescriptionConflict('Career profile changed; regenerate and review the draft')
             cursor = self.connection.execute(
                 """
                 INSERT INTO packet_reviews(job_id,packet_sha256,decision)

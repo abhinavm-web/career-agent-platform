@@ -788,6 +788,95 @@ class DashboardTests(unittest.TestCase):
             response = self.call('GET', f'/api/jobs/{self.job.id}/resume.pdf?packet_sha256={fingerprint}')
         self.assertEqual(response.status_code, 409)
 
+    def test_exports_recheck_workspace_revision_after_rendering(self):
+        imported = self.call('POST', '/api/workspace/import', {'acknowledged': True})
+        self.assertEqual(imported.status_code, 200)
+        for extension, target in (('pdf', 'resume_pdf'), ('docx', 'resume_docx')):
+            with self.subTest(extension=extension):
+                fingerprint = self._draft()
+                self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                    'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+                def render(_packet):
+                    workspace = self.call('GET', '/api/workspace').json()['workspace']
+                    workspace['profile']['headline'] += ' changed'
+                    result = self.call('PUT', '/api/workspace', {'expected_revision': workspace['revision'],
+                        'profile': workspace['profile'], 'facts': workspace['facts']})
+                    self.assertEqual(result.status_code, 200)
+                    return b'fictional-document'
+                with patch('career_agent.dashboard.' + target, side_effect=render):
+                    response = self.call('GET', f'/api/jobs/{self.job.id}/resume.{extension}?packet_sha256={fingerprint}')
+                self.assertEqual(response.status_code, 409)
+
+    def test_legacy_review_rechecks_workspace_under_lock(self):
+        from career_agent.application import build_packet, save_packet
+        from career_agent.candidate import FactBank
+        packet = build_packet(self.job, CandidateProfile.load(self.profile_path), FactBank.parse(fake_fact_bank()))
+        save_packet(packet, self.packet_dir / (self.job.id + '.json'))
+        original = Store.record_review
+        def record(store, *args, **kwargs):
+            response = self.call('POST', '/api/workspace/import', {'acknowledged': True})
+            self.assertEqual(response.status_code, 200)
+            return original(store, *args, **kwargs)
+        with patch.object(Store, 'record_review', record):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': packet['packet_sha256']})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
+    def test_workspace_cannot_change_during_submission_transaction(self):
+        from threading import Event, Thread
+        self.assertEqual(self.call('POST', '/api/workspace/import', {'acknowledged': True}).status_code, 200)
+        fingerprint = self._draft()
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        workspace = self.call('GET', '/api/workspace').json()['workspace']
+        workspace['profile']['headline'] += ' changed'
+        entered, release, changed = Event(), Event(), Event()
+        original, responses = Store.latest_review, {}
+        def delayed(store, *args, **kwargs):
+            entered.set()
+            if not release.wait(5): raise RuntimeError('Timed out waiting for concurrent request')
+            return original(store, *args, **kwargs)
+        def submit():
+            responses['submitted'] = self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+                'packet_sha256': fingerprint, 'receipt': 'fictional-123', 'attest_confirmed': True})
+        def update():
+            responses['updated'] = self.call('PUT', '/api/workspace', {
+                'expected_revision': workspace['revision'], 'profile': workspace['profile'], 'facts': workspace['facts']})
+            changed.set()
+        with patch.object(Store, 'latest_review', delayed):
+            thread1 = Thread(target=submit); thread1.start()
+            self.assertTrue(entered.wait(5))
+            thread2 = Thread(target=update); thread2.start()
+            self.assertFalse(changed.wait(.2), 'Profile update must wait for submission to commit')
+            release.set(); thread1.join(10); thread2.join(10)
+        self.assertEqual(responses['submitted'].status_code, 200)
+        self.assertEqual(responses['updated'].status_code, 200)
+
+    def test_workflow_review_rechecks_workspace_under_lock(self):
+        from career_agent.workflows import Workflows
+        fingerprint = self._draft()
+        original = Workflows.advance
+        def advance(manager, run_id, signature, decision=None, **kwargs):
+            if decision is not None:
+                response = self.call('POST', '/api/workspace/import', {'acknowledged': True})
+                self.assertEqual(response.status_code, 200)
+            return original(manager, run_id, signature, decision, **kwargs)
+        with patch.object(Workflows, 'advance', advance):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
+    def test_cli_external_workflow_remains_available_with_initialized_workspace(self):
+        from career_agent.cli import main
+        self.assertEqual(self.call('POST', '/api/workspace/import', {'acknowledged': True}).status_code, 200)
+        with patch('builtins.input', return_value=''):
+            code = main(['--db', str(self.db), 'workflow', self.job.id,
+                '--profile', str(self.profile_path), '--facts', str(self.facts_path),
+                '--output', str(self.packet_dir / f'{self.job.id}.json')])
+        self.assertEqual(code, 0)
+
     def test_word_export_rechecks_description_after_rendering(self):
         fingerprint = self._draft()
         self.call('POST', f'/api/jobs/{self.job.id}/decision', {
@@ -805,12 +894,12 @@ class DashboardTests(unittest.TestCase):
         from career_agent.workflows import Workflows
         fingerprint = self._draft()
         original = Workflows.advance
-        def advance(manager, run_id, signature, decision=None):
+        def advance(manager, run_id, signature, decision=None, **kwargs):
             if decision is not None:
                 result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
                     'description': 'Corrected before approval.', 'expected_revision': 0, 'acknowledged': True})
                 self.assertEqual(result.status_code, 200)
-            return original(manager, run_id, signature, decision)
+            return original(manager, run_id, signature, decision, **kwargs)
         with patch.object(Workflows, 'advance', advance):
             response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
                 'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})

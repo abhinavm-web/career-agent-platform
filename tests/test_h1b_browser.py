@@ -16,6 +16,79 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_description_editor_survives_packet_delay_and_job_falling_out_of_loaded_board(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = root / 'test.sqlite3'
+            job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Fictional role',
+                'job_url': 'https://example.invalid/role/1', 'description': 'Original description.'})
+            with Store(db) as store:
+                store.add_jobs([job])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page()
+                        page.add_init_script('''
+                            const realFetch = window.fetch.bind(window);
+                            window.holdPacket = true; window.omitBoard = false;
+                            window.fetch = (url, options) => {
+                              if (window.holdPacket && String(url).endsWith('/packet')) {
+                                return new Promise((resolve, reject) => {
+                                  window.releasePacket = () => { window.holdPacket = false; realFetch(url, options).then(resolve, reject); };
+                                });
+                              }
+                              if (window.omitBoard && String(url).startsWith('/api/jobs?limit=')) {
+                                return Promise.resolve(new Response(JSON.stringify({jobs: [], next_before: null}),
+                                  {status: 200, headers: {'Content-Type': 'application/json'}}));
+                              }
+                              return realFetch(url, options);
+                            };
+                        ''')
+                        page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#job-list')).to_contain_text('Fictional role')
+                        page.get_by_role('button', name='View Fictional role at Fictional Co').click()
+                        page.get_by_text('Correct saved description', exact=True).click()
+                        editor = page.locator('#job-description-editor')
+                        editor.locator('textarea').nth(0).fill('Revised fictional description.')
+                        editor.locator('textarea').nth(1).fill('Fictional source note')
+                        page.evaluate('''() => {
+                            window.detailRerendered = false;
+                            new MutationObserver(() => {window.detailRerendered = true;}).observe(
+                              document.getElementById('detail-panel'), {childList: true});
+                            window.releasePacket();
+                        }''')
+                        page.wait_for_function('window.detailRerendered === true')
+                        expect(editor.locator('textarea').nth(0)).to_have_value('Revised fictional description.')
+                        expect(editor.locator('textarea').nth(1)).to_have_value('Fictional source note')
+                        page.evaluate('window.omitBoard = true')
+                        page.locator('#refresh').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Opportunity outside the loaded board')
+                        expect(editor.locator('textarea').nth(0)).to_have_value('Revised fictional description.')
+                        expect(editor.locator('textarea').nth(1)).to_have_value('Fictional source note')
+                        editor.get_by_role('checkbox').check()
+                        editor.get_by_role('button', name='Save corrected description').click()
+                        expect(page.locator('#notice')).to_contain_text('Description corrected')
+                        with Store(db) as store:
+                            self.assertEqual(store.get_job(job.id).description, 'Revised fictional description.')
+                            self.assertEqual(store.description_revision(job.id), 1)
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_board_search_finds_job_beyond_500_with_real_api(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
