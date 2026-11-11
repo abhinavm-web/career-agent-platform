@@ -10,7 +10,8 @@
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
     packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs",
     workspace: null, editingFactId: null,
-    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0
+    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0,
+    boardFilters: {location: "", source: "", remote: "all", sponsor: "all", freshness: "all"}
   };
 
   const byId = (id) => document.getElementById(id);
@@ -106,13 +107,34 @@
     el.textContent = ready ? "Candidate profile configured" : "Profile / facts not configured";
     el.classList.toggle("warn", !ready);
     byId("profile-prompt").hidden = ready;
+    byId("setup-progress").textContent = (s.profile_configured ? "Goals configured" : "Add your goals for matching") +
+      " · " + (s.facts_configured ? "Career facts verified" : "Verify a career fact for AI analysis and drafts") + ".";
+  }
+
+  function postingObservation(job) {
+    const observed = job.live_check;
+    if (!observed) return {kind: "unknown", label: "Not checked", detail: "Availability has not been checked."};
+    const timestamp = Date.parse(observed.checked_at);
+    const age = Date.now() - timestamp;
+    if (!Number.isFinite(timestamp) || age < 0 || age > 86400000 || observed.stale) {
+      return {kind: "stale", label: "Check is stale", detail: "The previous observation is stale or has an invalid date; current availability is unknown."};
+    }
+    if (observed.availability === "listed") return {kind: "listed", label: "Listed at check", detail: observed.reason};
+    if (observed.availability === "expired") return {kind: "expired", label: "Deadline passed", detail: observed.reason};
+    return {kind: "unknown", label: "Availability unknown", detail: observed.reason || "The check was inconclusive."};
   }
 
   function filteredJobs() {
     const needle = state.search.trim().toLocaleLowerCase();
+    const filters = state.boardFilters;
     return state.jobs.filter((job) => {
       const searchable = [job.company, job.title, job.location, job.description].join(" ").toLocaleLowerCase();
       if (needle && !searchable.includes(needle)) return false;
+      if (filters.location && !(job.location || "").toLocaleLowerCase().includes(filters.location.trim().toLocaleLowerCase())) return false;
+      if (filters.source && !(job.source || "").toLocaleLowerCase().includes(filters.source.trim().toLocaleLowerCase())) return false;
+      if (filters.remote === "remote" && job.remote !== true) return false;
+      if (filters.sponsor !== "all" && job.sponsorship_status !== filters.sponsor) return false;
+      if (filters.freshness !== "all" && postingObservation(job).kind !== filters.freshness) return false;
       if (state.filter === "priority") return job.fit_score !== null && job.fit_score >= 70;
       if (state.filter === "sponsorship") return job.sponsorship_status === "posting_claims_sponsorship" || job.sponsorship_status === "historical_only";
       if (state.filter === "review") return job.packet_available && !job.review_decision;
@@ -150,6 +172,8 @@
       const signal = sponsorshipLabel(job.sponsorship_status);
       lower.append(chip(signal[0], signal[1]));
       if (job.source) lower.append(chip("Source: " + job.source));
+      const observation = postingObservation(job);
+      lower.append(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""));
       if (job.packet_available) lower.append(chip(
         job.packet_stale ? "Draft outdated" : (job.review_decision ? "Reviewed" : "Draft ready"),
         job.review_decision && !job.packet_stale ? "teal" : "amber"
@@ -238,6 +262,37 @@
       byId("nav-ai").click();
     }));
     detail.append(actions);
+
+    const availability = section("Posting availability");
+    const availabilityStatus = node("div", "availability-status");
+    availabilityStatus.setAttribute("role", "status");
+    const showAvailability = () => {
+      const observation = postingObservation(job);
+      availabilityStatus.replaceChildren(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""),
+        node("p", "", observation.detail));
+      if (job.live_check && job.live_check.checked_at) availabilityStatus.append(node("p", "", "Checked: " + job.live_check.checked_at));
+      if (job.live_check && job.live_check.source_url) availabilityStatus.append(safeLink("Observation source", job.live_check.source_url));
+    };
+    showAvailability();
+    availability.append(availabilityStatus);
+    if (job.live_check_supported) {
+      const check = button("Check live availability", "button", async () => {
+        if (check.disabled) return;
+        check.disabled = true;
+        availabilityStatus.textContent = "Checking the public posting…";
+        try {
+          job.live_check = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
+          showAvailability();
+          renderJobs();
+        } catch (error) { availabilityStatus.textContent = "Check failed: " + error.message; }
+        finally { check.disabled = false; }
+      });
+      availability.append(node("p", "", "Checks the public ATS posting. No candidate information is sent."), check);
+    } else {
+      availability.append(node("p", "", "Live checks support Greenhouse and Lever postings. Check the original posting manually."));
+    }
+    availability.append(node("p", "", "A listed posting is not a guarantee of current hiring or sponsorship."));
+    detail.append(availability);
 
     const sponsor = section("Sponsorship assessment");
     const sponsorBox = node("div", "sponsorship-box");
@@ -1103,6 +1158,23 @@
   byId("filter").addEventListener("change", (event) => {state.filter = event.target.value; state.jobsPage = 0; renderJobs();});
   byId("jobs-prev").addEventListener("click", () => {state.jobsPage = Math.max(0, state.jobsPage - 1); renderJobs();});
   byId("jobs-next").addEventListener("click", () => {state.jobsPage += 1; renderJobs();});
+  for (const key of ["location", "source", "remote", "sponsor", "freshness"]) {
+    const control = byId(key + "-filter");
+    control.addEventListener(key === "location" || key === "source" ? "input" : "change", () => {
+      state.boardFilters[key] = control.value;
+      state.jobsPage = 0;
+      renderJobs();
+    });
+  }
+  byId("clear-board-filters").addEventListener("click", () => {
+    state.search = ""; state.filter = "all"; state.jobsPage = 0;
+    byId("search").value = ""; byId("filter").value = "all";
+    for (const key of ["location", "source", "remote", "sponsor", "freshness"]) {
+      state.boardFilters[key] = key === "location" || key === "source" ? "" : "all";
+      byId(key + "-filter").value = state.boardFilters[key];
+    }
+    renderJobs();
+  });
   byId("show-add-job").addEventListener("click", () => {byId("add-job-form").hidden = false;});
   byId("close-add-job").addEventListener("click", () => {byId("add-job-form").hidden = true;});
   byId("add-job-form").addEventListener("submit", async (event) => {

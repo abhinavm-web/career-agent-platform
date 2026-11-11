@@ -35,7 +35,7 @@ from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
 from .h1b import H1BResearch
 from .uscis import USCISRecords
-from .posting_checks import PostingChecks, check_posting
+from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
@@ -189,7 +189,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return False
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
-                 records: tuple, workspace_revision: int) -> dict:
+                 records: tuple, workspace_revision: int, posting_checks: PostingChecks) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
@@ -203,6 +203,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "remote": job.remote,
             "url": job.url,
             "source": job.source,
+            "live_check_supported": posting_target(job.url) is not None,
+            "live_check": posting_checks.latest(job.id),
             "description": job.description,
             "application_stage": store.stage_of(job.id),
             "fit_score": fit.score if fit is not None else None,
@@ -461,8 +463,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
         )
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
+            posting_checks = PostingChecks(store)
             items = [
-                job_view(store, job, profile, records, workspace["revision"])
+                job_view(store, job, profile, records, workspace["revision"], posting_checks)
                 for job in store.list_jobs(limit=500)
             ]
         return {"jobs": items, "total": len(items)}
