@@ -45,6 +45,9 @@ class H1BBrowserTests(unittest.TestCase):
                         page.locator('#search').fill('Rare oldest role')
                         expect(page.locator('#visible-count')).to_have_text('1 opportunity')
                         expect(page.locator('#job-list')).to_contain_text('Rare oldest role')
+                        page.locator('#nav-ai').click()
+                        expect(page.locator('#ai-job option')).to_have_count(505, timeout=30000)
+                        expect(page.locator('#ai-job')).to_contain_text('Rare oldest role')
                     finally:
                         browser.close()
             finally:
@@ -148,12 +151,12 @@ class H1BBrowserTests(unittest.TestCase):
                             expect(page.locator('#ai-screen')).to_be_visible()
                             expect(page.locator('#ai-status')).to_contain_text('Verify at least one career fact')
                             expect(page.locator('#ai-run')).to_be_disabled()
-                            self.assertIn(page.locator('#ai-job option:checked').inner_text().split(' â€” ')[1], selected)
+                            self.assertIn(page.locator('#ai-job option:checked').inner_text().split(' — ')[1], selected)
                             page.locator('#ai-open-profile').click()
                             expect(page.locator('#profile-screen')).to_be_visible()
                             expect(page.locator('#ai-screen')).to_be_hidden()
                             expect(page.locator('#automation-screen')).to_be_hidden()
-                            page.get_by_text('Import and review rÃ©sumÃ© text', exact=True).click()
+                            page.get_by_text('Import and review résumé text', exact=True).click()
                             page.locator('#resume-file').set_input_files({
                                 'name': 'fictional.txt', 'mimeType': 'text/plain',
                                 'buffer': b'Fictional data analysis experience.'})

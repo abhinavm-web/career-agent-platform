@@ -15,6 +15,21 @@
       : typeof value.detail === "string" ? value.detail : "AI request failed");
     return value;
   }
+  async function jobOptions() {
+    const jobs = [];
+    let cursor = null, previous = Infinity;
+    do {
+      const page = await api('/api/jobs?limit=100' + (cursor === null ? '' : '&before=' + cursor));
+      if (!Array.isArray(page.jobs) || page.jobs.length > 100) throw new Error('Invalid opportunity page');
+      jobs.push(...page.jobs.map((j) => ({id: j.id, title: j.title, company: j.company})));
+      cursor = page.next_before ?? null;
+      if (cursor !== null && (!page.jobs.length || !Number.isSafeInteger(cursor) || cursor < 1 || cursor >= previous)) {
+        throw new Error('Invalid opportunity cursor; reload model routes to retry');
+      }
+      if (cursor !== null) previous = cursor;
+    } while (cursor !== null && jobs.length < 10000);
+    return {jobs, truncated: cursor !== null};
+  }
   function changed() {
     el("ai-consent").checked = false;
     el("ai-results").replaceChildren();
@@ -29,7 +44,7 @@
     try {
       const previousRoute = el("ai-route").value;
       const previousJob = el("ai-job").value;
-      const [models, jobs, settings] = await Promise.all([api("/api/ai/routes"), api("/api/jobs"), api("/api/settings")]);
+      const [models, jobs, settings] = await Promise.all([api("/api/ai/routes"), jobOptions(), api("/api/settings")]);
       routes = models.routes;
       for (const id of ["ai-route", "ai-job"]) el(id).replaceChildren();
       for (const r of routes) { const n = text("option", `${r.route} (${r.provider})`); n.value = r.route; el("ai-route").append(n); }
@@ -48,7 +63,8 @@
       el("ai-run").disabled = !routes.length || !jobs.jobs.length || !ready;
       if (!sameSelection || !el("ai-results").children.length || !ready) {
         el("ai-status").textContent = !ready ? "Verify at least one career fact before analysis." :
-          (routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.");
+          (routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.") +
+          (jobs.truncated ? " The job picker is limited to the most recent 10,000 roles." : "");
       }
     } catch (e) { el("ai-status").textContent = e.message; }
     finally { busy = false; el("ai-load").disabled = false; }
