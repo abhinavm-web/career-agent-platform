@@ -24,6 +24,7 @@ class CareerState(TypedDict, total=False):
     packet: dict[str, Any]
     review_status: str
     workspace_revision: int | None
+    job_description_revision: int | None
 
 
 def _imports():
@@ -114,7 +115,8 @@ def build_career_graph(checkpointer=None):
     def draft(state: CareerState) -> dict[str, Any]:
         job, preferences, bank, records = _decode(state)
         return {"packet": build_packet(job, preferences, bank, records,
-                                       workspace_revision=state.get('workspace_revision'))}
+                                       workspace_revision=state.get('workspace_revision'),
+                                       job_description_revision=state.get('job_description_revision'))}
 
     def validate(state: CareerState) -> dict:
         validate_packet(state['packet'])

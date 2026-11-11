@@ -631,6 +631,281 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("textContent", source)
         self.assertNotRegex(source, r"\b(?:innerHTML|outerHTML)\s*=")
 
+    def test_description_correction_invalidates_even_if_restored_and_locks_after_submission(self):
+        path = f'/api/jobs/{self.job.id}/description'
+        fingerprint = self._draft()
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        update = {'description': 'This role does not offer visa sponsorship.', 'expected_revision': 0,
+                  'source_note': 'Fictional employer posting reviewed', 'acknowledged': True}
+        self.assertEqual(self.call('PUT', path, {**update, 'acknowledged': False}).status_code, 422)
+        self.assertEqual(self.call('PUT', path, update).json(), {'revision': 1, 'changed': True})
+        self.assertEqual(self.call('PUT', path, update).status_code, 409)
+        board = next(j for j in self.call('GET', '/api/jobs').json()['jobs'] if j['id'] == self.job.id)
+        self.assertEqual(board['sponsorship_status'], 'explicit_exclusion')
+        self.assertEqual(board['description_revision'], 1)
+        self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 409)
+        history = self.call('GET', f'/api/jobs/{self.job.id}/description-history').json()['revisions']
+        self.assertEqual(history[0]['previous_description'], self.job.description)
+        self.assertEqual(history[0]['source_note'], update['source_note'])
+        self.assertEqual(self.call('PUT', path, {**update, 'description': self.job.description, 'expected_revision': 1}).json()['revision'], 2)
+        self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        newer = self._draft()
+        self.assertNotEqual(fingerprint, newer)
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': newer}).status_code, 200)
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+            'packet_sha256': newer, 'receipt': 'fictional-receipt', 'attest_confirmed': True}).status_code, 200)
+        self.assertEqual(self.call('PUT', path, {**update, 'expected_revision': 2}).status_code, 422)
+        self.assertFalse(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+
+    def test_description_cannot_change_during_submission_transaction(self):
+        from threading import Event, Thread
+        fingerprint = self._draft()
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        entered, release, corrected = Event(), Event(), Event()
+        original = Store.latest_review
+        responses = {}
+        def delayed(store, *args, **kwargs):
+            entered.set()
+            if not release.wait(5): raise RuntimeError('Timed out waiting for concurrent request')
+            return original(store, *args, **kwargs)
+        def submit():
+            responses['submitted'] = self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+                'packet_sha256': fingerprint, 'receipt': 'fictional-123', 'attest_confirmed': True})
+        def correct():
+            responses['corrected'] = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                'description': 'New fictional description.', 'expected_revision': 0, 'acknowledged': True})
+            corrected.set()
+        with patch.object(Store, 'latest_review', delayed):
+            thread1 = Thread(target=submit); thread1.start()
+            self.assertTrue(entered.wait(5))
+            thread2 = Thread(target=correct); thread2.start()
+            self.assertFalse(corrected.wait(.2), 'Correction must wait while submission commits')
+            release.set(); thread1.join(10); thread2.join(10)
+        self.assertEqual(responses['submitted'].status_code, 200)
+        self.assertEqual(responses['corrected'].status_code, 422)
+        with Store(self.db) as store:
+            self.assertEqual(store.get_job(self.job.id).description, self.job.description)
+
+    def test_job_page_reads_description_and_revision_from_one_snapshot(self):
+        from threading import Event, Thread
+        with Store(self.db) as store:
+            store.connection.execute('PRAGMA journal_mode=WAL')
+        entered, release = Event(), Event()
+        original = Store.job_page
+        results = {}
+        def delayed(store, *args, **kwargs):
+            page = original(store, *args, **kwargs)
+            entered.set()
+            if not release.wait(5): raise RuntimeError('Timed out waiting for correction')
+            return page
+        def read(): results['page'] = self.call('GET', '/api/jobs')
+        with patch.object(Store, 'job_page', delayed):
+            thread = Thread(target=read); thread.start()
+            self.assertTrue(entered.wait(5))
+            try:
+                result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                    'description': 'Corrected fictional posting.', 'expected_revision': 0, 'acknowledged': True})
+                self.assertEqual(result.status_code, 200)
+            finally:
+                release.set(); thread.join(10)
+        item = results['page'].json()['jobs'][0]
+        self.assertEqual(item['description'], self.job.description)
+        self.assertEqual(item['description_revision'], 0)
+        stale = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+            'description': item['description'], 'expected_revision': item['description_revision'], 'acknowledged': True})
+        self.assertEqual(stale.status_code, 409)
+
+    def test_draft_does_not_publish_old_description_as_new_revision(self):
+        from threading import Event, Thread
+        import career_agent.dashboard as dashboard
+        with Store(self.db) as store:
+            store.connection.execute('PRAGMA journal_mode=WAL')
+        entered, release = Event(), Event()
+        original = dashboard._get_job
+        results, first = {}, [True]
+        def delayed(store, job_id):
+            job = original(store, job_id)
+            if first[0]:
+                first[0] = False; entered.set()
+                if not release.wait(5): raise RuntimeError('Timed out waiting for correction')
+            return job
+        def draft(): results['draft'] = self.call('POST', f'/api/jobs/{self.job.id}/draft', {})
+        with patch('career_agent.dashboard._get_job', side_effect=delayed):
+            thread = Thread(target=draft); thread.start()
+            self.assertTrue(entered.wait(5))
+            try:
+                result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                    'description': 'Corrected fictional posting.', 'expected_revision': 0, 'acknowledged': True})
+                self.assertEqual(result.status_code, 200)
+            finally:
+                release.set(); thread.join(10)
+        self.assertEqual(results['draft'].status_code, 422)
+        self.assertFalse((self.packet_dir / f'{self.job.id}.json').exists())
+
+    def test_cli_draft_and_description_correction_are_serialized(self):
+        from threading import Event, Thread
+        from career_agent.cli import main
+        from career_agent.application import save_packet
+        entered, release, corrected = Event(), Event(), Event()
+        result = {}
+        def delayed(packet, path):
+            entered.set()
+            if not release.wait(5): raise RuntimeError('Timed out waiting for correction')
+            return save_packet(packet, path)
+        def draft():
+            result['draft'] = main(['--db', str(self.db), 'draft', self.job.id,
+                '--profile', str(self.profile_path), '--facts', str(self.facts_path),
+                '--output', str(self.packet_dir / f'{self.job.id}.json')])
+        def correct():
+            result['correction'] = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                'description': 'Corrected fictional posting.', 'expected_revision': 0, 'acknowledged': True})
+            corrected.set()
+        with patch('career_agent.cli.save_packet', side_effect=delayed):
+            thread1 = Thread(target=draft); thread1.start()
+            self.assertTrue(entered.wait(5))
+            thread2 = Thread(target=correct); thread2.start()
+            self.assertFalse(corrected.wait(.2))
+            release.set(); thread1.join(10); thread2.join(10)
+        self.assertEqual(result['draft'], 0)
+        self.assertEqual(result['correction'].status_code, 200)
+        self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+
+    def test_pdf_export_rechecks_description_after_rendering(self):
+        fingerprint = self._draft()
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        def render(_packet):
+            result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                'description': 'Corrected fictional role.', 'expected_revision': 0, 'acknowledged': True})
+            self.assertEqual(result.status_code, 200)
+            return b'fictional-pdf'
+        with patch('career_agent.dashboard.resume_pdf', side_effect=render):
+            response = self.call('GET', f'/api/jobs/{self.job.id}/resume.pdf?packet_sha256={fingerprint}')
+        self.assertEqual(response.status_code, 409)
+
+    def test_exports_recheck_workspace_revision_after_rendering(self):
+        imported = self.call('POST', '/api/workspace/import', {'acknowledged': True})
+        self.assertEqual(imported.status_code, 200)
+        for extension, target in (('pdf', 'resume_pdf'), ('docx', 'resume_docx')):
+            with self.subTest(extension=extension):
+                fingerprint = self._draft()
+                self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                    'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+                def render(_packet):
+                    workspace = self.call('GET', '/api/workspace').json()['workspace']
+                    workspace['profile']['headline'] += ' changed'
+                    result = self.call('PUT', '/api/workspace', {'expected_revision': workspace['revision'],
+                        'profile': workspace['profile'], 'facts': workspace['facts']})
+                    self.assertEqual(result.status_code, 200)
+                    return b'fictional-document'
+                with patch('career_agent.dashboard.' + target, side_effect=render):
+                    response = self.call('GET', f'/api/jobs/{self.job.id}/resume.{extension}?packet_sha256={fingerprint}')
+                self.assertEqual(response.status_code, 409)
+
+    def test_legacy_review_rechecks_workspace_under_lock(self):
+        from career_agent.application import build_packet, save_packet
+        from career_agent.candidate import FactBank
+        packet = build_packet(self.job, CandidateProfile.load(self.profile_path), FactBank.parse(fake_fact_bank()))
+        save_packet(packet, self.packet_dir / (self.job.id + '.json'))
+        original = Store.record_review
+        def record(store, *args, **kwargs):
+            response = self.call('POST', '/api/workspace/import', {'acknowledged': True})
+            self.assertEqual(response.status_code, 200)
+            return original(store, *args, **kwargs)
+        with patch.object(Store, 'record_review', record):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': packet['packet_sha256']})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
+    def test_workspace_cannot_change_during_submission_transaction(self):
+        from threading import Event, Thread
+        self.assertEqual(self.call('POST', '/api/workspace/import', {'acknowledged': True}).status_code, 200)
+        fingerprint = self._draft()
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        workspace = self.call('GET', '/api/workspace').json()['workspace']
+        workspace['profile']['headline'] += ' changed'
+        entered, release, changed = Event(), Event(), Event()
+        original, responses = Store.latest_review, {}
+        def delayed(store, *args, **kwargs):
+            entered.set()
+            if not release.wait(5): raise RuntimeError('Timed out waiting for concurrent request')
+            return original(store, *args, **kwargs)
+        def submit():
+            responses['submitted'] = self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+                'packet_sha256': fingerprint, 'receipt': 'fictional-123', 'attest_confirmed': True})
+        def update():
+            responses['updated'] = self.call('PUT', '/api/workspace', {
+                'expected_revision': workspace['revision'], 'profile': workspace['profile'], 'facts': workspace['facts']})
+            changed.set()
+        with patch.object(Store, 'latest_review', delayed):
+            thread1 = Thread(target=submit); thread1.start()
+            self.assertTrue(entered.wait(5))
+            thread2 = Thread(target=update); thread2.start()
+            self.assertFalse(changed.wait(.2), 'Profile update must wait for submission to commit')
+            release.set(); thread1.join(10); thread2.join(10)
+        self.assertEqual(responses['submitted'].status_code, 200)
+        self.assertEqual(responses['updated'].status_code, 200)
+
+    def test_workflow_review_rechecks_workspace_under_lock(self):
+        from career_agent.workflows import Workflows
+        fingerprint = self._draft()
+        original = Workflows.advance
+        def advance(manager, run_id, signature, decision=None, **kwargs):
+            if decision is not None:
+                response = self.call('POST', '/api/workspace/import', {'acknowledged': True})
+                self.assertEqual(response.status_code, 200)
+            return original(manager, run_id, signature, decision, **kwargs)
+        with patch.object(Workflows, 'advance', advance):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
+    def test_cli_external_workflow_remains_available_with_initialized_workspace(self):
+        from career_agent.cli import main
+        self.assertEqual(self.call('POST', '/api/workspace/import', {'acknowledged': True}).status_code, 200)
+        with patch('builtins.input', return_value=''):
+            code = main(['--db', str(self.db), 'workflow', self.job.id,
+                '--profile', str(self.profile_path), '--facts', str(self.facts_path),
+                '--output', str(self.packet_dir / f'{self.job.id}.json')])
+        self.assertEqual(code, 0)
+
+    def test_word_export_rechecks_description_after_rendering(self):
+        fingerprint = self._draft()
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        def render(_packet):
+            result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                'description': 'Corrected fictional role.', 'expected_revision': 0, 'acknowledged': True})
+            self.assertEqual(result.status_code, 200)
+            return b'fictional-docx'
+        with patch('career_agent.dashboard.resume_docx', side_effect=render):
+            response = self.call('GET', f'/api/jobs/{self.job.id}/resume.docx?packet_sha256={fingerprint}')
+        self.assertEqual(response.status_code, 409)
+
+    def test_workflow_review_rechecks_description_under_lock(self):
+        from career_agent.workflows import Workflows
+        fingerprint = self._draft()
+        original = Workflows.advance
+        def advance(manager, run_id, signature, decision=None, **kwargs):
+            if decision is not None:
+                result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                    'description': 'Corrected before approval.', 'expected_revision': 0, 'acknowledged': True})
+                self.assertEqual(result.status_code, 200)
+            return original(manager, run_id, signature, decision, **kwargs)
+        with patch.object(Workflows, 'advance', advance):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
     def test_no_candidate_claims_embedded_in_homepage(self):
         self.assertNotIn("Fictional Candidate", self.client.get("/").text)
         self.assertNotIn("Delivered a fictional AI program", self.client.get("/").text)

@@ -8,6 +8,10 @@ from pathlib import Path
 from .models import Job
 
 
+class DescriptionConflict(ValueError):
+    """A description was updated after the editor loaded it."""
+
+
 class Store:
     def __init__(self, path: str | Path = ".local/career_agent.sqlite3") -> None:
         self.path = Path(path).expanduser()
@@ -43,6 +47,12 @@ class Store:
             );
             CREATE INDEX IF NOT EXISTS idx_packet_reviews_job
                 ON packet_reviews(job_id, review_id DESC);
+            CREATE TABLE IF NOT EXISTS job_description_revisions(
+                job_id TEXT NOT NULL REFERENCES jobs(job_id), revision INTEGER NOT NULL,
+                previous_description TEXT NOT NULL, description TEXT NOT NULL,
+                source_note TEXT NOT NULL, changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(job_id, revision)
+            );
         """)
 
     def __enter__(self) -> "Store":
@@ -114,6 +124,51 @@ class Store:
             remote=bool(row["remote"]),
         )
 
+    def description_revision(self, job_id: str) -> int:
+        row = self.connection.execute('SELECT MAX(revision) FROM job_description_revisions WHERE job_id=?', (job_id,)).fetchone()
+        return row[0] or 0
+
+    def workspace_revision(self) -> int:
+        """Read the revision without initializing or committing within a transaction."""
+        exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_workspace_versions'").fetchone()
+        if not exists:
+            return 0
+        row = self.connection.execute('SELECT MAX(revision) FROM candidate_workspace_versions').fetchone()
+        return row[0] or 0
+
+    def description_latest(self, job_id: str) -> dict | None:
+        row = self.connection.execute('SELECT revision,source_note,changed_at FROM job_description_revisions WHERE job_id=? ORDER BY revision DESC LIMIT 1', (job_id,)).fetchone()
+        return dict(row) if row else None
+
+    def description_history(self, job_id: str) -> list[dict]:
+        self.get_job(job_id)
+        return [dict(row) for row in self.connection.execute(
+            'SELECT revision,previous_description,description,source_note,changed_at FROM job_description_revisions WHERE job_id=? ORDER BY revision DESC LIMIT 50',
+            (job_id,))]
+
+    def correct_description(self, job_id: str, description: str, expected_revision: int, source_note: str) -> dict:
+        if not isinstance(description, str) or not description.strip() or len(description) > 50000 or '\x00' in description:
+            raise ValueError('Description must contain 1–50,000 characters without NUL')
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError('Expected description revision must be a nonnegative integer')
+        if not isinstance(source_note, str) or len(source_note) > 500 or '\x00' in source_note:
+            raise ValueError('Source note must be at most 500 characters without NUL')
+        with self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            job = self.get_job(job_id)
+            if self.stage_of(job_id) == 'submitted':
+                raise ValueError('Submitted applications are locked; their posting cannot be edited')
+            previous_revision = self.description_revision(job_id)
+            if expected_revision != previous_revision:
+                raise DescriptionConflict('Job description changed in another session; reload before editing')
+            if description == job.description:
+                return {'revision': previous_revision, 'changed': False}
+            revision = previous_revision + 1
+            self.connection.execute('UPDATE jobs SET description=? WHERE job_id=?', (description, job_id))
+            self.connection.execute('INSERT INTO job_description_revisions(job_id,revision,previous_description,description,source_note) VALUES(?,?,?,?,?)',
+                (job_id, revision, job.description, description, source_note.strip()))
+        return {'revision': revision, 'changed': True}
+
     def stage_of(self, job_id: str) -> str:
         row = self.connection.execute(
             "SELECT stage FROM applications WHERE job_id=?", (job_id,)
@@ -151,17 +206,23 @@ class Store:
             )
 
 
-    def record_review(self, job_id: str, packet_sha256: str, approved: bool) -> dict:
+    def record_review(self, job_id: str, packet_sha256: str, approved: bool, *, expected_description_revision: int | None = None,
+                      expected_workspace_revision: int | None = None) -> dict:
         """Append-only record of explicit human review. Does not send anything."""
-        self.get_job(job_id)
-        if self.stage_of(job_id) == "submitted":
-            raise ValueError("A submitted application cannot receive a new review decision")
         if type(approved) is not bool:
             raise ValueError("Review approval must be a boolean")
         if not isinstance(packet_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", packet_sha256):
             raise ValueError("Invalid packet SHA-256 fingerprint")
         decision = "approved_for_manual_submission" if approved else "rejected_by_reviewer"
         with self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            self.get_job(job_id)
+            if self.stage_of(job_id) == "submitted":
+                raise ValueError("A submitted application cannot receive a new review decision")
+            if expected_description_revision is not None and self.description_revision(job_id) != expected_description_revision:
+                raise DescriptionConflict('Job description changed; regenerate and review the draft')
+            if expected_workspace_revision is not None and self.workspace_revision() != expected_workspace_revision:
+                raise DescriptionConflict('Career profile changed; regenerate and review the draft')
             cursor = self.connection.execute(
                 """
                 INSERT INTO packet_reviews(job_id,packet_sha256,decision)

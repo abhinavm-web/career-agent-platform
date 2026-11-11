@@ -232,12 +232,19 @@
   }
 
   async function selectJob(id) {
+    if (state.selectedId !== id) {
+      const editor = byId("detail-panel").querySelector?.("#job-description-editor");
+      const description = editor?.querySelector?.("textarea");
+      const source = editor?.querySelectorAll?.("textarea")?.[1];
+      if (editor?.open && description && (description.value !== description.defaultValue || source?.value) &&
+          !window.confirm("Discard the unsaved job-description correction?")) return;
+    }
     state.selectedId = id;
     state.packet = null;
     renderJobs();
     renderDetail();
     await loadPacket(id);
-    if (state.selectedId === id) renderDetail();
+    if (state.selectedId === id) renderDetailPreservingEditor();
   }
 
   async function loadPacket(requestedJobId) {
@@ -268,6 +275,17 @@
     return box;
   }
 
+  function renderDetailPreservingEditor() {
+    const editor = byId("detail-panel").querySelector?.("#job-description-editor");
+    const keep = editor?.open && editor.dataset.jobId === state.selectedId;
+    renderDetail();
+    if (keep) {
+      const replacement = byId("detail-panel").querySelector?.("#job-description-editor");
+      if (replacement) replacement.replaceWith(editor);
+      else byId("detail-panel").append(editor);
+    }
+  }
+
   function renderDetail() {
     selectedAvailabilityUpdater = null;
     const detail = byId("detail-panel");
@@ -275,7 +293,11 @@
     const job = state.jobs.find((value) => value.id === state.selectedId);
     if (!job) {
       const empty = node("div", "empty-detail");
-      empty.append(node("span", "empty-icon", "◎"), node("h3", "", "Select an opportunity"), node("p", "", "Inspect its details and prepare your review."));
+      if (state.selectedId) {
+        empty.append(node("h3", "", "Opportunity outside the loaded board"), node("p", "", "Your description editor is preserved below. Its saved revision will be checked before changes are accepted."));
+      } else {
+        empty.append(node("span", "empty-icon", "◎"), node("h3", "", "Select an opportunity"), node("p", "", "Inspect its details and prepare your review."));
+      }
       detail.append(empty);
       return;
     }
@@ -368,11 +390,53 @@
       detail.append(fit);
     }
 
-    if (job.description) {
-      const desc = section("Job description");
-      desc.append(node("p", "description", job.description));
-      detail.append(desc);
+    const desc = section("Job description");
+    desc.append(node("p", "description", job.description || "No description saved."));
+    if (job.description_correction) {
+      desc.append(node("p", "muted", "Manually corrected locally on " + job.description_correction.changed_at +
+        ". Source note: " + (job.description_correction.source_note || "Not provided") + ". The source was not independently verified."));
     }
+    if (job.application_stage !== "submitted") {
+      const editor = node("details");
+      editor.id = "job-description-editor";
+      editor.dataset.jobId = job.id;
+      editor.append(node("summary", "", "Correct saved description"));
+      editor.append(node("p", "muted", "Paste the latest text you reviewed. This local correction is not independently verified. Changing it makes existing drafts and approvals outdated; create and review a new draft."));
+      const form = node("form");
+      const label = node("label", "block-label", "Corrected job description");
+      const input = node("textarea"); input.rows = 8; input.maxLength = 50000; input.required = true;
+      input.defaultValue = job.description || ""; input.value = job.description || ""; label.append(input); form.append(label);
+      const sourceLabel = node("label", "block-label", "Source note (optional)");
+      const source = node("textarea"); source.rows = 2; source.maxLength = 500;
+      source.placeholder = "For example, the employer job page and date you checked";
+      sourceLabel.append(source); form.append(sourceLabel);
+      const confirmation = node("label", "check-label");
+      const acknowledged = node("input"); acknowledged.type = "checkbox"; acknowledged.required = true;
+      confirmation.append(acknowledged, document.createTextNode("I reviewed this corrected description."));
+      form.append(confirmation);
+      const submit = button("Save corrected description", "button button-primary"); submit.type = "submit";
+      const status = node("p", "muted"); status.setAttribute("role", "status");
+      form.append(submit, status);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (submit.disabled || !acknowledged.checked) return;
+        const description = input.value, sourceNote = source.value;
+        submit.disabled = true; input.disabled = true; source.disabled = true; acknowledged.disabled = true;
+        try {
+          const result = await api("/api/jobs/" + job.id + "/description", "PUT", {
+            description, source_note: sourceNote, expected_revision: job.description_revision ?? 0, acknowledged: true
+          });
+          notice(result.changed ? "Description corrected. Regenerate and review any existing draft." : "Description was unchanged.");
+          editor.open = false;
+          if (state.selectedId === job.id) await refresh(job.id);
+        } catch (error) { status.textContent = error.message; }
+        finally { submit.disabled = false; input.disabled = false; source.disabled = false; acknowledged.disabled = false; }
+      });
+      editor.append(form); desc.append(editor);
+    } else {
+      desc.append(node("p", "muted", "The posting and reviewed packet are locked after submission is recorded."));
+    }
+    detail.append(desc);
 
     const drafts = section("Application preparation");
     const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
@@ -392,7 +456,7 @@
     const stale = Boolean(record.stale);
     const card = node("section", "review-card");
     card.append(node("h4", "", "Application packet"), node("p", "", "Review each statement before using it. Packet fingerprint: " + packet.packet_sha256.slice(0, 12) + "…"));
-    if (stale) card.append(node("p", "stale-warning", "Career facts or preferences changed since this packet was drafted. Regenerate and review before using it."));
+    if (stale) card.append(node("p", "stale-warning", "The career profile or job description changed since this packet was drafted. Regenerate and review before using it."));
     const resume = node("details");
     const resumeTitle = node("summary", "", "Resume draft");
     const resumeText = node("pre", "", packet.resume_markdown);
@@ -1190,7 +1254,9 @@
       state.settings = results[2];
       state.reviews = results[3].reviews;
       const previous = keepSelected || state.selectedId;
-      state.selectedId = state.jobs.some((job) => job.id === previous) ? previous : null;
+      const oldEditor = byId("detail-panel").querySelector?.("#job-description-editor");
+      const keepEditor = oldEditor?.open && oldEditor.dataset.jobId === previous;
+      state.selectedId = state.jobs.some((job) => job.id === previous) || keepEditor ? previous : null;
       if (keepSelected && state.selectedId) {
         const index = filteredJobs().findIndex((job) => job.id === state.selectedId);
         if (index >= 0) state.jobsPage = Math.floor(index / 10);
@@ -1204,7 +1270,7 @@
       if (sequence !== state.refreshSequence) return;
       if (state.selectedId === selectedId) {
         const receipt = byId("detail-panel").querySelector?.("#submission-reference")?.value;
-        renderDetail();
+        renderDetailPreservingEditor();
         if (receipt !== undefined && previousPacketHash && previousPacketHash === state.packet?.packet?.packet_sha256) {
           const input = byId("detail-panel").querySelector?.("#submission-reference");
           if (input) input.value = receipt;

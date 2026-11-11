@@ -40,7 +40,7 @@ from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
 from .scoring import score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
-from .storage import Store
+from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
 
 JOB_ID = re.compile(r"[a-f0-9]{16}\Z")
@@ -179,6 +179,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if (bound_revision != revision) if revision > 0 else bound_revision is not None:
             return True
         with Store(config.db_path) as store:
+            if packet.get('job_description_revision', 0) != store.description_revision(packet['job_id']):
+                return True
             run = store.connection.execute('SELECT input_sha256,packet_sha256 FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1',
                 (packet['job_id'],)).fetchone()
         if run:
@@ -208,6 +210,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "live_check_supported": posting_target(job.url) is not None,
             "live_check": posting_checks.latest(job.id),
             "description": job.description,
+            "description_revision": store.description_revision(job.id),
+            "description_correction": store.description_latest(job.id),
             "application_stage": store.stage_of(job.id),
             "fit_score": fit.score if fit is not None else None,
             "fit_reasons": list(fit.reasons) if fit is not None else [],
@@ -268,8 +272,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if profile is None:
             raise ValueError('Configure a career profile first')
         with Store(config.db_path) as store:
+            store.connection.execute('BEGIN')
             job = _get_job(store, job_id)
-        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None)
+            job_revision = store.description_revision(job.id)
+        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None, job_revision or None)
 
     @app.post('/api/workflows/{run_id}/retry')
     async def workflow_retry(run_id: str, request: Request):
@@ -280,7 +286,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if row is None:
             raise ValueError('Unknown workflow run')
         state = current_workflow_inputs(row['job_id'])
-        result = await run_in_threadpool(workflows.advance, run_id, workflow_signature(state))
+        result = await run_in_threadpool(workflows.advance, run_id, workflow_signature(state),
+                                         expected_workspace_revision=state['workspace_revision'] or 0)
         return {'run_id': run_id, 'status': result['status']}
 
     @app.get("/api/ai/routes")
@@ -503,6 +510,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             posting_checks = PostingChecks(store)
+            store.connection.execute('BEGIN')
             jobs, next_before = store.job_page(limit=limit, before=before)
             items = [
                 job_view(store, job, profile, records, workspace["revision"], posting_checks)
@@ -568,6 +576,24 @@ def create_app(config: DashboardConfig) -> FastAPI:
             inserted = store.add_jobs([job])
         return {"job_id": job.id, "created": inserted == 1}
 
+    @app.get("/api/jobs/{job_id}/description-history")
+    def description_history(job_id: str):
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            return {"job_id": job.id, "revisions": store.description_history(job.id)}
+
+    @app.put("/api/jobs/{job_id}/description")
+    async def correct_job_description(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise HTTPException(status_code=422, detail='Confirm that you reviewed the corrected posting')
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            try:
+                return store.correct_description(job.id, data.get('description'), data.get('expected_revision'), data.get('source_note', ''))
+            except DescriptionConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from None
+
     @app.post("/api/jobs/{job_id}/draft")
     def draft(job_id: str):
         workspace = active_workspace()
@@ -581,13 +607,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
             bank = configured_facts()
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
+            store.connection.execute('BEGIN')
             job = _get_job(store, job_id)
+            job_revision = store.description_revision(job.id)
             if store.stage_of(job.id) == "submitted":
                 raise HTTPException(
                     status_code=409,
                     detail="This application is already recorded as submitted; its reviewed packet is locked",
                 )
-        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None))
+        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None), guard_workspace=True)
         packet = run['packet']
         return {
             "job_id": job.id,
@@ -625,13 +653,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
             if store.stage_of(job_id) == 'submitted':
                 raise ValueError('A submitted application cannot receive a new review decision')
         if packet_stale(current):
-            raise HTTPException(status_code=409, detail="Career profile changed; regenerate this draft before review")
+            raise HTTPException(status_code=409, detail="Career profile or job description changed; regenerate this draft before review")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, current["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale packet; reload and review the latest draft")
         handled = await run_in_threadpool(workflows.review, job_id, fingerprint, data['approved'], lambda: current_workflow_inputs(job_id))
         with Store(config.db_path) as store:
-            result = store.latest_review(job_id, fingerprint) if handled else store.record_review(job_id, fingerprint, approved=data["approved"])
+            try:
+                result = store.latest_review(job_id, fingerprint) if handled else store.record_review(
+                    job_id, fingerprint, approved=data["approved"],
+                    expected_description_revision=current.get('job_description_revision', 0),
+                    expected_workspace_revision=current.get('candidate_workspace_revision') or 0)
+            except DescriptionConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from None
         return {**result, "submission_sent": False}
 
     def approved_resume_packet(job_id: str, packet_sha256: str):
@@ -647,6 +681,18 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=412, detail="Approve this packet before downloading its resume")
         return packet
 
+    def recheck_export(job_id: str, packet_sha256: str, packet: dict):
+        with Store(config.db_path) as store, store.connection:
+            store.connection.execute('BEGIN IMMEDIATE')
+            latest = current_packet(job_id)
+            if (store.description_revision(job_id) != packet.get('job_description_revision', 0)
+                    or store.workspace_revision() != (packet.get('candidate_workspace_revision') or 0)
+                    or latest is None or latest['packet_sha256'] != packet_sha256):
+                raise HTTPException(status_code=409, detail='Packet or job description changed during export; reload and review')
+            decision = store.latest_review(job_id, packet_sha256)
+            if not decision or decision['decision'] != 'approved_for_manual_submission':
+                raise HTTPException(status_code=409, detail='Review changed during export; reload and review')
+
     @app.get("/api/jobs/{job_id}/resume.pdf")
     def export_resume(job_id: str, packet_sha256: str = ""):
         packet = approved_resume_packet(job_id, packet_sha256)
@@ -654,6 +700,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             content = resume_pdf(packet)
         except PDFUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+        recheck_export(job_id, packet_sha256, packet)
         return Response(content, media_type="application/pdf", headers={
             "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.pdf"',
         })
@@ -665,6 +712,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             content = resume_docx(packet)
         except DOCXUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+        recheck_export(job_id, packet_sha256, packet)
         return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={
             "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.docx"',
         })
@@ -681,18 +729,26 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if packet is None:
             raise HTTPException(status_code=412, detail="Draft and review an application packet first")
         if packet_stale(packet):
-            raise HTTPException(status_code=409, detail="Career profile changed; regenerate and review before recording submission")
+            raise HTTPException(status_code=409, detail="Career profile or job description changed; regenerate and review before recording submission")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, packet["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale or missing packet fingerprint")
-        with Store(config.db_path) as store:
+        with Store(config.db_path) as store, store.connection:
+            store.connection.execute('BEGIN IMMEDIATE')
+            latest = current_packet(job_id)
+            if (store.description_revision(job_id) != packet.get('job_description_revision', 0)
+                    or store.workspace_revision() != (packet.get('candidate_workspace_revision') or 0)
+                    or latest is None or latest['packet_sha256'] != fingerprint):
+                raise HTTPException(status_code=409, detail='Job description or packet changed; regenerate and review')
             decision = store.latest_review(job_id, fingerprint)
             if not decision or decision["decision"] != "approved_for_manual_submission":
                 raise HTTPException(status_code=412, detail="Human approval of the current packet is required first")
             if store.stage_of(job_id) == "submitted":
                 raise HTTPException(status_code=409, detail="Job is already recorded as submitted")
-            store.stage(job_id)
-            store.confirm(job_id, receipt, attested=True)
+            store.connection.execute('''INSERT INTO applications(job_id,stage,receipt)
+                VALUES(?,'submitted',?) ON CONFLICT(job_id) DO UPDATE SET
+                stage='submitted',receipt=excluded.receipt,updated_at=CURRENT_TIMESTAMP''',
+                (job_id, receipt.strip()))
         return {
             "job_id": job_id,
             "application_stage": "submitted",
