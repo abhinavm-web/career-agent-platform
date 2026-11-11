@@ -99,6 +99,29 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('GET', '/api/workspace').json(), before)
         self.assertEqual(self.call('POST', '/api/workspace/resume-extract', {'filename': 'x.pdf', 'content': '!!!!'}).status_code, 422)
 
+    def test_fit_evidence_uses_only_verified_statements_and_never_private_notes(self):
+        job = Job.from_mapping({'company': 'Fictional Corp', 'title': 'Data Analyst',
+            'job_url': 'https://example.invalid/requirements',
+            'description': 'Required qualifications:\n- Python experience\n- Rust experience'})
+        with Store(self.db) as store:
+            store.add_jobs([job])
+        path = f'/api/jobs/{job.id}/fit-evidence'
+        self.assertEqual(self.client.get(path).status_code, 403)
+        before = self.call('GET', '/api/workspace').json()
+        result = self.call('GET', path).json()
+        self.assertEqual(result['requirements'][0]['suggested_facts'][0]['id'], 'experience-01')
+        self.assertEqual(result['requirements'][1]['suggested_facts'], [])
+        self.assertNotIn('Private fictional evidence', json.dumps(result))
+        self.assertEqual(self.call('GET', '/api/workspace').json(), before)
+        imported = self.call('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']
+        new = dict(imported['facts'][0], id='unverified-02', statement='Unverified Python experience',
+                   source_note='Do not transmit.', verified_by_candidate=False)
+        saved = self.call('PUT', '/api/workspace', {'expected_revision': imported['revision'],
+            'profile': imported['profile'], 'facts': imported['facts'] + [new]}).json()['workspace']
+        rows = self.call('GET', path).json()['requirements'][0]['suggested_facts']
+        self.assertEqual([fact['id'] for fact in rows], ['experience-01'])
+        self.assertFalse(saved['facts'][-1]['verified_by_candidate'])
+
     def test_ai_analysis_requires_consent_and_preserves_application_state(self):
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='{"requirements":[]}') as complete:

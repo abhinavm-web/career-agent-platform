@@ -131,6 +131,13 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
   const chatRequests = [];
   const downloads = [];
   const fetch = (url, options = {}) => {
+    if (url === '/api/jobs/' + ID_A + '/fit-evidence') return Promise.resolve(ok({
+      job_id: ID_A, description_revision: 0, workspace_revision: 0,
+      notice: 'Keyword links need review', truncated: false,
+      requirements: [{category: 'required', quote: '- Python <script>unsafe</script>',
+        suggested_facts: [{id: 'fact-01', statement: 'Verified fictional Python work', matched_keywords: ['Python']}]},
+        {category: 'preferred', quote: '- Rust', suggested_facts: []}]
+    }));
     if (url === "/api/ai/routes") return Promise.resolve(ok({routes: [{route: "local", provider: "ollama", model: "fictional", destination: "loopback"}]}));
     if (url === "/api/workspace/chat") {
       chatRequests.push(JSON.parse(options.body));
@@ -298,6 +305,18 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test('fit evidence presents untrusted excerpts and unknowns without claiming qualifications', async () => {
+  const h = createHarness(); await flush();
+  h.get('job-list').children[0].click();
+  const find = (el) => el.tagName === 'button' && el.textContent === 'Compare requirements'
+    ? el : el.children.map(find).find(Boolean);
+  await find(h.get('detail-panel')).click();
+  const output = h.get('detail-panel').textContent;
+  assert.match(output, /Python <script>unsafe<\/script>/);
+  assert.match(output, /Potentially relevant verified fact fact-01/);
+  assert.match(output, /evidence remains unknown/);
+});
 
 test("reviewed Word download appears only for an approved current packet", async () => {
   const find = (el) => el.tagName === "button" && el.textContent === "Download reviewed resume Word"

@@ -243,8 +243,17 @@
     state.packet = null;
     renderJobs();
     renderDetail();
+    const initialWorkspaceRevision = state.workspace?.revision ?? null;
+    const initialDescriptionRevision = state.jobs.find((job) => job.id === id)?.description_revision ?? 0;
     await loadPacket(id);
-    if (state.selectedId === id) renderDetailPreservingEditor();
+    if (state.selectedId === id) {
+      const comparison = byId("detail-panel").querySelector?.("#fit-evidence");
+      const preserve = comparison?.dataset.started === "true" &&
+        (state.workspace?.revision ?? null) === initialWorkspaceRevision &&
+        (state.jobs.find((job) => job.id === id)?.description_revision ?? 0) === initialDescriptionRevision;
+      renderDetailPreservingEditor();
+      if (preserve) byId("detail-panel").querySelector?.("#fit-evidence")?.replaceWith(comparison);
+    }
   }
 
   async function loadPacket(requestedJobId) {
@@ -389,6 +398,38 @@
       fit.append(ul);
       detail.append(fit);
     }
+
+    const evidence = section("Review explicit requirements");
+    evidence.id = "fit-evidence";
+    evidence.append(node("p", "", "Compare clearly labeled requirement bullets with your verified facts. Keyword links are suggestions, not qualification decisions."));
+    const evidenceResult = node("div");
+    evidenceResult.setAttribute("role", "status");
+    const evidenceButton = button("Compare requirements", "button", async () => {
+      if (evidenceButton.disabled) return;
+      evidence.dataset.started = "true";
+      evidenceButton.disabled = true;
+      evidenceResult.textContent = "Comparing saved posting text with verified facts…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/fit-evidence");
+        if (result.job_id !== job.id || result.description_revision !== (job.description_revision ?? 0)) {
+          throw new Error("The posting changed; refresh the board and compare again.");
+        }
+        evidenceResult.replaceChildren(node("p", "muted", result.notice));
+        evidenceResult.append(node("p", "muted", "Snapshot of saved posting revision " + result.description_revision + " and profile revision " + result.workspace_revision + ". Compare again after changes."));
+        if (!result.requirements.length) evidenceResult.append(node("p", "", "No clearly labeled requirement bullets found; review the full posting manually."));
+        for (const row of result.requirements) {
+          const item = node("div", "fit-evidence-item");
+          item.append(node("strong", "", row.category === "required" ? "Labeled required" : "Labeled preferred"), node("blockquote", "", row.quote));
+          if (!row.suggested_facts.length) item.append(node("p", "", "No verified fact matched by keyword; evidence remains unknown."));
+          for (const fact of row.suggested_facts) item.append(node("p", "", "Potentially relevant verified fact " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));
+          evidenceResult.append(item);
+        }
+        if (result.truncated) evidenceResult.append(node("p", "", "Some content exceeded review limits; inspect the full posting."));
+      } catch (error) {evidenceResult.textContent = "Unable to compare requirements: " + error.message;}
+      finally {evidenceButton.disabled = false;}
+    });
+    evidence.append(evidenceButton, evidenceResult);
+    detail.append(evidence);
 
     const desc = section("Job description");
     desc.append(node("p", "description", job.description || "No description saved."));

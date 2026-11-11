@@ -588,6 +588,26 @@ def create_app(config: DashboardConfig) -> FastAPI:
             job = _get_job(store, job_id)
             return {"job_id": job.id, "revisions": store.description_history(job.id)}
 
+    @app.get("/api/jobs/{job_id}/fit-evidence")
+    def fit_evidence(job_id: str):
+        from .fit_evidence import requirement_evidence
+        with Store(config.db_path) as store:
+            candidate = CandidateWorkspace(store)
+            store.connection.execute('BEGIN')
+            workspace = candidate.latest()
+            job = _get_job(store, job_id)
+            job_revision = store.description_revision(job.id)
+        if workspace['revision']:
+            facts = [fact for fact in workspace['facts'] if fact['verified_by_candidate']]
+        elif config.facts_path:
+            bank = FactBank.load(config.facts_path)
+            facts = [{'id': fact.fact_id, 'statement': fact.statement, 'keywords': fact.keywords}
+                     for fact in bank.facts]
+        else:
+            facts = []
+        return {'job_id': job.id, 'description_revision': job_revision,
+                'workspace_revision': workspace['revision'], **requirement_evidence(job.description, facts)}
+
     @app.put("/api/jobs/{job_id}/description")
     async def correct_job_description(job_id: str, request: Request):
         data = await request.json()
