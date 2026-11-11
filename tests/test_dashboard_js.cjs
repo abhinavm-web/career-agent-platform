@@ -544,6 +544,21 @@ test("submitted job UI cannot expose a regenerate-draft action", async () => {
 });
 
 
+test("pasted resume lines enter the editor without saving or verifying", async () => {
+  const harness = createHarness();
+  await flush();
+  await harness.get("nav-profile").click();
+  harness.get("resume-text").value = "A fictional achievement for review.\nAnother example achievement.";
+  harness.get("resume-extract").click();
+  assert.equal(harness.get("resume-lines").children.length, 2);
+  harness.get("resume-lines").value = harness.get("resume-lines").children[0].value;
+  harness.get("resume-use-line").click();
+  assert.equal(harness.get("fact-statement").value, "A fictional achievement for review.");
+  assert.equal(harness.getWorkspace().facts.length, 0);
+  harness.get("resume-text").handlers.input();
+  assert.equal(harness.get("resume-use-line").disabled, true);
+});
+
 test("career profile can add and separately verify a fact through the browser controls", async () => {
   const harness = createHarness();
   await flush();

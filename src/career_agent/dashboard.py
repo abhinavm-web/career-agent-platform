@@ -113,6 +113,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 body = await request.body()
                 limit = (
                     10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
+                    3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
                     WORKSPACE_BODY_LIMIT
                     if request.url.path == "/api/workspace" and request.method == "PUT"
                     else API_BODY_LIMIT
@@ -285,6 +286,38 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def ai_routes():
         return {"routes": ai.catalog()}
 
+    @app.post("/api/workspace/chat")
+    async def workspace_chat(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise ValueError("Confirm sending your question to the selected provider")
+        include_facts = data.get("include_verified_facts", False)
+        if not isinstance(include_facts, bool):
+            raise ValueError("Choose whether to share verified facts")
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="An AI request is already running")
+        try:
+            claims = {}
+            if include_facts:
+                workspace = active_workspace()
+                if workspace["revision"]:
+                    claims = {fact["id"]: fact["statement"] for fact in workspace["facts"]
+                              if fact["verified_by_candidate"]}
+                elif config.facts_path:
+                    claims = FactBank.load(config.facts_path).public_claims()
+            return await run_in_threadpool(ai.profile_chat, data.get("route"), data.get("message"), claims, True)
+        finally:
+            ai_lock.release()
+
+    @app.post("/api/workspace/resume-extract")
+    async def workspace_resume_extract(request: Request):
+        from .resume_import import extract_resume
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"filename", "content"}:
+            raise ValueError("Choose a résumé file to extract locally")
+        text = await run_in_threadpool(extract_resume, data["filename"], data["content"])
+        return {"text": text}
+
     @app.post("/api/jobs/{job_id}/ai-analysis")
     async def ai_analysis(job_id: str, request: Request):
         data = await request.json()
@@ -369,6 +402,11 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 return PostingChecks(store).save(job_id, result)
         finally:
             live_check_lock.release()
+
+    @app.get("/api/h1b/opportunities")
+    def h1b_opportunities(q: str = '', category: str = 'all', offset: int = 0):
+        with Store(config.db_path) as store:
+            return H1BResearch(store).opportunities(q, category, offset)
 
     @app.get("/api/h1b/search")
     def h1b_search(q: str, offset: int = 0):

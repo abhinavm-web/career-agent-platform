@@ -82,6 +82,32 @@ class ResearchTests(unittest.TestCase):
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
 
+    def test_opportunities_need_no_filings_and_respect_need_and_pagination(self):
+        descriptions = ['Visa sponsorship is available.', 'H-1B transfers only.',
+                        'No visa sponsorship.', 'Python skills.']
+        self.store.add_jobs([Job.from_mapping({'company': 'Fictional Co', 'title': f'Role {i}',
+            'location': 'Austin, TX', 'job_url': f'https://example.invalid/{i}', 'description': description})
+            for i, description in enumerate(descriptions)])
+        result = self.research.opportunities('austin')
+        self.assertEqual(result['counts'], {'potential': 2, 'review': 1, 'excluded': 1})
+        self.assertEqual(result['total'], 4)
+        self.assertTrue(all(job['history']['recent_certified_cases'] == 0 for job in result['jobs']))
+        self.research.configure({'need': 'new', 'min_year': 2024, 'include_unknown': False})
+        result = self.research.opportunities(category='review')
+        self.assertEqual(result['counts'], {'potential': 1, 'review': 2, 'excluded': 1})
+        self.assertEqual({job['policy'] for job in result['jobs']}, {'unknown', 'transfer_only'})
+        self.store.add_jobs([Job.from_mapping({'company': 'Fictional Co', 'title': f'Extra {i}',
+            'job_url': f'https://example.invalid/extra/{i}'}) for i in range(26)])
+        first = self.research.opportunities(category='review')
+        self.assertEqual(len(first['jobs']), 25)
+        self.assertEqual(first['next_offset'], 25)
+        second = self.research.opportunities(category='review', offset=25)
+        self.assertEqual(len(second['jobs']), 3)
+        self.assertIsNone(second['next_offset'])
+        for arguments in ({'category': 'bogus'}, {'offset': -1}, {'query': '\x00'}):
+            with self.assertRaises(ValueError):
+                self.research.opportunities(**arguments)
+
     def test_h1b_only_separate_status_counts_exact_entity_and_literals(self):
         result = self.ingest([{}, {'CASE_STATUS': 'Denied'}, {'CASE_STATUS': 'Withdrawn'},
                               {'CASE_STATUS': 'Certified-Withdrawn'}, {'VISA_CLASS': 'H-1B1 Chile'},

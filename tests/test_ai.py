@@ -31,6 +31,29 @@ class AITests(unittest.TestCase):
                     ai.analyze(self.job, self.bank, route, consent)
             complete.assert_not_called()
 
+    def test_profile_chat_requires_consent_and_sends_only_supplied_facts(self):
+        claims = self.bank.public_claims()
+        with patch('career_agent.ai.complete', return_value='Ask about the role scope.') as complete:
+            for route, message, consent in [('local', 'Hello', False), ('missing', 'Hello', True), ('local', '', True), ('local', 'x' * 4001, True)]:
+                with self.assertRaises(ValueError):
+                    ai.profile_chat(route, message, claims, consent)
+            complete.assert_not_called()
+            result = ai.profile_chat('local', 'What should I ask?', claims, True)
+        payload = json.loads(complete.call_args.args[1])
+        self.assertEqual(payload, {'question': 'What should I ask?', 'verified_facts': claims})
+        self.assertNotIn(self.bank.name, complete.call_args.args[1])
+        self.assertNotIn(self.bank.facts[0].source_note, complete.call_args.args[1])
+        self.assertEqual(complete.call_args.kwargs['system'], ai.PROFILE_SYSTEM)
+        self.assertEqual(result['answer'], 'Ask about the role scope.')
+
+    def test_profile_chat_rejects_oversized_input_and_empty_output(self):
+        with patch('career_agent.ai.complete') as complete, self.assertRaises(ValueError):
+            ai.profile_chat('local', 'Question?', {'fact': 'x' * 32000}, True)
+        complete.assert_not_called()
+        for output in ('', ' ' * 2, 'x' * 32001, None):
+            with self.subTest(output=str(output)[:20]), patch('career_agent.ai.complete', return_value=output), self.assertRaises(ValueError):
+                ai.profile_chat('local', 'Question?', {}, True)
+
     def test_provenance_minimized_payload_and_no_mutations(self):
         with patch('career_agent.ai.complete', return_value=json.dumps(self.output)) as complete:
             result = ai.analyze(self.job, self.bank, 'local', True)

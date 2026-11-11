@@ -99,6 +99,8 @@ Open http://127.0.0.1:8765/ on the same computer. The demo candidate is fictiona
 
 **Not production SaaS:** sensitive profiles and employer receipts remain in unencrypted local files/SQLite; do not run this outside a trusted local computer. See [Dashboard setup and security](docs/DASHBOARD.md).
 
+To run the local workspace in a container with persistent storage, see [Docker setup](docs/DOCKER.md). Docker Desktop requires host networking to be enabled.
+
 
 ## Editable career profile (v0.4 preview)
 

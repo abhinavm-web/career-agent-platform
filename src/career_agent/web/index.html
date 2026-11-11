@@ -128,14 +128,26 @@
 
       <section id="h1b-screen" class="screen" hidden>
         <div class="section-heading"><h2>H-1B company and job research</h2></div>
-        <p class="muted">Search locally imported public filing records and jobs in your workspace. Historical LCAs are not petition approvals or job offers. Confirm the employer entity, role availability and H-1B support directly.</p>
+        <p class="muted">Explore sponsorship language in saved jobs and research optional public employer records. Historical filings and posting language do not establish your eligibility or guarantee sponsorship.</p>
+        <section class="panel profile-editor" aria-labelledby="h1b-opportunities-heading">
+          <h3 id="h1b-opportunities-heading">Sponsorship signals in your opportunities</h3>
+          <p class="muted">Uses saved job descriptions, even without imported filing data. Signals are approximate; confirm the specific visa, role and current availability with the employer.</p>
+          <form id="h1b-opportunities-form" class="crm-form">
+            <label>Role, employer or location<input id="h1b-opportunities-query" type="search" maxlength="200" placeholder="Search saved opportunities"></label>
+            <label>Posting signal<select id="h1b-opportunities-category"><option value="all">All signals</option><option value="potential">Possible sponsorship or transfer</option><option value="review">Needs clarification</option><option value="excluded">Posting indicates a restriction</option></select></label>
+            <div class="button-row"><button type="submit" class="button button-primary">Find opportunities</button><button type="button" id="h1b-find-jobs" class="button">Find more jobs with JobSpy</button></div>
+          </form>
+          <p id="h1b-opportunities-status" role="status" aria-live="polite"></p>
+          <div id="h1b-opportunities-results"></div>
+          <button id="h1b-opportunities-next" type="button" class="button" hidden>Next opportunities</button>
+        </section>
         <form id="h1b-settings" class="panel profile-editor">
           <h3>Search preferences</h3>
           <div class="form-grid">
             <label>Sponsorship needed<select id="h1b-need"><option value="any">Not specified</option><option value="new">New H-1B sponsorship</option><option value="transfer">H-1B transfer</option></select></label>
             <label>Earliest fiscal year for history counts<input id="h1b-min-year" type="number" min="1990" required></label>
           </div>
-          <label class="check-label"><input id="h1b-unknown" type="checkbox" checked> Include jobs with unknown policy</label>
+          <label class="check-label"><input id="h1b-unknown" type="checkbox" checked> Include unknown-policy jobs in company search</label>
           <button id="h1b-save" class="button" type="submit">Save H-1B preferences</button>
         </form>
         <details class="panel profile-editor">
@@ -217,6 +229,21 @@
           <p class="muted">You can copy the configured profile and verified fact bank into this editable workspace. Your original files will not be changed.</p>
           <button id="import-career-data" type="button" class="button">Import configured files</button>
         </div>
+        <details class="panel profile-editor">
+          <summary>Ask a career assistant</summary>
+          <p class="muted">Each request sends your question and any selected verified facts to the selected provider. Answers are unverified suggestions and do not change your profile. Conversations are not saved or sent as history; cloud providers may charge for use.</p>
+          <button id="profile-chat-load" type="button" class="button">Load model routes</button>
+          <form id="profile-chat-form">
+            <label class="block-label">Model route<select id="profile-chat-route" required></select></label>
+            <p id="profile-chat-destination" class="muted">Load model routes to see the destination.</p>
+            <label class="block-label">Your question<textarea id="profile-chat-question" rows="3" maxlength="4000" required placeholder="How should I describe my career goals?"></textarea></label>
+            <label class="check-label"><input id="profile-chat-facts" type="checkbox"> Also send my saved, verified career fact statements (these may contain personal information)</label>
+            <label class="check-label"><input id="profile-chat-consent" type="checkbox" required> I consent to sending this question and any selected facts to the provider shown above.</label>
+            <button id="profile-chat-submit" type="submit" class="button button-primary" disabled>Ask assistant</button>
+          </form>
+          <p id="profile-chat-status" role="status" aria-live="polite">Configure a model route, then load it here. Your conversation is not saved.</p>
+          <div id="profile-chat-answer"></div>
+        </details>
         <form id="career-profile-form" class="panel profile-editor">
           <h3>Preferences</h3>
           <div class="form-grid">
@@ -232,6 +259,18 @@
         <div class="panel profile-editor">
           <div class="section-heading"><div><h3>Career facts</h3><p class="muted">Each achievement or credential needs your explicit verification. Changing its content revokes earlier verification.</p></div></div>
           <div id="career-facts-list" aria-label="Saved career facts"></div>
+          <details>
+            <summary>Import and review résumé text</summary>
+            <p class="muted">Paste text or extract it locally from a PDF, Word or UTF-8 text file (up to 2 MB). Choose a line to review as a fact. Nothing is sent to a model, saved or verified automatically. Scanned PDFs need OCR and are not supported.</p>
+            <label class="block-label">Résumé file<input id="resume-file" type="file" accept=".pdf,.docx,.txt"></label>
+            <button id="resume-file-extract" type="button" class="button">Extract file locally</button>
+            <p id="resume-file-status" role="status" aria-live="polite"></p>
+            <label class="block-label">Résumé text<textarea id="resume-text" rows="5" maxlength="20000"></textarea></label>
+            <button id="resume-extract" type="button" class="button">Extract lines</button>
+            <label class="block-label">Extracted line<select id="resume-lines"></select></label>
+            <button id="resume-use-line" type="button" class="button" disabled>Review as a career fact</button>
+            <p id="resume-status" role="status" aria-live="polite"></p>
+          </details>
           <form id="career-fact-form" class="fact-form">
             <h3 id="fact-form-heading">Add career fact</h3>
             <div class="form-grid">
@@ -244,7 +283,7 @@
               </select></label>
               <label>Matching keywords (one per line)<textarea id="fact-keywords" rows="2" placeholder="AWS"></textarea></label>
             </div>
-            <label class="block-label">Verified statement<textarea id="fact-statement" rows="3" minlength="8" maxlength="1000" required placeholder="Describe something you can confirm, without invented outcomes"></textarea></label>
+            <label class="block-label">Career statement<textarea id="fact-statement" rows="3" minlength="8" maxlength="1000" required placeholder="Describe something you can confirm, without invented outcomes"></textarea></label>
             <label class="block-label">Private evidence note<textarea id="fact-source" rows="2" maxlength="500" required placeholder="How you verified this statement (never added to a resume)"></textarea></label>
             <div class="form-footer">
               <button id="fact-reset" type="button" class="button">Clear form</button>

@@ -1,0 +1,15 @@
+services:
+  career-agent:
+    build: .
+    # The dashboard itself remains bound to 127.0.0.1; see docs/DOCKER.md.
+    network_mode: host
+    volumes:
+      - career-data:/app/.local
+    environment:
+      - ANTHROPIC_API_KEY
+      - AZURE_OPENAI_API_KEY
+    command: ["serve", "--port", "${CAREER_AGENT_PORT:-8765}"]
+    restart: unless-stopped
+
+volumes:
+  career-data:

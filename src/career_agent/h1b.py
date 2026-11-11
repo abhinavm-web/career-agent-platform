@@ -152,6 +152,31 @@ class H1BResearch:
                 'location': job.location, 'history': history, 'posting_freshness': 'not_revalidated',
                 'eligibility': 'not_determined', 'need': settings['need']}
 
+    def opportunities(self, query='', category='all', offset=0):
+        """Browse saved job descriptions independently of the optional filing imports."""
+        if not isinstance(query, str) or len(query) > 200 or '\x00' in query:
+            raise ValueError('Search must be text of at most 200 characters')
+        if category not in ('all', 'potential', 'review', 'excluded'):
+            raise ValueError('Unknown sponsorship signal filter')
+        if type(offset) is not int or offset < 0:
+            raise ValueError('Use a nonnegative offset')
+        settings = self.settings()
+        key = query.strip().casefold()
+        matches = []
+        counts = {'potential': 0, 'review': 0, 'excluded': 0}
+        for job in self.store.list_jobs(limit=-1):
+            if key and key not in ' '.join((job.title, job.company, job.location)).casefold():
+                continue
+            policy = h1b_policy(job.description, settings['need'])
+            group = 'potential' if policy['potential_match'] else 'excluded' if policy['policy'] == 'excluded' else 'review'
+            counts[group] += 1
+            if category == 'all' or category == group:
+                matches.append(job)
+        return {'jobs': [self.job(job, settings) for job in matches[offset:offset + 25]],
+                'total': len(matches), 'counts': counts, 'offset': offset,
+                'next_offset': offset + 25 if offset + 25 < len(matches) else None,
+                'settings': settings}
+
     def search(self, query, offset=0):
         query = text(query, 'Company search', 200)
         if len(query) < 2 or type(offset) is not int or offset < 0:

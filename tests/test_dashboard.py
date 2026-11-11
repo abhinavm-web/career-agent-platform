@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import base64
 import json
 import re
 import tempfile
@@ -88,6 +89,16 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_resume_extract_is_local_and_does_not_change_workspace(self):
+        before = self.call('GET', '/api/workspace').json()
+        payload = {'filename': 'fictional.txt', 'content': base64.b64encode(b'Fictional experience').decode()}
+        self.assertEqual(self.call('POST', '/api/workspace/resume-extract', payload, token='bad').status_code, 403)
+        response = self.call('POST', '/api/workspace/resume-extract', payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['text'], 'Fictional experience')
+        self.assertEqual(self.call('GET', '/api/workspace').json(), before)
+        self.assertEqual(self.call('POST', '/api/workspace/resume-extract', {'filename': 'x.pdf', 'content': '!!!!'}).status_code, 422)
+
     def test_ai_analysis_requires_consent_and_preserves_application_state(self):
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='{"requirements":[]}') as complete:
@@ -102,6 +113,33 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 422)
             self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
             self.assertFalse(self.packet_dir.exists())
+
+    def test_profile_chat_sends_only_opted_in_verified_statements(self):
+        path = '/api/workspace/chat'
+        request = {'route': 'local', 'message': 'What should I highlight?'}
+        with patch('career_agent.dashboard.ai.profile_chat', return_value={
+            'answer': 'Review your evidence.', 'route': 'local', 'provider': 'ollama', 'model': 'fictional'
+        }) as chat:
+            self.assertEqual(self.call('POST', path, request).status_code, 422)
+            chat.assert_not_called()
+            self.assertEqual(self.call('POST', path, request | {'acknowledged': True}).status_code, 200)
+            chat.assert_called_with('local', request['message'], {}, True)
+            self.assertEqual(self.call('POST', path, request | {
+                'acknowledged': True, 'include_verified_facts': 'true'
+            }).status_code, 422)
+            imported = self.call('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']
+            unverified = dict(imported['facts'][0], id='experience-02', statement='An unverified fictional statement.',
+                              verified_by_candidate=False, source_note='Secret note.')
+            saved = self.call('PUT', '/api/workspace', {
+                'expected_revision': imported['revision'], 'profile': imported['profile'],
+                'facts': imported['facts'] + [unverified],
+            }).json()['workspace']
+            result = self.call('POST', path, request | {'acknowledged': True, 'include_verified_facts': True})
+            self.assertEqual(result.status_code, 200)
+            chat.assert_called_with('local', request['message'], {
+                'experience-01': fake_fact_bank()['facts'][0]['statement']
+            }, True)
+            self.assertEqual(self.call('GET', '/api/workspace').json()['workspace']['revision'], saved['revision'])
 
     def test_schedule_api_requires_consent_and_supports_pause_remove(self):
         data = {'query': 'Fictional role', 'location': 'USA', 'sites': ['indeed'], 'interval_minutes': 360, 'results': 5}
