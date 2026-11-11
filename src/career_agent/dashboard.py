@@ -679,13 +679,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=412, detail="Approve this packet before downloading its resume")
         return packet
 
-    @app.get("/api/jobs/{job_id}/resume.pdf")
-    def export_resume(job_id: str, packet_sha256: str = ""):
-        packet = approved_resume_packet(job_id, packet_sha256)
-        try:
-            content = resume_pdf(packet)
-        except PDFUnavailable as error:
-            raise HTTPException(status_code=503, detail=str(error)) from error
+    def recheck_export(job_id: str, packet_sha256: str, packet: dict):
         with Store(config.db_path) as store, store.connection:
             store.connection.execute('BEGIN IMMEDIATE')
             latest = current_packet(job_id)
@@ -695,6 +689,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
             decision = store.latest_review(job_id, packet_sha256)
             if not decision or decision['decision'] != 'approved_for_manual_submission':
                 raise HTTPException(status_code=409, detail='Review changed during export; reload and review')
+
+    @app.get("/api/jobs/{job_id}/resume.pdf")
+    def export_resume(job_id: str, packet_sha256: str = ""):
+        packet = approved_resume_packet(job_id, packet_sha256)
+        try:
+            content = resume_pdf(packet)
+        except PDFUnavailable as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        recheck_export(job_id, packet_sha256, packet)
         return Response(content, media_type="application/pdf", headers={
             "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.pdf"',
         })
@@ -706,6 +709,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             content = resume_docx(packet)
         except DOCXUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
+        recheck_export(job_id, packet_sha256, packet)
         return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={
             "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.docx"',
         })

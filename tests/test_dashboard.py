@@ -788,6 +788,19 @@ class DashboardTests(unittest.TestCase):
             response = self.call('GET', f'/api/jobs/{self.job.id}/resume.pdf?packet_sha256={fingerprint}')
         self.assertEqual(response.status_code, 409)
 
+    def test_word_export_rechecks_description_after_rendering(self):
+        fingerprint = self._draft()
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        def render(_packet):
+            result = self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+                'description': 'Corrected fictional role.', 'expected_revision': 0, 'acknowledged': True})
+            self.assertEqual(result.status_code, 200)
+            return b'fictional-docx'
+        with patch('career_agent.dashboard.resume_docx', side_effect=render):
+            response = self.call('GET', f'/api/jobs/{self.job.id}/resume.docx?packet_sha256={fingerprint}')
+        self.assertEqual(response.status_code, 409)
+
     def test_workflow_review_rechecks_description_under_lock(self):
         from career_agent.workflows import Workflows
         fingerprint = self._draft()
