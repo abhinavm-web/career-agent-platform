@@ -23,9 +23,19 @@ def words(value: str) -> set[str]:
 
 def contains_phrase(text: str, phrase: str) -> bool:
     escaped = re.escape(phrase.strip().lower()).replace(r"\ ", r"\s+")
+    # C, C++ and C# are separate languages, not interchangeable mentions.
+    name = phrase.strip().lower()
+    suffix = (r"(?![a-z0-9+#])" if name == "c" else
+              r"(?![a-z+#])" if name in {"c++", "c#"} else r"(?![a-z0-9])")
     return bool(escaped and re.search(
-        r"(?<![a-z0-9])" + escaped + r"(?![a-z0-9])", text.lower()
+        r"(?<![a-z0-9])" + escaped + suffix, text.lower()
     ))
+
+
+def contains_location(location: str, preference: str) -> bool:
+    """Match literal location phrases on token boundaries, not inside words."""
+    phrase = re.escape(preference.strip()).replace(r"\ ", r"\s+")
+    return bool(phrase and re.search(r"(?<!\w)" + phrase + r"(?!\w)", location, re.IGNORECASE))
 
 
 def score_job(job: Job, profile: CandidateProfile) -> Fit:
@@ -46,12 +56,12 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
     skill_points = round(50 * len(matches) / len(profile.skills)) if profile.skills else 0
     place_ok = profile.allow_remote and job.remote
     place_ok = place_ok or any(
-        loc.casefold() in job.location.casefold()
+        contains_location(job.location, loc)
         for loc in profile.preferred_locations if loc.strip()
     )
     location_points = 10 if place_ok else 0
     location_note = (
-        "confirmed remote matches your preference" if profile.allow_remote and job.remote else
+        "remote is marked, but geographic eligibility still needs verification" if profile.allow_remote and job.remote else
         "a preferred location appears in the posting" if place_ok else
         "no location preference configured; work arrangement was not matched" if not profile.preferred_locations else
         "location is unspecified; work arrangement was not matched" if not job.location.strip() else
@@ -66,5 +76,6 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
             f"Profile skills mentioned: {len(matches)}/{len(profile.skills)} ({skill_points}/50)",
             f"Skills found in posting: {', '.join(matches)}" if matches else "No configured profile skills found in the posting; this does not establish a qualification gap.",
             f"Location/remote preference: {location_points}/10 — {location_note}.",
+            "Keyword score only; it does not assess qualification, work authorization, or hiring likelihood.",
         ),
     )

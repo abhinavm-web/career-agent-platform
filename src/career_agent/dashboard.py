@@ -492,7 +492,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return {"workspace": imported}
 
     @app.get("/api/jobs")
-    def list_jobs():
+    def list_jobs(before: int | None = None, limit: int = 500):
         workspace = active_workspace()
         profile = (
             CandidateWorkspace.scoring_profile(workspace)
@@ -502,11 +502,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             posting_checks = PostingChecks(store)
+            jobs, next_before = store.job_page(limit=limit, before=before)
             items = [
                 job_view(store, job, profile, records, workspace["revision"], posting_checks)
-                for job in store.list_jobs(limit=500)
+                for job in jobs
             ]
-        return {"jobs": items, "total": len(items)}
+        return {"jobs": items, "total": len(items), "next_before": next_before}
 
     @app.post("/api/discover")
     async def discover(request: Request):

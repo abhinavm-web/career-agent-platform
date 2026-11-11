@@ -81,6 +81,26 @@ class Store:
             for row in rows
         ]
 
+    def job_page(self, limit: int = 500, before: int | None = None) -> tuple[list[Job], int | None]:
+        """Read a bounded, insertion-stable page ordered from newest to oldest."""
+        if type(limit) is not int or not 1 <= limit <= 500:
+            raise ValueError('Page size must be between 1 and 500')
+        if before is not None and (type(before) is not int or before < 1):
+            raise ValueError('Invalid opportunity cursor')
+        if before is None:
+            rows = self.connection.execute(
+                'SELECT rowid AS page_rowid, * FROM jobs ORDER BY rowid DESC LIMIT ?', (limit + 1,)
+            ).fetchall()
+        else:
+            rows = self.connection.execute(
+                'SELECT rowid AS page_rowid, * FROM jobs WHERE rowid < ? ORDER BY rowid DESC LIMIT ?',
+                (before, limit + 1)
+            ).fetchall()
+        next_before = rows[limit - 1]['page_rowid'] if len(rows) > limit else None
+        return [Job(company=row['company'], title=row['title'], location=row['location'],
+                    url=row['url'], description=row['description'], source=row['source'],
+                    remote=bool(row['remote'])) for row in rows[:limit]], next_before
+
     def get_job(self, job_id: str) -> Job:
         row = self.connection.execute(
             "SELECT * FROM jobs WHERE job_id=?", (job_id,)

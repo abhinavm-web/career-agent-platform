@@ -105,6 +105,7 @@ def build_packet(
     if workspace_revision is not None and (type(workspace_revision) is not int or workspace_revision < 1):
         raise ValueError("workspace_revision must be a positive integer")
     selected = select_facts(job, bank)
+    selected_ids = {fact.fact_id for fact in selected}
     fit = score_job(job, preferences)
     packet = {
         "version": FORMAT_VERSION,
@@ -118,6 +119,14 @@ def build_packet(
         "candidate_skills_not_mentioned_in_posting": list(fit.candidate_skills_not_mentioned_in_posting),
         "qualification_gaps_assessed": False,
         "selected_fact_ids": [fact.fact_id for fact in selected],
+        "fact_evidence": [{
+            "id": fact.fact_id,
+            "section": fact.section,
+            "statement": fact.statement,
+            "matched_keywords": [keyword for keyword in fact.keywords
+                                 if contains_phrase(f"{job.title}\n{job.description}", keyword)],
+        } for fact in selected],
+        "omitted_fact_ids": [fact.fact_id for fact in bank.facts if fact.fact_id not in selected_ids],
         "resume_markdown": resume_markdown(bank, selected),
         "cover_note": cover_note(job, bank, selected),
         "sponsorship": sponsorship_report(job, filing_records),

@@ -16,6 +16,43 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_board_search_finds_job_beyond_500_with_real_api(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = root / 'test.sqlite3'
+            with Store(db) as store:
+                store.add_jobs([Job.from_mapping({'company': 'Fictional Co',
+                    'title': 'Rare oldest role' if i == 0 else f'Role {i:03}',
+                    'job_url': f'https://example.invalid/role/{i}'}) for i in range(505)])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#visible-count')).to_have_text('505 opportunities', timeout=30000)
+                        page.locator('#search').fill('Rare oldest role')
+                        expect(page.locator('#visible-count')).to_have_text('1 opportunity')
+                        expect(page.locator('#job-list')).to_contain_text('Rare oldest role')
+                        page.locator('#nav-ai').click()
+                        expect(page.locator('#ai-job option')).to_have_count(505, timeout=30000)
+                        expect(page.locator('#ai-job')).to_contain_text('Rare oldest role')
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_open_views_age_posting_observations_without_reloading(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect

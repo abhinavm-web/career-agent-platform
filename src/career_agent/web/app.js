@@ -10,11 +10,14 @@
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
     packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs",
     workspace: null, editingFactId: null,
-    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0,
+    crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0, refreshSequence: 0, boardTruncated: false,
     boardFilters: {location: "", source: "", remote: "all", sponsor: "all", freshness: "all"}
   };
   let freshnessTimer = null;
   let selectedAvailabilityUpdater = null;
+  let workspaceMutationBusy = false;
+  let workspaceLoadSequence = 0;
+  let profileNavigationSequence = 0;
 
   const byId = (id) => document.getElementById(id);
   const node = (tag, cls, content) => {
@@ -164,14 +167,14 @@
         freshnessTimer = null;
         renderJobs();
         if (selectedAvailabilityUpdater) selectedAvailabilityUpdater();
-      }, Math.max(1, Math.min(...expirations) - now));
+      }, Math.max(1, expirations.reduce((earliest, value) => Math.min(earliest, value), Infinity) - now));
     }
     const jobs = filteredJobs();
-    const truncated = (state.overview?.total_jobs ?? 0) > state.jobs.length;
+    const truncated = state.boardTruncated || (state.overview?.total_jobs ?? 0) > state.jobs.length;
     byId("board-limit").hidden = !truncated;
-    byId("board-limit").textContent = truncated
-      ? "Showing the most recent " + state.jobs.length + " opportunities. Board filters do not search older jobs."
-      : "";
+    byId("board-limit").textContent = state.boardTruncated
+      ? "The board reached its loading limit. Filters only search the " + state.jobs.length + " loaded opportunities; older jobs are not included."
+      : truncated ? "The board may have changed while loading. Refresh to include newly added opportunities." : "";
     byId("visible-count").textContent = String(jobs.length) + (jobs.length === 1 ? " opportunity" : " opportunities");
     byId("sort-label").textContent = jobs.some((job) => job.fit_score !== null) ? "Match score first" : "Recently added";
     const pageCount = Math.max(1, Math.ceil(jobs.length / 10));
@@ -398,6 +401,29 @@
     letter.append(node("summary", "", "Cover-note draft"), node("pre", "", packet.cover_note));
     card.append(resume, letter);
 
+    if (Array.isArray(packet.fact_evidence) && Array.isArray(packet.omitted_fact_ids) &&
+        packet.fact_evidence.every((fact) => fact && typeof fact.id === "string" && typeof fact.section === "string" &&
+          typeof fact.statement === "string" && Array.isArray(fact.matched_keywords) && fact.matched_keywords.every((item) => typeof item === "string")) &&
+        packet.omitted_fact_ids.every((item) => typeof item === "string")) {
+      const evidence = node("details", "packet-evidence");
+      evidence.append(node("summary", "", "Review source facts and omissions"),
+        node("p", "", "These statements were confirmed by you when the draft was created. Keyword matches help order facts; they do not establish qualifications or hiring likelihood."));
+      for (const fact of packet.fact_evidence) {
+        const row = node("div", "packet-evidence-row");
+        row.append(node("strong", "", fact.id + " · " + fact.section), node("p", "", fact.statement));
+        row.append(node("small", "", fact.matched_keywords.length
+          ? "Posting keyword matches: " + fact.matched_keywords.join(", ")
+          : "No listed keywords matched the posting."));
+        evidence.append(row);
+      }
+      evidence.append(node("p", "", packet.omitted_fact_ids.length
+        ? "Verified facts not included in this draft: " + packet.omitted_fact_ids.join(", ") + ". Review these in Career profile."
+        : "All verified facts available at drafting were included."));
+      card.append(evidence);
+    } else {
+      card.append(node("p", "muted", "Fact-level comparison is available for newly generated packets. This saved packet remains valid under its original fingerprint."));
+    }
+
     const tools = node("div", "button-row");
     tools.append(button("Copy resume text", "button", () => copyText(packet.resume_markdown)));
     tools.append(button("Copy cover note", "button", () => copyText(packet.cover_note)));
@@ -466,6 +492,7 @@
       const receiptLabel = node("label", "field", "Employer confirmation reference");
       const receipt = document.createElement("input");
       receipt.type = "text"; receipt.minLength = 4; receipt.maxLength = 200;
+      receipt.id = "submission-reference";
       receipt.placeholder = "Reference from employer application";
       receiptLabel.append(receipt);
       submitted.append(receiptLabel);
@@ -605,16 +632,20 @@
     byId("career-fact-form").scrollIntoView?.({behavior: "smooth", block: "center"});
   }
 
-  async function loadWorkspace() {
+  async function loadWorkspace(preserveEditor = false) {
+    const sequence = ++workspaceLoadSequence;
     try {
       const [data, history] = await Promise.all([
         api("/api/workspace"), api("/api/workspace/history")
       ]);
-      if (state.screen !== "profile") return;
+      if (sequence !== workspaceLoadSequence || state.screen !== "profile") return;
+      if (state.workspace && data.workspace.revision < state.workspace.revision) return;
+      const draft = preserveEditor && state.workspace ? snapshotEditorInputs() : null;
       state.workspace = data.workspace;
       renderWorkspace(history.revisions);
+      if (draft) restoreEditorInputs(draft);
     } catch (error) {
-      notice("Unable to load private career workspace: " + error.message, true);
+      if (sequence === workspaceLoadSequence) notice("Unable to load private career workspace: " + error.message, true);
     }
   }
 
@@ -661,8 +692,22 @@
     }
   }
 
+  function setWorkspaceMutationBusy(busy) {
+    workspaceMutationBusy = busy;
+    byId("profile-screen").inert = busy;
+    byId("career-facts-list").inert = busy;
+    byId("profile-screen").setAttribute("aria-busy", String(busy));
+    for (const id of ["career-profile-form", "career-fact-form"]) {
+      const submit = byId(id).querySelector?.('button[type="submit"]');
+      if (submit) submit.disabled = busy;
+    }
+    byId("import-career-data").disabled = busy;
+  }
+
   async function saveCareerWorkspace(profile, facts, actionLabel) {
+    if (workspaceMutationBusy) return;
     if (!state.workspace) return notice("Open the career profile first.", true);
+    setWorkspaceMutationBusy(true);
     try {
       const response = await api("/api/workspace", "PUT", {
         expected_revision: state.workspace.revision, profile, facts
@@ -675,14 +720,15 @@
       await refresh(undefined, true);
     } catch (error) {
       notice(error.status === 409 ? "Another edit was saved. Reload the profile before editing." : error.message, true);
-    }
+    } finally {setWorkspaceMutationBusy(false);}
   }
 
   async function toggleFactVerification(fact) {
-    if (!state.workspace) return;
+    if (!state.workspace || workspaceMutationBusy) return;
     if (!fact.verified_by_candidate && !window.confirm(
       "Confirm this career statement is accurate and supported by your private evidence?"
     )) return;
+    setWorkspaceMutationBusy(true);
     try {
       const result = await api("/api/workspace/facts/" + encodeURIComponent(fact.id) + "/verification", "POST", {
         expected_revision: state.workspace.revision,
@@ -693,23 +739,27 @@
       notice(fact.verified_by_candidate ? "Fact verification revoked." : "Fact verified. It can now appear in drafts.");
       await refresh(undefined, true);
     } catch (error) {notice(error.message, true);}
+    finally {setWorkspaceMutationBusy(false);}
   }
 
   async function deleteFact(factId) {
-    if (!state.workspace || !window.confirm("Delete this fact from the current career profile? Its historical revisions remain stored locally.")) return;
+    if (workspaceMutationBusy || !state.workspace || !window.confirm("Delete this fact from the current career profile? Its historical revisions remain stored locally.")) return;
     if (state.editingFactId === factId) resetFactEditor();
     await saveCareerWorkspace(state.workspace.profile, state.workspace.facts.filter((fact) => fact.id !== factId), "Fact");
   }
 
   async function importConfiguredProfile() {
+    if (workspaceMutationBusy) return;
     if (!window.confirm("Copy your configured profile and verified facts into this private local workspace? Your original files will remain unchanged.")) return;
+    setWorkspaceMutationBusy(true);
     try {
       const response = await api("/api/workspace/import", "POST", {acknowledged: true});
       state.workspace = response.workspace;
       resetFactEditor();
       notice("Existing career files imported into your local workspace.");
-      await refresh();
+      await refresh(undefined, false);
     } catch (error) {notice(error.message, true);}
+    finally {setWorkspaceMutationBusy(false);}
   }
 
 
@@ -1077,14 +1127,41 @@
     }
   }
 
-  async function refresh(keepSelected, preserveEditor = false) {
-    const draft = preserveEditor && state.screen === "profile" && state.workspace
-      ? snapshotEditorInputs() : null;
+  async function loadBoardJobs(sequence) {
+    let cursor = null, previous = Infinity;
+    let characters = 0;
+    const jobs = [], maxJobs = 10000, maxCharacters = 32 * 1024 * 1024;
+    do {
+      const page = await api("/api/jobs?limit=100" + (cursor === null ? "" : "&before=" + cursor));
+      if (sequence !== state.refreshSequence) return null;
+      if (!Array.isArray(page.jobs) || page.jobs.length > 100) throw new Error("Invalid opportunity page");
+      const pageCharacters = JSON.stringify(page.jobs).length;
+      if (characters + pageCharacters > maxCharacters) {
+        if (!jobs.length) throw new Error("Opportunity data exceeds the board loading limit");
+        return {jobs, truncated: true};
+      }
+      characters += pageCharacters;
+      jobs.push(...page.jobs);
+      cursor = page.next_before ?? null;
+      if (cursor !== null && !page.jobs.length) throw new Error("Invalid empty opportunity page");
+      if (cursor !== null && (!Number.isSafeInteger(cursor) || cursor < 1 || cursor >= previous)) {
+        throw new Error("Invalid opportunity cursor; refresh to retry");
+      }
+      if (cursor !== null) previous = cursor;
+      if (jobs.length >= maxJobs && cursor !== null) return {jobs, truncated: true};
+    } while (cursor !== null);
+    return {jobs, truncated: false};
+  }
+
+  async function refresh(keepSelected, preserveEditor = true) {
+    const sequence = ++state.refreshSequence;
     try {
       const results = await Promise.all([
-        api("/api/jobs"), api("/api/overview"), api("/api/settings"), api("/api/reviews")
+        loadBoardJobs(sequence), api("/api/overview"), api("/api/settings"), api("/api/reviews")
       ]);
+      if (sequence !== state.refreshSequence || results[0] === null) return;
       state.jobs = results[0].jobs;
+      state.boardTruncated = results[0].truncated;
       state.overview = results[1];
       state.settings = results[2];
       state.reviews = results[3].reviews;
@@ -1098,15 +1175,23 @@
       renderJobs();
       renderActivity();
       const selectedId = state.selectedId;
+      const previousPacketHash = state.packet?.packet?.packet_sha256;
       if (selectedId) await loadPacket(selectedId); else state.packet = null;
-      if (state.selectedId === selectedId) renderDetail();
+      if (sequence !== state.refreshSequence) return;
+      if (state.selectedId === selectedId) {
+        const receipt = byId("detail-panel").querySelector?.("#submission-reference")?.value;
+        renderDetail();
+        if (receipt !== undefined && previousPacketHash && previousPacketHash === state.packet?.packet?.packet_sha256) {
+          const input = byId("detail-panel").querySelector?.("#submission-reference");
+          if (input) input.value = receipt;
+        }
+      }
       if (state.screen === "profile") {
-        await loadWorkspace();
-        if (draft) restoreEditorInputs(draft);
+        await loadWorkspace(preserveEditor);
       }
       if (state.screen === "tracker") await loadCRM();
     } catch (error) {
-      notice("Unable to load local workspace: " + error.message, true);
+      if (sequence === state.refreshSequence) notice("Unable to load local workspace: " + error.message, true);
     }
   }
 
@@ -1145,7 +1230,21 @@
     }
   });
   byId("nav-activity").addEventListener("click", () => showScreen("activity"));
-  byId("nav-profile").addEventListener("click", async () => {showScreen("profile"); await loadWorkspace();});
+  byId("nav-profile").addEventListener("click", async () => {
+    if (state.screen === "profile") return;
+    showScreen("profile");
+    if (workspaceMutationBusy) return;
+    const sequence = ++profileNavigationSequence;
+    const profileScreen = byId("profile-screen");
+    profileScreen.inert = true;
+    profileScreen.setAttribute("aria-busy", "true");
+    try { await loadWorkspace(true); }
+    finally {
+      if (sequence === profileNavigationSequence && !workspaceMutationBusy) {
+        profileScreen.inert = false; profileScreen.setAttribute("aria-busy", "false");
+      }
+    }
+  });
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});
   byId("crm-export").addEventListener("click", async () => {
     const control = byId("crm-export");

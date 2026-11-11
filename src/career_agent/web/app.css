@@ -268,6 +268,11 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .board-filter-grid input::placeholder {color:#8795aa;}
 .board-filters .muted {font-size:11px;line-height:1.5;}
 .availability-status p {overflow-wrap:anywhere;}
+.packet-evidence {margin:14px 0;}
+.packet-evidence-row {border-left:2px solid var(--border);padding:8px 12px;margin:10px 0;overflow-wrap:anywhere;}
+.packet-evidence-row strong {font-size:12px;}
+.packet-evidence-row p {margin:6px 0;font-size:13px;}
+.packet-evidence-row small {color:var(--muted);line-height:1.5;}
 .board-limit {margin:0;padding:12px 18px;border-bottom:1px solid var(--border);color:#f1ce91;font-size:12px;line-height:1.5;}
 .board-empty {padding:25px 19px;color:var(--text);}
 .board-empty strong {font-size:14px;}
