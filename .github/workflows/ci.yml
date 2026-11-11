@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package
-        run: python -m pip install -e ".[graph,web,dev,pdf,pdf-test]"
+        run: python -m pip install -e ".[graph,web,dev,pdf,pdf-test,ai]"
       - name: Install PDF browser
         run: python -m playwright install --with-deps chromium
       - name: Test
@@ -30,5 +30,6 @@ jobs:
         run: |
           node --check src/career_agent/web/app.js
           node --check src/career_agent/web/h1b.js
+          node --check src/career_agent/web/ai.js
       - name: Test async dashboard UI state
         run: node --test tests/test_dashboard_js.cjs

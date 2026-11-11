@@ -24,6 +24,12 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--db", default=".local/career_agent.sqlite3", help="Local SQLite path")
     cmd = root.add_subparsers(dest="command", required=True)
 
+    ai = cmd.add_parser("ai-analyze", help="Read-only AI requirement analysis using an explicitly configured model route")
+    ai.add_argument("job_id")
+    ai.add_argument("--facts", required=True)
+    ai.add_argument("--route", required=True)
+    ai.add_argument("--acknowledge-data-sharing", action="store_true")
+
     ingest = cmd.add_parser("ingest", help="Import jobs from CSV")
     ingest.add_argument("csv")
 
@@ -144,7 +150,11 @@ def main(argv: list[str] | None = None) -> int:
             jobs = discover_jobspy(args.query, args.location, args.results)
 
         with Store(args.db) as store:
-            if args.command == "uscis-import":
+            if args.command == "ai-analyze":
+                from .ai import analyze
+                print(json.dumps(analyze(store.get_job(args.job_id), FactBank.load(args.facts),
+                    args.route, args.acknowledge_data_sharing), indent=2))
+            elif args.command == "uscis-import":
                 from .uscis import USCISRecords
                 with Path(args.csv).open('rb') as source:
                     content = source.read(32 * 1024 * 1024 + 1)

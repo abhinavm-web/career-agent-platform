@@ -26,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .application import _reject_symlink_components, build_packet, load_packet, save_packet
 from .candidate import FactBank
+from . import ai
 from .crm import ApplicationCRM
 from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
@@ -69,6 +70,7 @@ def _get_job(store: Store, job_id: str) -> Job:
 
 def create_app(config: DashboardConfig) -> FastAPI:
     """Create local web app. Profile and fact bank are loaded only when needed."""
+    ai_lock = Lock()
     app = FastAPI(
         title="Career Agent Local Workspace",
         docs_url=None, redoc_url=None, openapi_url=None,
@@ -203,6 +205,29 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get("/assets/h1b.js")
     def h1b_script():
         return Response(assets("h1b.js"), media_type="text/javascript")
+
+    @app.get("/assets/ai.js")
+    def ai_script():
+        return Response(assets("ai.js"), media_type="text/javascript")
+
+    @app.get("/api/ai/routes")
+    def ai_routes():
+        return {"routes": ai.catalog()}
+
+    @app.post("/api/jobs/{job_id}/ai-analysis")
+    async def ai_analysis(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm sending this posting and verified fact statements to the selected provider')
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI analysis is already running')
+        try:
+            with Store(config.db_path) as store:
+                job = _get_job(store, job_id)
+            bank = configured_facts()
+            return await run_in_threadpool(ai.analyze, job, bank, data.get('route'), True)
+        finally:
+            ai_lock.release()
 
     @app.get("/api/h1b")
     def h1b_settings():
