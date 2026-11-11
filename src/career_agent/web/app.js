@@ -287,7 +287,13 @@
   function renderDetailPreservingEditor() {
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
     const keep = editor?.open && editor.dataset.jobId === state.selectedId;
+    const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
+    const keepPicker = picker?.open && picker.dataset.jobId === state.selectedId;
     renderDetail();
+    if (keepPicker) {
+      const replacement = byId("detail-panel").querySelector?.(".tailoring-picker");
+      if (replacement) replacement.replaceWith(picker);
+    }
     if (keep) {
       const replacement = byId("detail-panel").querySelector?.("#job-description-editor");
       if (replacement) replacement.replaceWith(editor);
@@ -486,6 +492,45 @@
       drafts.append(node("p", "", "This submitted application's reviewed packet is locked. Draft regeneration is disabled."));
     } else {
       drafts.append(button(job.packet_available ? "Regenerate draft" : "Create application draft", "button button-primary", createDraft));
+      const choose = node("details", "tailoring-picker");
+      choose.dataset.jobId = job.id;
+      choose.append(node("summary", "", "Choose facts for a tailored draft"));
+      choose.append(node("p", "muted", "Select up to 12 verified facts. Statements are copied verbatim and the new draft needs a fresh review."));
+      const choices = node("div");
+      const status = node("p", "muted"); status.setAttribute("role", "status");
+      const load = button("Load verified facts", "button", async () => {
+        if (load.disabled) return;
+        load.disabled = true;
+        try {
+          const result = await api("/api/tailoring/facts");
+          choices.replaceChildren();
+          const selected = [];
+          for (const fact of result.facts) {
+            const label = node("label", "check-label");
+            const box = document.createElement("input"); box.type = "checkbox";
+            label.append(box, document.createTextNode(fact.section + " · " + fact.statement));
+            choices.append(label); selected.push({box, id: fact.id});
+          }
+          const submit = button("Create tailored draft", "button button-primary", async () => {
+            const fact_ids = selected.filter((item) => item.box.checked).map((item) => item.id);
+            if (!fact_ids.length || fact_ids.length > 12) {status.textContent = "Select between 1 and 12 facts."; return;}
+            if (submit.disabled) return;
+            submit.disabled = true; load.disabled = true;
+            selected.forEach((item) => {item.box.disabled = true;});
+            try {
+              await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256});
+              notice("Tailored draft created locally. Review it before using.");
+              if (state.selectedId === job.id) await refresh(job.id);
+            } catch (error) {status.textContent = error.message;}
+            finally {submit.disabled = false; load.disabled = false; selected.forEach((item) => {item.box.disabled = false;});}
+          });
+          choices.append(submit);
+          status.textContent = result.facts.length ? "Choose the facts to include." : "No verified facts available.";
+          submit.disabled = !result.facts.length;
+        } catch (error) {status.textContent = error.message;}
+        finally {load.disabled = false;}
+      });
+      choose.append(load, choices, status); drafts.append(choose);
     }
     detail.append(drafts);
     if (state.packet) renderPacket(detail, job, state.packet);

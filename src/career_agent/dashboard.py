@@ -7,6 +7,7 @@ are checked to reduce cross-origin and DNS rebinding risks.
 from __future__ import annotations
 
 import hmac
+import hashlib
 import html
 import json
 import io
@@ -275,7 +276,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
             store.connection.execute('BEGIN')
             job = _get_job(store, job_id)
             job_revision = store.description_revision(job.id)
-        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None, job_revision or None)
+            run = store.connection.execute('SELECT input_json FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1', (job.id,)).fetchone()
+            selection = json.loads(run['input_json']).get('tailored_fact_ids') if run else None
+        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None, job_revision or None, selection)
 
     @app.post('/api/workflows/{run_id}/retry')
     async def workflow_retry(run_id: str, request: Request):
@@ -620,9 +623,20 @@ def create_app(config: DashboardConfig) -> FastAPI:
             except DescriptionConflict as error:
                 raise HTTPException(status_code=409, detail=str(error)) from None
 
-    @app.post("/api/jobs/{job_id}/draft")
-    def draft(job_id: str):
+    @app.get("/api/tailoring/facts")
+    def tailoring_facts():
         workspace = active_workspace()
+        bank = CandidateWorkspace.fact_bank(workspace) if workspace["revision"] > 0 else configured_facts()
+        facts = [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement} for fact in bank.facts]
+        return {'workspace_revision': workspace['revision'], 'facts': facts, 'facts_sha256': facts_hash(facts)}
+
+    def facts_hash(facts):
+        return hashlib.sha256(json.dumps(facts, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+
+    def create_draft(job_id: str, selection=None, expected_revision=None, expected_facts=None):
+        workspace = active_workspace()
+        if expected_revision is not None and (type(expected_revision) is not int or expected_revision != workspace['revision']):
+            raise HTTPException(status_code=409, detail='Career profile changed; reload verified facts before tailoring')
         if workspace["revision"] > 0:
             profile = CandidateWorkspace.scoring_profile(workspace)
             bank = CandidateWorkspace.fact_bank(workspace)
@@ -631,6 +645,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
             if profile is None:
                 raise HTTPException(status_code=412, detail="Configure a career profile before drafting applications")
             bank = configured_facts()
+        if expected_facts is not None:
+            visible = [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement} for fact in bank.facts]
+            if not isinstance(expected_facts, str) or not hmac.compare_digest(expected_facts, facts_hash(visible)):
+                raise HTTPException(status_code=409, detail='Verified facts changed; reload them before tailoring')
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             store.connection.execute('BEGIN')
@@ -641,7 +659,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     status_code=409,
                     detail="This application is already recorded as submitted; its reviewed packet is locked",
                 )
-        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None), guard_workspace=True)
+        if selection is not None:
+            verified = bank.public_claims()
+            if (not isinstance(selection, list) or not 1 <= len(selection) <= 12
+                    or not all(isinstance(item, str) and item in verified for item in selection)
+                    or len(set(selection)) != len(selection)):
+                raise ValueError('Select 1–12 distinct verified career facts')
+        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None, selection), guard_workspace=True)
         packet = run['packet']
         return {
             "job_id": job.id,
@@ -650,6 +674,23 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "run_id": run['run_id'],
             "submission_sent": False,
         }
+
+    @app.post("/api/jobs/{job_id}/draft")
+    def draft(job_id: str):
+        return create_draft(job_id)
+
+    @app.post("/api/jobs/{job_id}/tailored-draft")
+    async def tailored_draft(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'fact_ids', 'workspace_revision', 'facts_sha256'}:
+            raise ValueError('Select verified facts and include the profile revision')
+        if type(data['workspace_revision']) is not int or data['workspace_revision'] < 0:
+            raise ValueError('Invalid profile revision')
+        if not isinstance(data['fact_ids'], list):
+            raise ValueError('Select 1-12 distinct verified career facts')
+        if not isinstance(data['facts_sha256'], str) or len(data['facts_sha256']) != 64 or any(c not in '0123456789abcdef' for c in data['facts_sha256']):
+            raise ValueError('Invalid verified facts fingerprint')
+        return await run_in_threadpool(create_draft, job_id, data['fact_ids'], data['workspace_revision'], data['facts_sha256'])
 
     @app.get("/api/jobs/{job_id}/packet")
     def get_packet(job_id: str):

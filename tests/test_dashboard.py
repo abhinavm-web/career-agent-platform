@@ -546,6 +546,82 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["packet_sha256"]
 
+    def test_tailored_draft_uses_only_selected_verified_facts_and_requires_new_review(self):
+        data = fake_fact_bank()
+        data['facts'].append({**data['facts'][0], 'id': 'experience-02',
+            'statement': 'Led a fictional Python migration.', 'source_note': 'Private second source.'})
+        self.facts_path.write_text(json.dumps(data))
+        options = self.call('GET', '/api/tailoring/facts').json()
+        self.assertEqual([f['id'] for f in options['facts']], ['experience-01', 'experience-02'])
+        self.assertNotIn('Private', json.dumps(options))
+        path = f'/api/jobs/{self.job.id}/tailored-draft'
+        for values in ([], ['unknown'], ['experience-01', 'experience-01']):
+            self.assertEqual(self.call('POST', path, {'fact_ids': values, 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}).status_code, 422)
+        self.assertEqual(self.call('POST', path, {'fact_ids': ['experience-02'], 'workspace_revision': 4, 'facts_sha256': options['facts_sha256']}).status_code, 409)
+        self.assertEqual(self.call('POST', path, {'fact_ids': None, 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}).status_code, 422)
+        self.assertEqual(self.call('POST', path, {'fact_ids': ['experience-02'], 'workspace_revision': 0, 'facts_sha256': None}).status_code, 422)
+        self.assertEqual(self.call('POST', path, {'fact_ids': ['experience-02'], 'workspace_revision': 0, 'facts_sha256': '0' * 64}).status_code, 409)
+        response = self.call('POST', path, {'fact_ids': ['experience-02'], 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']})
+        self.assertEqual(response.status_code, 200, response.text)
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()
+        self.assertFalse(packet['stale'])
+        self.assertEqual(packet['packet']['selected_fact_ids'], ['experience-02'])
+        self.assertIn('Led a fictional Python migration.', packet['packet']['resume_markdown'])
+        self.assertNotIn('Delivered a fictional AI program', packet['packet']['resume_markdown'])
+        self.assertNotIn('Private second source', json.dumps(packet))
+        fingerprint = packet['packet']['packet_sha256']
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        self.assertEqual(self.call('POST', path, {'fact_ids': ['experience-01'], 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}).status_code, 200)
+        replacement = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()
+        self.assertNotEqual(replacement['packet']['packet_sha256'], fingerprint)
+        self.assertIsNone(replacement['review'])
+
+    def test_tailored_packet_survives_restart_and_rejects_changed_job(self):
+        from fastapi.testclient import TestClient
+        from career_agent.dashboard import DashboardConfig, create_app
+        options = self.call('GET', '/api/tailoring/facts').json()
+        path = f'/api/jobs/{self.job.id}/tailored-draft'
+        selection = {'fact_ids': ['experience-01'], 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}
+        fingerprint = self.call('POST', path, selection).json()['packet_sha256']
+        decision = {'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', decision).status_code, 200)
+        self.client = TestClient(create_app(DashboardConfig(db_path=self.db, packet_dir=self.packet_dir,
+            profile_path=self.profile_path, facts_path=self.facts_path)), base_url='http://localhost')
+        self.session = re.search(r'data-session="([^"]+)"', self.client.get('/').text).group(1)
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()
+        self.assertFalse(packet['stale'])
+        self.assertEqual(packet['review']['decision'], 'approved_for_manual_submission')
+        for extension, target in (('pdf', 'resume_pdf'), ('docx', 'resume_docx')):
+            with patch('career_agent.dashboard.' + target, return_value=b'fictional'):
+                self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/resume.{extension}?packet_sha256={fingerprint}').status_code, 200)
+        self.assertEqual(self.call('PUT', f'/api/jobs/{self.job.id}/description', {
+            'description': 'Corrected fictional role.', 'expected_revision': 0, 'acknowledged': True}).status_code, 200)
+        self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/resume.pdf?packet_sha256={fingerprint}').status_code, 409)
+        fingerprint = self.call('POST', path, selection).json()['packet_sha256']
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {**decision, 'packet_sha256': fingerprint}).status_code, 200)
+        submitted = self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+            'packet_sha256': fingerprint, 'receipt': 'fictional receipt', 'attest_confirmed': True})
+        self.assertEqual(submitted.status_code, 200, submitted.text)
+        self.assertEqual(self.call('POST', path, selection).status_code, 409)
+
+    def test_tailored_packet_stales_on_profile_correction(self):
+        self.assertEqual(self.call('POST', '/api/workspace/import', {'acknowledged': True}).status_code, 200)
+        options = self.call('GET', '/api/tailoring/facts').json()
+        path = f'/api/jobs/{self.job.id}/tailored-draft'
+        selection = {'fact_ids': ['experience-01'], 'workspace_revision': options['workspace_revision'], 'facts_sha256': options['facts_sha256']}
+        fingerprint = self.call('POST', path, selection).json()['packet_sha256']
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        workspace = self.call('GET', '/api/workspace').json()['workspace']
+        workspace['profile']['headline'] = 'Corrected fictional headline'
+        self.assertEqual(self.call('PUT', '/api/workspace', {'expected_revision': workspace['revision'],
+            'profile': workspace['profile'], 'facts': workspace['facts']}).status_code, 200)
+        self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        self.assertEqual(self.call('POST', path, selection).status_code, 409)
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/resume.docx?packet_sha256={fingerprint}').status_code, 409)
+
     def test_draft_review_and_manual_submission_workflow(self):
         job_id = self.job.id
         draft_id = self._draft()
