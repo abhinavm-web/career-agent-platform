@@ -80,6 +80,25 @@ class BackupTests(unittest.TestCase):
         restore_backup(self.archive, destination, offline=True)
         self.assertTrue((destination / 'packets').is_dir())
 
+    def test_committed_wal_data_is_included_in_snapshot(self):
+        connection = sqlite3.connect(self.db)
+        try:
+            connection.execute('PRAGMA journal_mode=WAL')
+            connection.execute('PRAGMA wal_autocheckpoint=0')
+            connection.execute('INSERT INTO test VALUES (?)', ('uncheckpointed fictional row',))
+            connection.commit()
+            self.assertTrue(Path(str(self.db) + '-wal').exists())
+            create_backup(self.db, self.packets, self.archive, offline=True)
+        finally:
+            connection.close()
+        destination = self.root / 'wal-restored'
+        restore_backup(self.archive, destination, offline=True)
+        restored = sqlite3.connect(destination / 'workspace.sqlite3')
+        try:
+            self.assertIn(('uncheckpointed fictional row',), restored.execute('SELECT value FROM test').fetchall())
+        finally:
+            restored.close()
+
     def test_archive_tamper_and_traversal_are_rejected(self):
         create_backup(self.db, self.packets, self.archive, offline=True)
         with zipfile.ZipFile(self.archive) as source:
