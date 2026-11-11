@@ -57,6 +57,15 @@ class AITests(unittest.TestCase):
         with patch('career_agent.ai.complete', return_value=json.dumps(self.output)):
             self.assertEqual(ai.analyze(self.job, self.bank, 'local', True)['requirements'][0]['status'], 'unknown')
 
+    def test_single_json_fence_is_accepted_but_evidence_is_still_checked(self):
+        raw = '```json\n' + json.dumps(self.output) + '\n```'
+        with patch('career_agent.ai.complete', return_value=raw):
+            self.assertEqual(len(ai.analyze(self.job, self.bank, 'local', True)['requirements']), 1)
+        self.output['requirements'][0]['quote'] = 'invented text'
+        for raw in ('```json\n' + json.dumps(self.output) + '\n```', 'Here is JSON:\n' + raw):
+            with patch('career_agent.ai.complete', return_value=raw), self.assertRaises(ValueError):
+                ai.analyze(self.job, self.bank, 'local', True)
+
     def test_config_rejects_credentials_and_untrusted_endpoints(self):
         changes = [{'api_key': 'fictional-secret'}, {'provider': []}, {'max_tokens': True}, {'max_tokens': 99999},
                    {'key_env': 'not a variable'}, {'base_url': 'http://localhost:1234/v1'},

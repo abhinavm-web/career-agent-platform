@@ -159,7 +159,10 @@ def analyze(job, bank, route_name, acknowledged=False):
     try:
         if not isinstance(raw, str) or len(raw) > 32000:
             raise ValueError()
-        result = json.loads(raw)
+        # Some local models wrap their entire JSON answer in one Markdown fence.
+        # Accept only a complete wrapper; never extract JSON from surrounding prose.
+        fenced = re.fullmatch(r'\s*```(?:json)?[ \t]*\r?\n(.*?)\r?\n```\s*', raw, re.DOTALL | re.IGNORECASE)
+        result = json.loads(fenced.group(1) if fenced else raw)
         if not isinstance(result, dict) or set(result) != {'requirements'}:
             raise ValueError()
         rows = result['requirements']
