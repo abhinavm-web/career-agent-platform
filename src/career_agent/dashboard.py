@@ -305,7 +305,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                               if fact["verified_by_candidate"]}
                 elif config.facts_path:
                     claims = FactBank.load(config.facts_path).public_claims()
-            return await run_in_threadpool(ai.profile_chat, data.get("route"), data.get("message"), claims, True)
+            return await run_in_threadpool(ai.profile_chat, data.get("route"), data.get("message"), claims, True, data.get("history", []))
         finally:
             ai_lock.release()
 

@@ -123,7 +123,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call('POST', path, request).status_code, 422)
             chat.assert_not_called()
             self.assertEqual(self.call('POST', path, request | {'acknowledged': True}).status_code, 200)
-            chat.assert_called_with('local', request['message'], {}, True)
+            chat.assert_called_with('local', request['message'], {}, True, [])
             self.assertEqual(self.call('POST', path, request | {
                 'acknowledged': True, 'include_verified_facts': 'true'
             }).status_code, 422)
@@ -138,7 +138,7 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(result.status_code, 200)
             chat.assert_called_with('local', request['message'], {
                 'experience-01': fake_fact_bank()['facts'][0]['statement']
-            }, True)
+            }, True, [])
             self.assertEqual(self.call('GET', '/api/workspace').json()['workspace']['revision'], saved['revision'])
 
     def test_schedule_api_requires_consent_and_supports_pause_remove(self):

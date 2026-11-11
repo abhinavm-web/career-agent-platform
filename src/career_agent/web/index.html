@@ -231,15 +231,16 @@
         </div>
         <details class="panel profile-editor">
           <summary>Ask a career assistant</summary>
-          <p class="muted">Each request sends your question and any selected verified facts to the selected provider. Answers are unverified suggestions and do not change your profile. Conversations are not saved or sent as history; cloud providers may charge for use.</p>
+          <p class="muted">Each request sends your question, this session's conversation and any selected verified facts to the selected provider. Answers are unverified suggestions and do not change your profile. Conversations are not saved; cloud providers may charge for use.</p>
           <button id="profile-chat-load" type="button" class="button">Load model routes</button>
           <form id="profile-chat-form">
             <label class="block-label">Model route<select id="profile-chat-route" required></select></label>
             <p id="profile-chat-destination" class="muted">Load model routes to see the destination.</p>
             <label class="block-label">Your question<textarea id="profile-chat-question" rows="3" maxlength="4000" required placeholder="How should I describe my career goals?"></textarea></label>
             <label class="check-label"><input id="profile-chat-facts" type="checkbox"> Also send my saved, verified career fact statements (these may contain personal information)</label>
-            <label class="check-label"><input id="profile-chat-consent" type="checkbox" required> I consent to sending this question and any selected facts to the provider shown above.</label>
+            <label class="check-label"><input id="profile-chat-consent" type="checkbox" required> I consent to sending this conversation and any selected facts to the provider shown above.</label>
             <button id="profile-chat-submit" type="submit" class="button button-primary" disabled>Ask assistant</button>
+            <button id="profile-chat-clear" type="button" class="button">Clear conversation</button>
           </form>
           <p id="profile-chat-status" role="status" aria-live="polite">Configure a model route, then load it here. Your conversation is not saved.</p>
           <div id="profile-chat-answer"></div>

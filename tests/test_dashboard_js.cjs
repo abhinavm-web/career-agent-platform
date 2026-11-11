@@ -128,8 +128,14 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs 
   let crmPriority = "none";
   const interviewNotes = [];
   const discoveryRequests = [];
+  const chatRequests = [];
   const downloads = [];
   const fetch = (url, options = {}) => {
+    if (url === "/api/ai/routes") return Promise.resolve(ok({routes: [{route: "local", provider: "ollama", model: "fictional", destination: "loopback"}]}));
+    if (url === "/api/workspace/chat") {
+      chatRequests.push(JSON.parse(options.body));
+      return Promise.resolve(ok({answer: "Fictional suggestion", provider: "ollama", model: "fictional"}));
+    }
     if (url === "/api/crm/export") {
       assert.equal(options.headers["X-Session-Token"], "testing-only");
       assert.equal(options.cache, "no-store");
@@ -283,10 +289,31 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs 
     console,
   };
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
-  return {get, waiting, downloads, discoveryRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
+  return {get, waiting, downloads, discoveryRequests, chatRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("career assistant shares session context only after consent and can clear it", async () => {
+  const h = createHarness(); await flush();
+  await h.get("profile-chat-load").click();
+  h.get("profile-chat-route").value = "local";
+  const ask = async (question) => {
+    h.get("profile-chat-question").value = question;
+    await h.get("profile-chat-form").handlers.submit({preventDefault() {}});
+  };
+  await ask("First question");
+  assert.equal(h.chatRequests.length, 0);
+  h.get("profile-chat-consent").checked = true; await ask("First question");
+  assert.deepEqual(h.chatRequests[0].history, []);
+  h.get("profile-chat-consent").checked = true; await ask("Follow up");
+  assert.deepEqual(h.chatRequests[1].history, [
+    {role: "user", content: "First question"}, {role: "assistant", content: "Fictional suggestion"}]);
+  h.get("profile-chat-clear").click();
+  assert.equal(h.get("profile-chat-answer").textContent, "");
+  h.get("profile-chat-consent").checked = true; await ask("New question");
+  assert.deepEqual(h.chatRequests[2].history, []);
+});
 
 test("empty board guides discovery; filtered empty state can restore results", async () => {
   const empty = createHarness({jobsOverride: [], totalJobs: 0});

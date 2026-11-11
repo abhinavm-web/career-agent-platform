@@ -1153,6 +1153,15 @@
   byId("import-career-data").addEventListener("click", importConfiguredProfile);
   let profileChatRoutes = [];
   let profileChatBusy = false;
+  let profileChatHistory = [];
+  byId("profile-chat-clear").addEventListener("click", () => {
+    if (profileChatBusy) return;
+    profileChatHistory = [];
+    byId("profile-chat-answer").replaceChildren();
+    byId("profile-chat-consent").checked = false;
+    byId("profile-chat-submit").disabled = !profileChatRoutes.length;
+    byId("profile-chat-status").textContent = "Conversation cleared. Your question has been kept for editing.";
+  });
   function updateProfileChatRoute() {
     byId("profile-chat-consent").checked = false;
     const route = profileChatRoutes.find((item) => item.route === byId("profile-chat-route").value);
@@ -1189,31 +1198,36 @@
     } finally {
       profileChatBusy = false;
       byId("profile-chat-load").disabled = false;
-      byId("profile-chat-submit").disabled = !profileChatRoutes.length;
+      byId("profile-chat-submit").disabled = !profileChatRoutes.length || profileChatHistory.length >= 12;
     }
   });
   byId("profile-chat-form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (profileChatBusy || !byId("profile-chat-consent").checked) return;
+    if (profileChatBusy || !byId("profile-chat-consent").checked || profileChatHistory.length >= 12) return;
     profileChatBusy = true;
-    const ids = ["profile-chat-load", "profile-chat-submit", "profile-chat-route", "profile-chat-question", "profile-chat-facts", "profile-chat-consent"];
+    const ids = ["profile-chat-load", "profile-chat-submit", "profile-chat-route", "profile-chat-question", "profile-chat-facts", "profile-chat-consent", "profile-chat-clear"];
     ids.forEach((id) => {byId(id).disabled = true;});
-    byId("profile-chat-answer").replaceChildren();
     byId("profile-chat-status").textContent = "Waiting for the selected provider…";
+    const question = byId("profile-chat-question").value.trim();
     try {
       const response = await api("/api/workspace/chat", "POST", {
         route: byId("profile-chat-route").value,
-        message: byId("profile-chat-question").value,
+        message: question,
+        history: profileChatHistory,
         include_verified_facts: byId("profile-chat-facts").checked,
         acknowledged: true
       });
-      byId("profile-chat-answer").append(node("p", "", response.answer));
-      byId("profile-chat-status").textContent = `Unverified suggestion · ${response.provider} · ${response.model}. No profile changes were made.`;
+      profileChatHistory.push({role: "user", content: question}, {role: "assistant", content: response.answer});
+      byId("profile-chat-answer").append(node("p", "", "You: " + question), node("p", "", "Assistant: " + response.answer));
+      byId("profile-chat-question").value = "";
+      byId("profile-chat-status").textContent = `Unverified suggestion · ${response.provider} · ${response.model}. No profile changes were made.` +
+        (profileChatHistory.length >= 12 ? " Conversation limit reached; clear it to start again." : "");
     } catch (error) {
       byId("profile-chat-status").textContent = error.message;
     } finally {
       profileChatBusy = false;
       ids.forEach((id) => {byId(id).disabled = false;});
+      byId("profile-chat-submit").disabled = profileChatHistory.length >= 12 || !profileChatRoutes.length;
       byId("profile-chat-consent").checked = false;
     }
   });

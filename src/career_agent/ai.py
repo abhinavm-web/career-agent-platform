@@ -148,8 +148,8 @@ def complete(route, prompt, *, system=SYSTEM):
         raise ValueError('AI request failed or was incomplete. Check credentials, model access and provider availability; no fallback was attempted.') from None
 
 
-def profile_chat(route_name, message, claims, acknowledged=False):
-    """Answer one consented career question without mutating candidate data."""
+def profile_chat(route_name, message, claims, acknowledged=False, history=None):
+    """Answer a consented career question with bounded, caller-supplied context."""
     if acknowledged is not True:
         raise ValueError('Explicit consent to send the question and verified career facts is required')
     route = routes().get(route_name) if isinstance(route_name, str) else None
@@ -159,11 +159,21 @@ def profile_chat(route_name, message, claims, acknowledged=False):
         raise ValueError('Enter a career question of 1–4,000 characters')
     if not isinstance(claims, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in claims.items()):
         raise ValueError('Invalid verified career facts')
-    prompt = json.dumps({'question': message.strip(), 'verified_facts': claims}, ensure_ascii=False, sort_keys=True)
+    if history is None:
+        history = []
+    if not isinstance(history, list) or len(history) > 12 or len(history) % 2:
+        raise ValueError('Conversation history must contain at most six complete exchanges')
+    for index, item in enumerate(history):
+        role = 'user' if index % 2 == 0 else 'assistant'
+        if (not isinstance(item, dict) or set(item) != {'role', 'content'} or item['role'] != role
+                or not isinstance(item['content'], str) or not item['content'].strip()
+                or len(item['content']) > 6000):
+            raise ValueError('Invalid conversation history')
+    prompt = json.dumps({'question': message.strip(), 'verified_facts': claims, 'history': history}, ensure_ascii=False, sort_keys=True)
     if len(prompt) > 32000:
-        raise ValueError('AI input exceeds 32,000 characters; shorten your question or verified facts')
+        raise ValueError('AI input exceeds 32,000 characters; clear the conversation or shorten your question or verified facts')
     answer = complete(route, prompt, system=PROFILE_SYSTEM)
-    if not isinstance(answer, str) or not answer.strip() or len(answer) > 32000:
+    if not isinstance(answer, str) or not answer.strip() or len(answer) > 6000:
         raise ValueError('AI response was empty or too long; no result accepted')
     return {'answer': answer.strip(), 'route': route_name, 'provider': route['provider'], 'model': route['model']}
 

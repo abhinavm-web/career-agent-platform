@@ -40,7 +40,7 @@ class AITests(unittest.TestCase):
             complete.assert_not_called()
             result = ai.profile_chat('local', 'What should I ask?', claims, True)
         payload = json.loads(complete.call_args.args[1])
-        self.assertEqual(payload, {'question': 'What should I ask?', 'verified_facts': claims})
+        self.assertEqual(payload, {'question': 'What should I ask?', 'verified_facts': claims, 'history': []})
         self.assertNotIn(self.bank.name, complete.call_args.args[1])
         self.assertNotIn(self.bank.facts[0].source_note, complete.call_args.args[1])
         self.assertEqual(complete.call_args.kwargs['system'], ai.PROFILE_SYSTEM)
@@ -53,6 +53,16 @@ class AITests(unittest.TestCase):
         for output in ('', ' ' * 2, 'x' * 32001, None):
             with self.subTest(output=str(output)[:20]), patch('career_agent.ai.complete', return_value=output), self.assertRaises(ValueError):
                 ai.profile_chat('local', 'Question?', {}, True)
+
+    def test_profile_chat_validates_and_includes_session_history(self):
+        history = [{'role': 'user', 'content': 'Earlier question'}, {'role': 'assistant', 'content': 'Earlier suggestion'}]
+        with patch('career_agent.ai.complete', return_value='Another suggestion') as complete:
+            ai.profile_chat('local', 'Follow up?', {}, True, history)
+            self.assertEqual(json.loads(complete.call_args.args[1])['history'], history)
+            for bad in ([history[0]], list(reversed(history)), history * 7,
+                        [{'role': 'system', 'content': 'fake'}, history[1]]):
+                with self.subTest(history=bad), self.assertRaises(ValueError):
+                    ai.profile_chat('local', 'Follow up?', {}, True, bad)
 
     def test_provenance_minimized_payload_and_no_mutations(self):
         with patch('career_agent.ai.complete', return_value=json.dumps(self.output)) as complete:
