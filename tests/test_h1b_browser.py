@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from test_h1b import lca_csv
@@ -15,6 +16,61 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_open_views_age_posting_observations_without_reloading(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'test.sqlite3'
+            with Store(db) as store:
+                store.add_jobs([Job.from_mapping({'company': 'Fictional Co', 'title': 'Role',
+                    'job_url': 'https://boards.greenhouse.io/fictional/jobs/123'})])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                scenario = {'checked_at': None}
+                def almost_stale(_id):
+                    return {'availability': 'listed', 'reason': 'Fictional check', 'source_url': 'https://example.invalid/role',
+                            'checked_at': scenario['checked_at'] or (datetime.now(timezone.utc) - timedelta(seconds=86398)).isoformat(), 'stale': False}
+                with patch('career_agent.posting_checks.PostingChecks.latest', side_effect=almost_stale), sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#job-list')).to_contain_text('Listed at check')
+                        page.get_by_role('button', name='View Role at Fictional Co').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Listed at check')
+                        page.route('**/api/jobs/*/live-check', lambda route: route.fulfill(
+                            status=502, content_type='application/json', body='{"detail":"Fictional check failed"}'))
+                        page.get_by_role('button', name='Check live availability').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Fictional check failed')
+                        expect(page.locator('#job-list')).to_contain_text('Check is stale', timeout=6000)
+                        expect(page.locator('#detail-panel')).to_contain_text('Check is stale')
+                        expect(page.locator('#detail-panel')).to_contain_text('Fictional check failed')
+                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        result = page.locator('#h1b-opportunities-results')
+                        expect(result).to_contain_text('listed')
+                        expect(result).to_contain_text('STALE OBSERVATION', timeout=6000)
+                        expect(result).to_contain_text('unknown')
+                        for invalid in ('not-a-date', (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()):
+                            scenario['checked_at'] = invalid
+                            page.get_by_role('button', name='H-1B research', exact=True).click()
+                            expect(result).to_contain_text(invalid)
+                            expect(result).to_contain_text('STALE OBSERVATION')
+                            expect(result).to_contain_text('unknown')
+                            expect(result).not_to_contain_text('listed')
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_navigation_pagination_and_contextual_ai_prerequisite(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
@@ -155,6 +211,13 @@ class H1BBrowserTests(unittest.TestCase):
                             page.locator('#uscis-consent').check()
                             page.get_by_role('button', name='Refresh from USCIS').click()
                             expect(page.locator('#h1b-status')).to_contain_text('HTTP 403')
+                            expect(page.locator('#h1b-status')).to_contain_text('No USCIS API token is needed')
+                        page.route('**/api/h1b/uscis/refresh', lambda route: route.fulfill(
+                            status=403, content_type='application/json', body='{"detail":"Session token required"}'))
+                        page.get_by_role('button', name='Refresh from USCIS').click()
+                        expect(page.locator('#h1b-status')).to_contain_text('refresh this page')
+                        expect(page.locator('#h1b-status')).to_contain_text('no USCIS token is required')
+                        page.unroute('**/api/h1b/uscis/refresh')
                         page.locator('#h1b-query').fill('Example')
                         page.get_by_role('button', name='Search company records and jobs').click()
                         expect(page.locator('#h1b-status')).to_contain_text('1 stored jobs')

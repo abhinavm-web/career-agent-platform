@@ -163,7 +163,7 @@
         </details>
         <details class="panel profile-editor">
           <summary>USCIS employer decisions: refresh or import</summary>
-          <p class="muted">Find an annual h1b_datahubexport-YYYY.csv file on the <a href="https://www.uscis.gov/archive/h-1b-employer-data-hub-files" target="_blank" rel="noopener noreferrer">official USCIS data files page</a>. Use its fiscal year and reporting cut-off date, not today's download date. Refresh contacts USCIS directly; if blocked, import the official file instead. Data is historical and may lag.</p>
+          <p class="muted">Find a complete annual h1b_datahubexport-YYYY.csv file on the <a href="https://www.uscis.gov/archive/h-1b-employer-data-hub-files" target="_blank" rel="noopener noreferrer">official USCIS data files page</a>. Use its original URL, fiscal year and reporting cut-off date, not today's download date. No USCIS API token is required. Refresh contacts USCIS directly; if blocked, download the official file in your browser and import it below. Data is historical and may lag.</p>
           <form id="uscis-form" class="crm-form">
             <label class="field">Official USCIS CSV URL<input id="uscis-source" type="url" required placeholder="https://www.uscis.gov/sites/default/files/…csv"></label>
             <label class="field">Fiscal year<input id="uscis-year" type="number" min="2009" required></label>

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sqlite3
 import sys
 import uuid
 from dataclasses import asdict
@@ -93,6 +94,15 @@ def parser() -> argparse.ArgumentParser:
 
     listing = cmd.add_parser("list", help="List local jobs and application stages")
     listing.add_argument("--limit", type=int, default=100)
+
+    backup = cmd.add_parser("backup", help="Back up a stopped local workspace into a new private archive")
+    backup.add_argument("destination", help="New archive path; never overwritten")
+    backup.add_argument("--packet-dir", default=".local/packets")
+    backup.add_argument("--offline", action="store_true", help="Confirm the app and all writers are stopped")
+    restore = cmd.add_parser("restore", help="Restore a backup into a new directory")
+    restore.add_argument("archive")
+    restore.add_argument("destination", help="New directory; never overwrites existing data")
+    restore.add_argument("--offline", action="store_true", help="Confirm the app and all writers are stopped")
     return root
 
 
@@ -131,6 +141,14 @@ def _interactive_review(graph, packet: dict, thread_id: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
+        if args.command == "backup":
+            from .backup import create_backup
+            print(json.dumps(create_backup(args.db, args.packet_dir, args.destination, offline=args.offline)))
+            return 0
+        if args.command == "restore":
+            from .backup import restore_backup
+            print(json.dumps(restore_backup(args.archive, args.destination, offline=args.offline)))
+            return 0
         if args.command == "serve":
             from .dashboard import DashboardConfig, serve
             serve(
@@ -263,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
                     for job in store.list_jobs(limit=max(0, args.limit))
                 ], indent=2))
         return 0
-    except (OSError, ValueError, RuntimeError, json.JSONDecodeError, EOFError, csv.Error) as error:
+    except (OSError, ValueError, RuntimeError, sqlite3.Error, json.JSONDecodeError, EOFError, csv.Error) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 

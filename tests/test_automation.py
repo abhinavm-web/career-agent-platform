@@ -86,13 +86,40 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual(next(r for r in self.auto.list()['runs'] if r['id'] == 'dead')['status'], 'interrupted')
 
     def test_stalled_child_is_killed_at_deadline(self):
-        from career_agent.automation import fetch
+        from career_agent.automation import fetch, DiscoveryTimedOut
         with patch('career_agent.automation.subprocess.Popen') as popen, patch('career_agent.automation.time.monotonic', side_effect=[0, 0, 121]):
             child = popen.return_value.__enter__.return_value
             child.communicate.side_effect = [subprocess.TimeoutExpired('fictional', 1), ('', None)]
-            with self.assertRaises(ValueError):
+            with self.assertRaises(DiscoveryTimedOut):
                 fetch(self.search, self.auto.stop)
             child.kill.assert_called_once()
+
+    def test_stop_kills_isolated_discovery_before_import(self):
+        from career_agent.automation import fetch, DiscoveryStopped
+        self.auto.stop.set()
+        with patch('career_agent.automation.subprocess.Popen') as popen:
+            child = popen.return_value.__enter__.return_value
+            with self.assertRaises(DiscoveryStopped):
+                fetch(self.search, self.auto.stop)
+            child.kill.assert_called_once()
+
+    def test_manual_discovery_uses_bounded_worker_and_normalizes_results(self):
+        from dataclasses import asdict
+        from career_agent.discovery import discover_isolated, DiscoveryUnavailable
+        job = fake_job('https://example.invalid/fictional-manual')
+        with patch('career_agent.discovery.importlib.util.find_spec', return_value=object()), \
+             patch('career_agent.automation.fetch', return_value=[asdict(job)]) as worker:
+            result = discover_isolated('Fictional role', 'USA', 5, self.auto.stop)
+        self.assertEqual(result, [job])
+        self.assertEqual(worker.call_args.args[0], {
+            'query': 'Fictional role', 'location': 'USA', 'results': 5,
+            'sites': ['indeed', 'linkedin', 'zip_recruiter']})
+        self.assertIs(worker.call_args.args[1], self.auto.stop)
+        with patch('career_agent.discovery.importlib.util.find_spec', return_value=None), \
+             patch('career_agent.automation.fetch') as worker:
+            with self.assertRaises(DiscoveryUnavailable):
+                discover_isolated('Fictional role', 'USA', 5, self.auto.stop)
+            worker.assert_not_called()
 
 
 class DurableWorkflowTests(unittest.TestCase):

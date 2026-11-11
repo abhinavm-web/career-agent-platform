@@ -66,6 +66,13 @@ class MatchingTests(unittest.TestCase):
         result = score_job(sample_job("Spreadsheets"), self.profile)
         self.assertEqual(result.score, 50)
         self.assertEqual(set(result.candidate_skills_not_mentioned_in_posting), {"AWS", "Python"})
+        self.assertIn("does not establish a qualification gap", ' '.join(result.reasons))
+
+    def test_explanation_names_matching_skills_and_unknown_location(self):
+        from dataclasses import replace
+        result = score_job(replace(sample_job("Python experience"), location="", remote=False), self.profile)
+        self.assertIn("Skills found in posting: Python", result.reasons)
+        self.assertIn("location is unspecified", ' '.join(result.reasons))
 
 
 class SponsorshipTests(unittest.TestCase):

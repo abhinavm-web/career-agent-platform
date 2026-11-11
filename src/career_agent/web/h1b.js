@@ -7,6 +7,14 @@
   let searchedQuery = "";
   let opportunitySequence = 0;
   let opportunityNext = null;
+  const observationTimers = new Map();
+  function clearResults(id) {
+    const container = get(id);
+    for (const [box, timer] of observationTimers) {
+      if (container.contains(box)) { clearTimeout(timer); observationTimers.delete(box); }
+    }
+    container.replaceChildren();
+  }
   const status = (message) => { get("h1b-status").textContent = message; };
   const node = (tag, content) => {
     const el = document.createElement(tag);
@@ -24,7 +32,12 @@
     const response = await fetch(url, {method, headers: {"X-Session-Token": token, "Content-Type": "application/json"},
       cache: "no-store", credentials: "same-origin", ...(data === undefined ? {} : {body: JSON.stringify(data)})});
     const body = await response.json();
-    if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "H-1B request failed");
+    if (!response.ok) {
+      if (response.status === 403 && body.detail === "Session token required") {
+        throw new Error("Your local session expired after the app restarted. Copy any unsaved changes, then refresh this page; no USCIS token is required.");
+      }
+      throw new Error(typeof body.detail === "string" ? body.detail : "H-1B request failed");
+    }
     return body;
   }
   function coverage(value) {
@@ -78,9 +91,18 @@
     return card;
   }
   function liveObservation(box, result) {
+    if (observationTimers.has(box)) clearTimeout(observationTimers.get(box));
+    observationTimers.delete(box);
     box.replaceChildren();
     if (!result) { box.append(node("p", "No live check recorded.")); return; }
-    box.append(node("p", (result.stale ? "STALE OBSERVATION · " : "") + result.availability.replaceAll("_", " ") + " · checked " + result.checked_at + " · " + result.reason));
+    const timestamp = Date.parse(result.checked_at), age = Date.now() - timestamp;
+    const stale = result.stale || !Number.isFinite(timestamp) || age < 0 || age > 86400000;
+    const availability = stale ? "unknown" : result.availability;
+    box.append(node("p", (stale ? "STALE OBSERVATION · " : "") + availability.replaceAll("_", " ") + " · checked " + result.checked_at + " · " + result.reason));
+    if (!stale) observationTimers.set(box, setTimeout(() => {
+      observationTimers.delete(box);
+      if (box.isConnected) liveObservation(box, result);
+    }, Math.max(1, 86400001 - age)));
     if (result.policy) {
       box.append(node("p", "Policy at check time: " + result.policy.policy.replaceAll("_", " ") + " · " + result.policy.reason));
       for (const quote of result.policy.quotes) box.append(node("blockquote", quote));
@@ -105,9 +127,14 @@
     check.disabled = !job.live_check_supported;
     check.addEventListener("click", async () => {
       check.disabled = true;
+      if (observationTimers.has(observation)) clearTimeout(observationTimers.get(observation));
+      observationTimers.delete(observation);
       observation.textContent = "Checking public ATS data…";
-      try { liveObservation(observation, await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true})); }
-      catch (error) { observation.textContent = "Check failed: " + error.message + ". Previous saved observation is unchanged."; }
+      try {
+        const result = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
+        if (observation.isConnected) liveObservation(observation, result);
+      }
+      catch (error) { if (observation.isConnected) observation.textContent = "Check failed: " + error.message + ". Previous saved observation is unchanged."; }
       finally { check.disabled = false; }
     });
     card.append(node("p", job.live_check_supported ? "This contacts the public ATS for this posting. Observations become stale after 24 hours." : "Live checks support Greenhouse and Lever postings. Check this original posting manually; availability remains unknown."), check, observation);
@@ -119,7 +146,7 @@
     const message = get("h1b-opportunities-status");
     const query = get("h1b-opportunities-query").value.trim();
     const category = get("h1b-opportunities-category").value;
-    results.replaceChildren();
+    clearResults("h1b-opportunities-results");
     get("h1b-opportunities-next").hidden = true;
     message.textContent = "Searching saved opportunities…";
     try {
@@ -135,7 +162,7 @@
   async function search(offset = 0) {
     const query = get("h1b-query").value.trim();
     const current = ++sequence;
-    get("h1b-results").replaceChildren();
+    clearResults("h1b-results");
     get("h1b-next").hidden = true;
     if (query.length < 2) { status("Enter at least two characters."); return; }
     get("h1b-search-submit").disabled = true;
@@ -169,7 +196,7 @@
   for (const id of ["h1b-opportunities-query", "h1b-opportunities-category"]) get(id).addEventListener("input", () => {
     opportunitySequence++;
     opportunityNext = null;
-    get("h1b-opportunities-results").replaceChildren();
+    clearResults("h1b-opportunities-results");
     get("h1b-opportunities-next").hidden = true;
     get("h1b-opportunities-status").textContent = "Find opportunities to apply the updated filters.";
   });
@@ -183,7 +210,7 @@
   get("h1b-query").addEventListener("input", () => {
     sequence++;
     get("h1b-search-submit").disabled = false;
-    get("h1b-results").replaceChildren();
+    clearResults("h1b-results");
     get("h1b-next").hidden = true;
     status("Search to update the results for this company.");
   });
@@ -196,7 +223,7 @@
     if (control.disabled) return;
     control.disabled = true;
     sequence++;
-    get("h1b-results").replaceChildren();
+    clearResults("h1b-results");
     get("h1b-next").hidden = true;
     try {
       await api("/api/h1b", "PUT", {need: get("h1b-need").value, min_year: Number(get("h1b-min-year").value), include_unknown: get("h1b-unknown").checked});
@@ -222,7 +249,7 @@
       const data = await api("/api/h1b");
       coverage(data.coverage);
       sequence++;
-      get("h1b-results").replaceChildren();
+      clearResults("h1b-results");
       get("h1b-next").hidden = true;
       get("h1b-search-submit").disabled = false;
       status(result.added + " added · " + result.updated + " updated · " + result.duplicates + " duplicates · " + result.older_skipped + " older records skipped · " + result.other_visas_skipped + " other visa records skipped. Search again to update results.");
@@ -245,7 +272,7 @@
       const result = await api("/api/h1b/uscis/" + action, "POST", data);
       coverage((await api("/api/h1b")).coverage);
       sequence++;
-      get("h1b-results").replaceChildren();
+      clearResults("h1b-results");
       get("h1b-next").hidden = true;
       get("h1b-search-submit").disabled = false;
       get("uscis-consent").checked = false;

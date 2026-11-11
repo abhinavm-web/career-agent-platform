@@ -10,7 +10,9 @@
       headers: {"X-Session-Token": token, "Content-Type": "application/json"},
       ...(data ? {body: JSON.stringify(data)} : {})});
     const value = await r.json();
-    if (!r.ok) throw new Error(typeof value.detail === "string" ? value.detail : "AI request failed");
+    if (!r.ok) throw new Error(r.status === 403 && value.detail === "Session token required"
+      ? "Your local session expired after the server restarted. Copy any unsaved changes, refresh this page, then try again."
+      : typeof value.detail === "string" ? value.detail : "AI request failed");
     return value;
   }
   function changed() {

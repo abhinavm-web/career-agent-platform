@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 from pathlib import Path
 
 from .models import Job
@@ -39,3 +40,13 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
             # Incomplete provider records are intentionally excluded.
             continue
     return jobs
+
+
+def discover_isolated(query: str, location: str, results: int, stop) -> list[Job]:
+    """Run manual searches in the same bounded process used by saved searches."""
+    from .automation import fetch
+    if importlib.util.find_spec('jobspy') is None:
+        raise DiscoveryUnavailable('Install JobSpy: pip install -e ".[jobspy]"')
+    rows = fetch({'query': query, 'location': location, 'results': results,
+                  'sites': ['indeed', 'linkedin', 'zip_recruiter']}, stop)
+    return [Job.from_mapping(row) for row in rows]
