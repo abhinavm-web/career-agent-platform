@@ -62,8 +62,17 @@ def extract_resume(filename, encoded):
                     raise ValueError('Invalid or oversized Word document')
                 root = ElementTree.fromstring(archive.read(matches[0]))
             namespace = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
-            text = '\n'.join(''.join(item.text or '' for item in paragraph.iter(namespace + 't'))
-                             for paragraph in root.iter(namespace + 'p'))
+            def paragraph_text(paragraph):
+                parts = []
+                for item in paragraph.iter():
+                    if item.tag == namespace + 't':
+                        parts.append(item.text or '')
+                    elif item.tag in (namespace + 'br', namespace + 'cr'):
+                        parts.append('\n')
+                    elif item.tag == namespace + 'tab':
+                        parts.append('\t')
+                return ''.join(parts)
+            text = '\n'.join(paragraph_text(paragraph) for paragraph in root.iter(namespace + 'p'))
         except (zipfile.BadZipFile, KeyError, ElementTree.ParseError, RuntimeError, NotImplementedError):
             raise ValueError('Unable to extract text from this Word document') from None
     else:

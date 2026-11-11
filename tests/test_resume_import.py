@@ -20,8 +20,8 @@ class ResumeImportTests(unittest.TestCase):
             archive.writestr('word/document.xml',
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                 '<w:body><w:p><w:r><w:t>Fictional candidate</w:t></w:r></w:p>'
-                '<w:p><w:r><w:t>Built tools</w:t></w:r></w:p></w:body></w:document>')
-        self.assertEqual(extract_resume('resume.docx', encoded(output.getvalue())), 'Fictional candidate\nBuilt tools')
+                '<w:p><w:r><w:t>Built tools</w:t><w:br/><w:t>Led team</w:t><w:tab/><w:t>2020</w:t></w:r></w:p></w:body></w:document>')
+        self.assertEqual(extract_resume('resume.docx', encoded(output.getvalue())), 'Fictional candidate\nBuilt tools\nLed team\t2020')
 
     def test_invalid_and_unsupported_content_is_rejected(self):
         for name, value in [('resume.txt', '!!!!'), ('resume.txt', encoded(b'\xff')),
