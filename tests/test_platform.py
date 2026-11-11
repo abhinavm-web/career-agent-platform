@@ -74,6 +74,30 @@ class MatchingTests(unittest.TestCase):
         self.assertIn("Skills found in posting: Python", result.reasons)
         self.assertIn("location is unspecified", ' '.join(result.reasons))
 
+    def test_location_preference_does_not_match_inside_city_name(self):
+        from dataclasses import replace
+        preferences = replace(self.profile, preferred_locations=("CA",))
+        chicago = score_job(replace(sample_job("AWS and Python"), location="Chicago, IL"), preferences)
+        oakland = score_job(replace(sample_job("AWS and Python"), location="Oakland, CA"), preferences)
+        self.assertEqual(chicago.score, 90)
+        self.assertEqual(oakland.score, 100)
+        self.assertIn('verify the posting', ' '.join(chicago.reasons))
+
+    def test_c_language_does_not_match_cpp_or_csharp(self):
+        from dataclasses import replace
+        preferences = replace(self.profile, skills=("C",))
+        for text in ("C++ development", "C# development"):
+            with self.subTest(text=text):
+                self.assertEqual(score_job(sample_job(text), preferences).matched_skills, ())
+        self.assertEqual(score_job(sample_job("C and C++"), preferences).matched_skills, ("C",))
+
+    def test_remote_match_does_not_claim_geographic_eligibility(self):
+        from dataclasses import replace
+        job = replace(sample_job("AWS and Python"), location="Remote - Canada only", remote=True)
+        result = score_job(job, replace(self.profile, allow_remote=True))
+        self.assertIn('geographic eligibility still needs verification', ' '.join(result.reasons))
+        self.assertIn('does not assess qualification', ' '.join(result.reasons))
+
 
 class SponsorshipTests(unittest.TestCase):
     def test_exclusion_overrides_historical_data(self):
