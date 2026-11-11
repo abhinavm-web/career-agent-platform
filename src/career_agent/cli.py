@@ -82,6 +82,7 @@ def parser() -> argparse.ArgumentParser:
     flow.add_argument("--facts", required=True)
     flow.add_argument("--filings")
     flow.add_argument("--output", help="Optional local packet destination")
+    flow.add_argument("--resume-run", help="Resume an existing durable run with unchanged inputs")
 
     web = cmd.add_parser("serve", help="Start the loopback-only local web workspace")
     web.add_argument("--profile", help="Path to local candidate preferences JSON")
@@ -203,22 +204,12 @@ def main(argv: list[str] | None = None) -> int:
                 if args.command == "draft":
                     packet = build_packet(job, preferences, bank, records)
                 else:
-                    from .graph_review import build_career_graph
-
-                    graph = build_career_graph()
-                    thread_id = str(uuid.uuid4())
-                    state = {
-                        "job": asdict(job),
-                        "preferences": asdict(preferences),
-                        "fact_bank": json.loads(Path(args.facts).read_text(encoding="utf-8")),
-                        "filing_records": [asdict(item) for item in records],
-                    }
-                    interrupted = graph.invoke(
-                        state, config={"configurable": {"thread_id": thread_id}}
-                    )
-                    if "__interrupt__" not in interrupted:
-                        raise RuntimeError("Graph did not stop for human review")
-                    packet = interrupted["packet"]
+                    from .workflows import Workflows, inputs, signature
+                    manager = Workflows(args.db, _packet_destination(job.id, args.output).parent)
+                    state = inputs(job, preferences, bank, records)
+                    run = manager.advance(args.resume_run, signature(state)) if args.resume_run else manager.start(state)
+                    packet = run['packet']
+                    print(json.dumps({'run_id': run['run_id'], 'status': run['status']}))
                 path = save_packet(packet, _packet_destination(job.id, args.output))
                 print(json.dumps({
                     "packet_path": str(path),
@@ -229,7 +220,13 @@ def main(argv: list[str] | None = None) -> int:
                     "submission_sent": False,
                 }, indent=2))
                 if args.command == "workflow":
-                    _interactive_review(graph, packet, thread_id)
+                    print(json.dumps(packet, indent=2, ensure_ascii=False))
+                    answer = input(f"Type APPROVE {job.id} or REJECT {job.id}; Enter leaves the durable review pending: ")
+                    if answer.strip() in {f'APPROVE {job.id}', f'REJECT {job.id}'}:
+                        result = manager.advance(run['run_id'], signature(state), {
+                            'packet_sha256': packet['packet_sha256'], 'reviewed': True,
+                            'approved': answer.strip() == f'APPROVE {job.id}'})
+                        print(json.dumps({'status': result['status'], 'submission_sent': False}))
             elif args.command == "review":
                 from .graph_review import build_review_graph
 

@@ -1,0 +1,25 @@
+"""Isolated JobSpy process: approved search settings in, public jobs out."""
+import contextlib
+import json
+import sys
+import os
+from threading import Timer
+from dataclasses import asdict
+from .discovery import discover_jobspy
+
+
+def main():
+    watchdog = Timer(125, os._exit, args=(124,))
+    watchdog.daemon = True
+    watchdog.start()
+    try:
+        data = json.load(sys.stdin)
+        with contextlib.redirect_stdout(sys.stderr):
+            jobs = discover_jobspy(data['query'], data['location'], data['results'], sites=data['sites'])
+        print(json.dumps([asdict(j) for j in jobs]))
+    finally:
+        watchdog.cancel()
+
+
+if __name__ == '__main__':
+    main()

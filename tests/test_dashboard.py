@@ -103,6 +103,26 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
             self.assertFalse(self.packet_dir.exists())
 
+    def test_schedule_api_requires_consent_and_supports_pause_remove(self):
+        data = {'query': 'Fictional role', 'location': 'USA', 'sites': ['indeed'], 'interval_minutes': 360, 'results': 5}
+        self.assertEqual(self.call('POST', '/api/automation/searches', data).status_code, 422)
+        saved = self.call('POST', '/api/automation/searches', data | {'acknowledged': True}).json()
+        path = '/api/automation/searches/' + saved['id']
+        self.assertEqual(self.call('POST', path, {'remove': True, 'acknowledged': True}).status_code, 422)
+        self.assertEqual(self.call('POST', path, {'enabled': False, 'acknowledged': True}).status_code, 200)
+        self.assertEqual(self.call('POST', path, {'remove': True, 'acknowledged': True}).status_code, 200)
+        self.assertEqual(self.call('GET', '/api/automation').json()['schedules'], [])
+
+    def test_legacy_profile_change_invalidates_durable_packet_and_review(self):
+        fingerprint = self._draft()
+        data = fake_fact_bank()
+        data['facts'][0]['statement'] = 'A different fictional career statement involving Python.'
+        self.facts_path.write_text(json.dumps(data))
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()
+        self.assertTrue(packet['stale'])
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 409)
+
     def test_uscis_refresh_failure_and_live_check_require_explicit_action(self):
         from test_uscis import hub_csv, URL
 

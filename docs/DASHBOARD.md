@@ -28,7 +28,7 @@ All private candidate files should be outside the public repository or under a g
 
 The app **does not** fetch jobs automatically, perform ATS submissions, or answer visa screening questions. JobSpy discovery is available through both the CLI and the Opportunity board's **Find jobs with JobSpy** form. Each dashboard search requires explicit acknowledgement that its query and location will be sent to external sources. Profile facts, recruiter contacts and private notes are not included in the discovery request.
 
-Install discovery with `python -m pip install -e ".[web,jobspy]"`, restart the server, then enter a role, location and requested results per source (1–100). The existing JobSpy adapter searches Indeed, LinkedIn and ZipRecruiter for US jobs. Returned jobs are normalized and deduplicated by the existing job store; the UI reports returned, added and duplicate counts. Requests run outside the server's event loop, with one discovery request at a time per server process. Searches can take several minutes; cancellation and background scheduling are not implemented.
+Install discovery with `python -m pip install -e ".[web,jobspy]"`, restart the server, then enter a role, location and requested results per source (1–100). The manual JobSpy adapter searches Indeed, LinkedIn and ZipRecruiter for US jobs. Returned jobs are normalized and deduplicated by the existing job store. Saved automatic searches have separate source selection, stricter limits, an isolated worker deadline and failure backoff; see [Automation](AUTOMATION.md). Manual searches remain separately invoked and may take several minutes.
 
 Job sources may block requests, rate-limit or return partial results. Zero results do not prove that no jobs exist. Missing dependencies and provider exceptions show retryable errors without returning upstream exception details. The test suite uses mocked discovery, not live job-board requests; source-specific live validation remains outstanding. Respect each provider's terms and rate limits.
 
@@ -38,7 +38,7 @@ This preview is **single-user local software**, not a hosted application. The se
 
 Private profile, source notes and application drafts are stored in local plaintext files; employer confirmation references are stored in local SQLite. They are **not encrypted**. Use private filesystem permissions, avoid untrusted local users, and do not share the development server. A future cloud deployment requires actual authentication, user isolation, encrypted storage, CSRF auditing, retention/deletion, and a security review.
 
-The dashboard records explicit review decisions independently of LangGraph. It does not pretend the previous in-memory workflow is durably resumable.
+New dashboard drafts and review decisions advance durable LangGraph runs. Legacy packets retain their existing direct-review path. Input hashes, packet fingerprints and candidate revisions prevent stale approval; resumable runs and status history appear in the automation panel.
 
 Reviews and application statuses are distinct: approving a packet means **ready for manual submission**. A job moves to "submitted" only after the person checks an explicit external-submission box and enters an employer receipt. The UI never sends an application.
 
@@ -51,7 +51,7 @@ Reviews and application statuses are distinct: approving a packet means **ready 
 ## Roadmap
 
 - Candidate profile editor with validation, safe data migration and private vault.
-- Durable LangGraph checkpoints, verified sponsorship data ingestion and job enrichment.
+- Broader agent workflows, additional source connectors and stronger job enrichment; core durable checkpoints and DOL/USCIS imports are implemented.
 - Resumes exported to DOCX/PDF with explicit user review.
 - Supervised, permitted ATS adapters; no automatic submission without consent.
 - Authenticated, encrypted multi-user deployment with audit logs.

@@ -2,7 +2,7 @@
 
 The local dashboard and `ai-analyze` CLI command can send one job's title/description and candidate-verified fact IDs/statements to one explicitly selected model. The returned requirement quotes must occur verbatim in the description; cited fact IDs must exist. Suggested relationships and explanations remain **unverified model interpretations**, not eligibility decisions, skill deficits, hiring probabilities or verified equivalence. No facts, rankings, packets, approvals or applications are modified. Results are displayed, not persisted; CLI output can be redirected to a private file.
 
-The existing LangGraph analyze → draft → review workflow remains deterministic and uses in-memory checkpoints. This increment adds an independent read-only AI analyst, not autonomous multi-agent orchestration or durable runs.
+The LangGraph application workflow remains deterministic and now uses durable SQLite checkpoints through the dashboard and CLI `workflow` command. This AI analyst is independently opt-in; it does not silently add model calls to scheduled discovery or application drafting. See [automation and durable runs](AUTOMATION.md).
 
 ## Setup
 
@@ -49,7 +49,7 @@ Use `CAREER_AGENT_AI_CONFIG` to point to another private JSON file. Unknown fiel
 - Malformed JSON, invented quotes/IDs, excess fields, incomplete generation and tool calls are rejected. Prompt injection cannot invoke tools; it can still corrupt interpretations, which need human review.
 - Keys and raw provider errors are not returned to the dashboard. No app prompt logging, telemetry or remote tracing is added. Provider-side retention/logging depends on your account; do not enable SDK debug logging with real candidate data.
 - SDK contract tests use simulated transports and fictional credentials; they are not live model quality benchmarks. No paid cloud calls or installed local model inference were validated during this increment.
-- Still needed: durable agent jobs/cancellation, persistent run provenance and usage/cost budgets, provider health diagnostics, semantic-quality evaluation fixtures, role-specific drafting with claim verification, and separately approved background automation.
+- Still needed for model calls: durable AI jobs/cancellation, persistent model-run provenance and usage/cost budgets, provider health diagnostics, semantic-quality evaluation fixtures and role-specific model-assisted drafting with claim verification. Deterministic workflow persistence and opted-in scheduled JobSpy discovery are implemented separately.
 
 ## API references
 

@@ -15,6 +15,7 @@ import re
 import secrets
 from threading import Lock
 from dataclasses import asdict, dataclass
+from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -24,9 +25,11 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from .application import _reject_symlink_components, build_packet, load_packet, save_packet
+from .application import _reject_symlink_components, load_packet
 from .candidate import FactBank
 from . import ai
+from .automation import Automation
+from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM
 from .discovery import DiscoveryUnavailable, discover_jobspy
 from .models import CandidateProfile, Job
@@ -71,7 +74,17 @@ def _get_job(store: Store, job_id: str) -> Job:
 def create_app(config: DashboardConfig) -> FastAPI:
     """Create local web app. Profile and fact bank are loaded only when needed."""
     ai_lock = Lock()
+    automation = Automation(config.db_path)
+    workflows = Workflows(config.db_path, config.packet_dir)
+    @asynccontextmanager
+    async def lifespan(app):
+        automation.start()
+        try:
+            yield
+        finally:
+            await run_in_threadpool(automation.close)
     app = FastAPI(
+        lifespan=lifespan,
         title="Career Agent Local Workspace",
         docs_url=None, redoc_url=None, openapi_url=None,
     )
@@ -161,7 +174,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if revision is None:
             revision = active_workspace()["revision"]
         bound_revision = packet.get("candidate_workspace_revision")
-        return (bound_revision != revision) if revision > 0 else bound_revision is not None
+        if (bound_revision != revision) if revision > 0 else bound_revision is not None:
+            return True
+        with Store(config.db_path) as store:
+            run = store.connection.execute('SELECT input_sha256,packet_sha256 FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1',
+                (packet['job_id'],)).fetchone()
+        if run:
+            if run['packet_sha256'] != packet['packet_sha256']:
+                return True
+            try:
+                return run['input_sha256'] != workflow_signature(current_workflow_inputs(packet['job_id']))
+            except (ValueError, HTTPException):
+                return True
+        return False
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
                  records: tuple, workspace_revision: int) -> dict:
@@ -209,6 +234,50 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get("/assets/ai.js")
     def ai_script():
         return Response(assets("ai.js"), media_type="text/javascript")
+
+    @app.get('/assets/automation.js')
+    def automation_script():
+        return Response(assets('automation.js'), media_type='text/javascript')
+
+    @app.get('/api/automation')
+    def automation_status():
+        return {**automation.list(), 'workflows': workflows.list()}
+
+    @app.post('/api/automation/searches')
+    async def automation_save(request: Request):
+        return automation.save(await request.json())
+
+    @app.post('/api/automation/searches/{sid}')
+    async def automation_toggle(sid: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm changing recurring discovery')
+        if data.get('remove') is True:
+            automation.remove(sid)
+        else:
+            automation.enable(sid, data.get('enabled'))
+        return {'saved': True}
+
+    def current_workflow_inputs(job_id):
+        workspace = active_workspace()
+        profile = configured_profile()
+        if profile is None:
+            raise ValueError('Configure a career profile first')
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None)
+
+    @app.post('/api/workflows/{run_id}/retry')
+    async def workflow_retry(run_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm resuming this local workflow')
+        row = next((r for r in workflows.list() if r['run_id'] == run_id), None)
+        if row is None:
+            raise ValueError('Unknown workflow run')
+        state = current_workflow_inputs(row['job_id'])
+        result = await run_in_threadpool(workflows.advance, run_id, workflow_signature(state))
+        return {'run_id': run_id, 'status': result['status']}
 
     @app.get("/api/ai/routes")
     def ai_routes():
@@ -471,15 +540,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     status_code=409,
                     detail="This application is already recorded as submitted; its reviewed packet is locked",
                 )
-        packet = build_packet(
-            job, profile, bank, records,
-            workspace_revision=workspace["revision"] or None,
-        )
-        save_packet(packet, config.packet_dir / f"{job.id}.json")
+        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None))
+        packet = run['packet']
         return {
             "job_id": job.id,
             "packet_sha256": packet["packet_sha256"],
             "status": "awaiting_human_review",
+            "run_id": run['run_id'],
             "submission_sent": False,
         }
 
@@ -507,13 +574,17 @@ def create_app(config: DashboardConfig) -> FastAPI:
         current = current_packet(job_id)
         if current is None:
             raise HTTPException(status_code=404, detail="No packet available to review")
+        with Store(config.db_path) as store:
+            if store.stage_of(job_id) == 'submitted':
+                raise ValueError('A submitted application cannot receive a new review decision')
         if packet_stale(current):
             raise HTTPException(status_code=409, detail="Career profile changed; regenerate this draft before review")
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, current["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale packet; reload and review the latest draft")
+        handled = await run_in_threadpool(workflows.review, job_id, fingerprint, data['approved'], current_workflow_inputs(job_id))
         with Store(config.db_path) as store:
-            result = store.record_review(job_id, fingerprint, approved=data["approved"])
+            result = store.latest_review(job_id, fingerprint) if handled else store.record_review(job_id, fingerprint, approved=data["approved"])
         return {**result, "submission_sent": False}
 
     @app.get("/api/jobs/{job_id}/resume.pdf")
@@ -681,7 +752,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
 
 def serve(config: DashboardConfig, port: int = 8765) -> None:
-    """Bind to loopback only; no host override, background jobs or telemetry."""
+    """Bind to loopback only; approved discovery schedules run during server lifetime."""
     if not 1024 <= port <= 65535:
         raise ValueError("Port must be between 1024 and 65535")
     try:
