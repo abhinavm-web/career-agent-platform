@@ -454,8 +454,32 @@
         }
       });
       tools.append(download);
+      const downloadWord = button("Download reviewed resume Word", "button", async () => {
+        downloadWord.disabled = true;
+        try {
+          const response = await fetch("/api/jobs/" + job.id + "/resume.docx?packet_sha256=" + packet.packet_sha256, {
+            headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || "Word export failed");
+          }
+          const url = URL.createObjectURL(await response.blob());
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "resume-" + job.id + "-" + packet.packet_sha256.slice(0, 12) + ".docx";
+          document.body.append(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          notice("Reviewed Word resume downloaded. Changes made outside this app are not tracked; review them before use.");
+        } catch (error) { notice(error.message, true); }
+        finally { downloadWord.disabled = false; }
+      });
+      tools.append(downloadWord);
+      tools.append(node("p", "muted", "Word edits made after download are not tracked or covered by this approval."));
     } else {
-      tools.append(node("span", "muted", "Approve the current packet to download a resume PDF."));
+      tools.append(node("span", "muted", "Approve the current packet to download a resume PDF or Word document."));
     }
     card.append(tools);
 
