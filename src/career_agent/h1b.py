@@ -147,6 +147,7 @@ class H1BResearch:
         path = Path(path)
         if path.suffix.casefold() != '.xlsx' or not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
             raise ValueError('Choose a local XLSX file no larger than 512 MB')
+        workbook_file = None
         try:
             with zipfile.ZipFile(path) as archive:
                 entries = archive.infolist()
@@ -155,8 +156,15 @@ class H1BResearch:
                         or any(e.flag_bits & 1 for e in entries)
                         or any(e.filename == 'xl/sharedStrings.xml' and e.file_size > 512 * 1024 * 1024 for e in entries)):
                     raise ValueError('Workbook exceeds safe extraction limits')
-            workbook = load_workbook(path, read_only=True, data_only=True, keep_links=False)
-        except (zipfile.BadZipFile, OSError, KeyError):
+            workbook_file = path.open('rb')
+            workbook = load_workbook(workbook_file, read_only=True, data_only=True, keep_links=False)
+        except ValueError:
+            if workbook_file is not None:
+                workbook_file.close()
+            raise
+        except Exception:
+            if workbook_file is not None:
+                workbook_file.close()
             raise ValueError('Unable to read this XLSX workbook') from None
         try:
             required = ('CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE')
@@ -188,8 +196,13 @@ class H1BResearch:
                     yield line([value.isoformat(' ') if isinstance(value, datetime) else value.isoformat() if isinstance(value, date)
                                 else '' if value is None else str(value) for value in values])
             return self.import_csv(lines(), source_url, captured_on)
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError('Unable to read this XLSX workbook; no records were imported') from None
         finally:
             workbook.close()
+            workbook_file.close()
 
     def coverage(self):
         row = self.conn.execute('SELECT COUNT(*) AS records,MIN(fiscal_year) AS first_year,MAX(fiscal_year) AS last_year,MAX(captured_on) AS latest_capture FROM h1b_lca').fetchone()

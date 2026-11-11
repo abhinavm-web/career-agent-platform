@@ -125,6 +125,25 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'too many columns'):
             self.research.import_xlsx(path, DOL_URL, '2025-06-01')
 
+    def test_malformed_workbook_xml_fails_cleanly_without_import(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        import zipfile
+        path = Path(self.tmp.name) / 'valid.xlsx'
+        book = Workbook(); book.active.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        book.save(path); book.close()
+        for entry in ('xl/workbook.xml', 'xl/worksheets/sheet1.xml'):
+            bad = Path(self.tmp.name) / 'bad.xlsx'
+            with zipfile.ZipFile(path) as source, zipfile.ZipFile(bad, 'w') as target:
+                for name in source.namelist():
+                    target.writestr(name, b'<broken>' if name == entry else source.read(name))
+            with self.subTest(entry=entry), self.assertRaisesRegex(ValueError, 'Unable to read this XLSX'):
+                self.research.import_xlsx(bad, DOL_URL, '2025-06-01')
+            self.assertEqual(self.research.coverage()['records'], 0)
+
     def test_cli_accepts_xlsx_without_creating_csv(self):
         try:
             from openpyxl import Workbook
