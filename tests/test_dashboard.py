@@ -163,6 +163,32 @@ class DashboardTests(unittest.TestCase):
         observed = self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['live_check']
         self.assertEqual(observed['availability'], 'unknown')
         self.assertTrue(observed['stale'])
+        board_job = next(job for job in self.call('GET', '/api/jobs').json()['jobs'] if job['id'] == self.job.id)
+        self.assertFalse(board_job['live_check_supported'])
+        self.assertTrue(board_job['live_check']['stale'])
+        self.assertEqual(board_job['live_check']['availability'], 'unknown')
+
+    def test_board_exposes_saved_observation_without_checking_network(self):
+        from datetime import datetime, timezone
+        from career_agent.posting_checks import PostingChecks
+
+        job = fake_job('https://boards.greenhouse.io/example/jobs/123456')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+            PostingChecks(store).save(job.id, {
+                'availability': 'listed', 'reason': 'Public posting found',
+                'checked_at': datetime.now(timezone.utc).isoformat(),
+                'source_url': job.url, 'policy': None,
+            })
+        with patch('career_agent.dashboard.check_posting') as check:
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            check.assert_not_called()
+        board_job = next(item for item in jobs if item['id'] == job.id)
+        self.assertTrue(board_job['live_check_supported'])
+        self.assertFalse(board_job['live_check']['stale'])
+        self.assertEqual(board_job['live_check']['availability'], 'listed')
+        unchecked = next(item for item in jobs if item['id'] == self.job.id)
+        self.assertIsNone(unchecked['live_check'])
 
     def test_h1b_settings_import_search_and_job_assessment(self):
         from test_h1b import lca_csv

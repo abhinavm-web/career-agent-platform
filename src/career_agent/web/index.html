@@ -65,7 +65,7 @@
           <button id="show-add-job" class="button button-primary" type="button">+ Add opportunity</button>
         </div>
 
-        <div id="profile-prompt" class="setup-banner" hidden><div><strong>Complete your career profile</strong><p>Add your goals for matching. Verify a career fact to enable AI analysis and application drafts.</p></div><button type="button" class="button" id="open-profile">Set up profile</button></div>
+        <div id="profile-prompt" class="setup-banner" hidden><div><strong>Set up your workspace</strong><p id="setup-progress">Add your goals for matching. Verify a career fact to enable AI analysis and application drafts.</p></div><button type="button" class="button" id="open-profile">Continue setup</button></div>
 
         <details class="panel profile-editor discovery-quick">
           <summary>Find jobs with JobSpy</summary>
@@ -107,6 +107,13 @@
                   <option value="submitted">Submitted</option>
                 </select>
               </label>
+              <details class="board-filters"><summary>More filters</summary><div class="board-filter-grid">
+                <label>Location contains<input id="location-filter" type="search" maxlength="200" placeholder="City or state"></label>
+                <label>Source contains<input id="source-filter" type="search" maxlength="100" placeholder="e.g. LinkedIn"></label>
+                <label>Work arrangement<select id="remote-filter"><option value="all">Any arrangement</option><option value="remote">Confirmed remote</option></select></label>
+                <label>Sponsorship evidence<select id="sponsor-filter"><option value="all">All evidence</option><option value="posting_claims_sponsorship">Posting mentions sponsorship</option><option value="explicit_exclusion">Posting excludes sponsorship</option><option value="conditional">Conditional wording</option><option value="conflicting">Conflicting wording</option><option value="historical_only">Historical evidence only</option><option value="unknown">Unknown</option></select></label>
+                <label>Posting observation<select id="freshness-filter"><option value="all">All observations</option><option value="listed">Listed at last check</option><option value="expired">Deadline passed</option><option value="stale">Stale observation</option><option value="unknown">Unknown or not checked</option></select></label>
+              </div><button id="clear-board-filters" type="button" class="button">Clear all filters</button><p class="muted">A live check is an observation, not a guarantee of hiring or sponsorship. Unchecked and stale jobs remain uncertain.</p></details>
             </div>
             <div class="list-count"><span id="visible-count">0 opportunities</span><span id="sort-label">Recently added</span></div>
             <div id="job-list" class="job-list" aria-label="Job postings"><div class="loading">Loading your local jobs…</div></div>

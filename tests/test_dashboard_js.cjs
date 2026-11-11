@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, jobsOverride = null, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -240,8 +240,8 @@ function createHarness({olderTrackedJob = false, exportError = false, pdfError =
       return Promise.resolve(ok({workspace}));
     }
     if (url === "/api/jobs") return Promise.resolve(ok({
-      jobs: olderTrackedJob ? [fakeJob(ID_B, "Role Beta")]
-        : [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")],
+      jobs: jobsOverride || (olderTrackedJob ? [fakeJob(ID_B, "Role Beta")]
+        : [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")]),
     }));
     if (url === "/api/overview") return Promise.resolve(ok({
       total_jobs: 2, submitted_recorded: 0, staged: 0, review_events_recent: 0,
@@ -287,6 +287,31 @@ function createHarness({olderTrackedJob = false, exportError = false, pdfError =
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("opportunity filters combine and old observations are never shown as listed", async () => {
+  const fresh = {...fakeJob(ID_A, "Role Alpha"), location: "Austin, TX", source: "LinkedIn",
+    sponsorship_status: "posting_claims_sponsorship",
+    live_check: {availability: "listed", checked_at: new Date().toISOString(), reason: "Found"}};
+  const stale = {...fakeJob(ID_B, "Role Beta"), location: "Austin, TX", source: "LinkedIn",
+    live_check: {availability: "listed", checked_at: new Date(Date.now() - 172800000).toISOString()}};
+  const harness = createHarness({jobsOverride: [fresh, stale]});
+  await flush();
+  assert.match(harness.get("job-list").textContent, /Check is stale/);
+  for (const [id, value, event] of [["location-filter", "austin", "input"],
+    ["source-filter", "linked", "input"], ["remote-filter", "remote", "change"],
+    ["sponsor-filter", "posting_claims_sponsorship", "change"], ["freshness-filter", "listed", "change"]]) {
+    const control = harness.get(id); control.value = value; control.handlers[event]();
+  }
+  assert.match(harness.get("job-list").textContent, /Role Alpha/);
+  assert.doesNotMatch(harness.get("job-list").textContent, /Role Beta/);
+  harness.get("sponsor-filter").value = "all"; harness.get("sponsor-filter").handlers.change();
+  harness.get("freshness-filter").value = "stale"; harness.get("freshness-filter").handlers.change();
+  assert.match(harness.get("job-list").textContent, /Role Beta/);
+  assert.doesNotMatch(harness.get("job-list").textContent, /Listed at check/);
+  harness.get("clear-board-filters").click();
+  assert.match(harness.get("job-list").textContent, /Role Alpha/);
+  assert.match(harness.get("job-list").textContent, /Role Beta/);
+});
 
 test("tracker history download ignores filters and recovers from errors", async () => {
   for (const exportError of [false, true]) {
