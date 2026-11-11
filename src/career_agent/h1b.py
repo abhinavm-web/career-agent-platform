@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import csv
+import io
 import re
+import zipfile
 from datetime import date, datetime, timezone
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from .sponsor_evidence import employer_key
@@ -126,6 +129,64 @@ class H1BResearch:
                 self.conn.execute('INSERT OR REPLACE INTO h1b_lca VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', values)
                 counts['updated' if previous else 'added'] += 1
         return counts
+
+    def import_xlsx(self, path, source_url, captured_on):
+        """Stream the relevant cells from a local DOL LCA disclosure workbook.
+
+        This retains the existing CSV import's one-transaction validation and
+        user-supplied provenance. It does not download or verify a DOL file.
+        """
+        try:
+            from openpyxl import load_workbook
+            import defusedxml  # noqa: F401 - enables openpyxl's safe XML parser
+        except ImportError:
+            raise ValueError('Install workbook support: pip install -e ".[lca]"') from None
+        path = Path(path)
+        if path.suffix.casefold() != '.xlsx' or not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
+            raise ValueError('Choose a local XLSX file no larger than 512 MB')
+        try:
+            with zipfile.ZipFile(path) as archive:
+                entries = archive.infolist()
+                if (len(entries) > 5000 or sum(e.file_size for e in entries) > 4 * 1024 * 1024 * 1024
+                        or len({e.filename for e in entries}) != len(entries)
+                        or any(e.flag_bits & 1 for e in entries)
+                        or any(e.filename == 'xl/sharedStrings.xml' and e.file_size > 512 * 1024 * 1024 for e in entries)):
+                    raise ValueError('Workbook exceeds safe extraction limits')
+            workbook = load_workbook(path, read_only=True, data_only=True, keep_links=False)
+        except (zipfile.BadZipFile, OSError, KeyError):
+            raise ValueError('Unable to read this XLSX workbook') from None
+        try:
+            required = ('CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE')
+            optional = ('EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE')
+            fields = required + optional
+            matches = []
+            for sheet in workbook.worksheets:
+                if sheet.max_column is not None and sheet.max_column > 1024:
+                    raise ValueError('Workbook has too many columns')
+                header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
+                positions = {field: [index for index, value in enumerate(header) if value == field] for field in fields}
+                if all(len(positions[field]) == 1 for field in required):
+                    if any(len(positions[field]) > 1 for field in fields):
+                        raise ValueError('Workbook has duplicate LCA field headers')
+                    matches.append((sheet, positions))
+            if len(matches) != 1:
+                raise ValueError('Workbook must contain exactly one LCA disclosure sheet with the required headers')
+            sheet, positions = matches[0]
+            def lines():
+                buffer = io.StringIO(newline='')
+                writer = csv.writer(buffer)
+                def line(values):
+                    buffer.seek(0); buffer.truncate(0); writer.writerow(values); return buffer.getvalue()
+                yield line(fields)
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    values = [row[positions[field][0]] if positions[field] and positions[field][0] < len(row) else None for field in fields]
+                    if all(value is None for value in values):
+                        continue
+                    yield line([value.isoformat(' ') if isinstance(value, datetime) else value.isoformat() if isinstance(value, date)
+                                else '' if value is None else str(value) for value in values])
+            return self.import_csv(lines(), source_url, captured_on)
+        finally:
+            workbook.close()
 
     def coverage(self):
         row = self.conn.execute('SELECT COUNT(*) AS records,MIN(fiscal_year) AS first_year,MAX(fiscal_year) AS last_year,MAX(captured_on) AS latest_capture FROM h1b_lca').fetchone()

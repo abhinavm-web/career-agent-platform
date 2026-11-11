@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package
-        run: python -m pip install -e ".[graph,web,dev,pdf,pdf-test,ai]"
+        run: python -m pip install -e ".[graph,web,dev,pdf,pdf-test,ai,lca]"
       - name: Install PDF browser
         run: python -m playwright install --with-deps chromium
       - name: Test
