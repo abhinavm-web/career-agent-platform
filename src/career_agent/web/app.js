@@ -146,6 +146,11 @@
 
   function renderJobs() {
     const jobs = filteredJobs();
+    const truncated = (state.overview?.total_jobs ?? 0) > state.jobs.length;
+    byId("board-limit").hidden = !truncated;
+    byId("board-limit").textContent = truncated
+      ? "Showing the most recent " + state.jobs.length + " opportunities. Board filters do not search older jobs."
+      : "";
     byId("visible-count").textContent = String(jobs.length) + (jobs.length === 1 ? " opportunity" : " opportunities");
     byId("sort-label").textContent = jobs.some((job) => job.fit_score !== null) ? "Match score first" : "Recently added";
     const pageCount = Math.max(1, Math.ceil(jobs.length / 10));
@@ -156,7 +161,24 @@
     const list = byId("job-list");
     list.replaceChildren();
     if (!jobs.length) {
-      list.append(node("p", "loading", "No matching opportunities. Add a job or change filters."));
+      const empty = node("div", "board-empty");
+      if (state.jobs.length) {
+        empty.append(node("strong", "", "No opportunities match these filters"),
+          node("p", "", "Try a broader search or clear the filters to see your jobs."),
+          button("Clear filters", "button", () => byId("clear-board-filters").click()));
+      } else {
+        empty.append(node("strong", "", "Your opportunity board is empty"),
+          node("p", "", "Search public job sources or add a posting you found yourself."),
+          button("Find jobs", "button button-primary", () => {
+            byId("discovery-panel").open = true;
+            byId("discover-query").focus();
+          }),
+          button("Add a posting", "button", () => {
+            byId("show-add-job").click();
+            byId("add-job-form").querySelector?.('[name="title"]')?.focus();
+          }));
+      }
+      list.append(empty);
       return;
     }
     for (const job of jobs.slice(state.jobsPage * 10, (state.jobsPage + 1) * 10)) {

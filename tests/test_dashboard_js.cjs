@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, jobsOverride = null, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -244,7 +244,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, exportErro
         : [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")]),
     }));
     if (url === "/api/overview") return Promise.resolve(ok({
-      total_jobs: 2, submitted_recorded: 0, staged: 0, review_events_recent: 0,
+      total_jobs: totalJobs, submitted_recorded: 0, staged: 0, review_events_recent: 0,
     }));
     if (url === "/api/settings") return Promise.resolve(ok({
       profile_configured: true, facts_configured: true,
@@ -287,6 +287,35 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, exportErro
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("empty board guides discovery; filtered empty state can restore results", async () => {
+  const empty = createHarness({jobsOverride: [], totalJobs: 0});
+  await flush();
+  assert.match(empty.get("job-list").textContent, /Your opportunity board is empty/);
+  const discoveryButton = empty.get("job-list").children[0].children.find((child) => child.textContent === "Find jobs");
+  discoveryButton.click();
+  assert.equal(empty.get("discovery-panel").open, true);
+  assert.equal(empty.get("discover-query").focused, true);
+
+  const filtered = createHarness();
+  await flush();
+  filtered.get("search").value = "no such fictional role";
+  filtered.get("search").handlers.input({target: filtered.get("search")});
+  assert.match(filtered.get("job-list").textContent, /No opportunities match these filters/);
+  filtered.get("job-list").children[0].children.find((child) => child.textContent === "Clear filters").click();
+  assert.equal(filtered.get("search").value, "");
+  assert.match(filtered.get("job-list").textContent, /Role Alpha/);
+});
+
+test("board explicitly warns when older jobs are outside its filter scope", async () => {
+  const limited = createHarness({totalJobs: 501});
+  await flush();
+  assert.equal(limited.get("board-limit").hidden, false);
+  assert.match(limited.get("board-limit").textContent, /filters do not search older jobs/);
+  const complete = createHarness();
+  await flush();
+  assert.equal(complete.get("board-limit").hidden, true);
+});
 
 test("opportunity filters combine and old observations are never shown as listed", async () => {
   const fresh = {...fakeJob(ID_A, "Role Alpha"), location: "Austin, TX", source: "LinkedIn",
