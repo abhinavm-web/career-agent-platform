@@ -138,9 +138,12 @@ class H1BResearch:
         """
         try:
             from openpyxl import load_workbook
+            from openpyxl.xml import DEFUSEDXML
             import defusedxml  # noqa: F401 - enables openpyxl's safe XML parser
         except ImportError:
             raise ValueError('Install workbook support: pip install -e ".[lca]"') from None
+        if not DEFUSEDXML:
+            raise ValueError('Workbook import requires openpyxl XML protections enabled')
         path = Path(path)
         if path.suffix.casefold() != '.xlsx' or not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
             raise ValueError('Choose a local XLSX file no larger than 512 MB')
