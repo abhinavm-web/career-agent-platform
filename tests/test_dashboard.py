@@ -88,6 +88,22 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_ai_analysis_requires_consent_and_preserves_application_state(self):
+        from career_agent.ai import analyze
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='{"requirements":[]}') as complete:
+            result = self.call('GET', '/api/ai/routes')
+            self.assertEqual(result.status_code, 200)
+            self.assertNotIn('key_env', result.text)
+            url = f'/api/jobs/{self.job.id}/ai-analysis'
+            self.assertEqual(self.call('POST', url, {'route': 'local'}).status_code, 422)
+            complete.assert_not_called()
+            self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
+            with patch('career_agent.ai.complete', side_effect=ValueError('Provider unavailable')):
+                self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 422)
+            self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
+            self.assertFalse(self.packet_dir.exists())
+
     def test_uscis_refresh_failure_and_live_check_require_explicit_action(self):
         from test_uscis import hub_csv, URL
 

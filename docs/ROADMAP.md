@@ -31,6 +31,11 @@
 
 ## Phase 3 — Agent orchestration
 
+- [x] Optional explicit model routes: Anthropic, Azure OpenAI, AWS Bedrock, Ollama and LM Studio
+- [x] Read-only AI requirement analysis with exact quotes, verified fact references and per-request sharing consent
+- [ ] Live provider qualification and model-quality evaluation dataset
+- [ ] Durable AI run history, cancellation, token/cost budgets and health diagnostics
+
 - [ ] LangGraph typed state and checkpointing
 - [ ] Human interrupt before application transmission
 - [ ] Multi-source discovery, retry and duplicate clustering

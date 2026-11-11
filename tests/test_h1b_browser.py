@@ -1,5 +1,6 @@
 """Optional real Chromium coverage of H-1B configuration, import and research."""
 import os
+import json
 import socket
 import tempfile
 import threading
@@ -29,7 +30,10 @@ class H1BBrowserTests(unittest.TestCase):
                     'job_url': 'https://example.invalid/transfer', 'description': 'H-1B transfers only.'}),
                     Job.from_mapping({'company': 'Example Inc.', 'title': 'Unknown role',
                     'job_url': 'https://example.invalid/unknown', 'description': 'Python skills.'})])
-            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            from test_dashboard import fake_fact_bank
+            facts = root / 'facts.json'
+            facts.write_text(json.dumps(fake_fact_bank()))
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets', facts_path=facts))
             sock = socket.socket()
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
@@ -93,6 +97,26 @@ class H1BBrowserTests(unittest.TestCase):
                         page.get_by_role('button', name='H-1B research', exact=True).click()
                         expect(page.locator('#h1b-need')).to_have_value('new')
                         expect(page.locator('#h1b-unknown')).not_to_be_checked()
+                        with patch('career_agent.ai.routes', return_value={'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}), patch('career_agent.ai.complete', return_value=json.dumps({'requirements': [{'quote': 'Python skills.', 'fact_ids': ['experience-01'], 'reason': '<script>unsafe()</script>'}]})) as complete:
+                            page.locator('#ai-panel summary').click()
+                            page.locator('#ai-load').click()
+                            expect(page.locator('#ai-run')).to_be_enabled()
+                            options = page.locator('#ai-job option').all()
+                            selected = next(option.get_attribute('value') for option in options if 'Unknown role' in option.inner_text())
+                            page.locator('#ai-job').select_option(selected)
+                            page.locator('#ai-run').click()
+                            complete.assert_not_called()
+                            page.locator('#ai-consent').check()
+                            page.locator('#ai-run').click()
+                            expect(page.locator('#ai-results')).to_contain_text('<script>unsafe()</script>')
+                            self.assertEqual(page.locator('#ai-results script').count(), 0)
+                            expect(page.locator('#ai-consent')).not_to_be_checked()
+                            self.assertNotIn('Private fictional evidence', complete.call_args.args[1])
+                            with patch('career_agent.ai.complete', side_effect=ValueError('Provider unavailable')):
+                                page.locator('#ai-consent').check()
+                                page.locator('#ai-run').click()
+                                expect(page.locator('#ai-status')).to_contain_text('Provider unavailable')
+                                expect(page.locator('#ai-results')).to_be_empty()
                         self.assertEqual(errors, [])
                     finally:
                         browser.close()

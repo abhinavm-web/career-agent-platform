@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/assets/app.css">
   <script defer src="/assets/app.js"></script>
   <script defer src="/assets/h1b.js"></script>
+  <script defer src="/assets/ai.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -259,6 +260,20 @@
         </div>
       </section>
 
+      <details class="panel profile-editor" id="ai-panel">
+        <summary>AI requirement analyst</summary>
+        <p>Read-only suggestions from a model you choose. Sends the selected posting and verified fact statements; excludes your name and private evidence notes as separate fields. Statements themselves may contain personal information. No application changes.</p>
+        <button type="button" class="button" id="ai-load">Load configured models and jobs</button>
+        <form id="ai-form">
+          <label>Model route<select id="ai-route" required></select></label>
+          <label>Job (up to 500 saved jobs)<select id="ai-job" required></select></label>
+          <p id="ai-destination"></p>
+          <label><input type="checkbox" id="ai-consent" required> I consent to sending these statements and this posting to the selected provider. Cloud requests may incur charges. A local server may itself forward requests; check its configuration.</label>
+          <button type="submit" class="button button-primary" id="ai-run" disabled>Analyze requirements</button>
+        </form>
+        <p id="ai-status" role="status" aria-live="polite">Configure .local/ai.json to enable model routes. Keep API keys in server environment variables.</p>
+        <div id="ai-results"></div>
+      </details>
       <footer>Working product name · Local prototype · No automated submissions or hosted accounts</footer>
     </main>
   </div>
