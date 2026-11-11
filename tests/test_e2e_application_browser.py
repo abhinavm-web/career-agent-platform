@@ -69,6 +69,13 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#detail-panel')).to_contain_text('approved for manual submission', timeout=20000)
                         expect(page.locator('#detail-panel')).to_contain_text('Already applied on employer site?')
                         expect(page.locator('#count-submitted')).to_have_text('0')
+                        page.get_by_label('Employer confirmation reference').fill('fictional-receipt-123')
+                        page.get_by_label('I personally submitted this application externally.').check()
+                        page.get_by_role('button', name='Record confirmed submission').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Submission recorded from your attestation', timeout=20000)
+                        expect(page.locator('#count-submitted')).to_have_text('1')
+                        page.locator('#nav-tracker').click()
+                        expect(page.locator('#tracker-screen')).to_contain_text('Data Analyst')
                     finally:
                         browser.close()
             finally:
