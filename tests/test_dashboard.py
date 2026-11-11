@@ -253,6 +253,26 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('POST', '/api/h1b/import', {**data, 'csv': data['csv'] + '\n"unterminated'}).status_code, 422)
         self.assertEqual(self.call('GET', '/api/h1b').json()['coverage']['records'], 1)
 
+    def test_h1b_employer_association_endpoint(self):
+        from test_h1b import lca_csv
+        from career_agent.h1b import DOL_URL
+        self.call('POST', '/api/h1b/import', {'csv': lca_csv([{'EMPLOYER_NAME': 'Fictional Legal LLC'}]),
+                  'source_url': DOL_URL, 'captured_on': '2025-06-01', 'acknowledged': True})
+        path = f'/api/jobs/{self.job.id}/h1b/employer'
+        data = {'employer': 'Fictional Legal LLC', 'source_note': 'Checked careers page',
+                'expected_revision': 0, 'acknowledged': True}
+        self.assertEqual(self.call('PUT', path, data, token='bad').status_code, 403)
+        self.assertEqual(self.call('PUT', path, {**data, 'acknowledged': False}).status_code, 422)
+        self.assertEqual(self.call('PUT', path, {**data, 'employer': 'Missing'}).status_code, 422)
+        self.assertEqual(self.call('PUT', '/api/jobs/' + 'f' * 16 + '/h1b/employer', data).status_code, 404)
+        original = self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()
+        result = self.call('PUT', path, data)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.json()['policy'], original['policy'])
+        self.assertEqual(result.json()['history']['recent_certified_cases'], 1)
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['employer_association']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(self.call('PUT', path, data).status_code, 422)
+
     def test_tracker_export_is_private_download_and_excludes_career_files(self):
         from career_agent.crm import ApplicationCRM
 

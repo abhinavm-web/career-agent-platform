@@ -115,7 +115,65 @@
     card.append(node("h3", job.title + " · " + job.company));
     if (job.location) card.append(node("p", job.location));
     card.append(node("p", job.policy.replaceAll("_", " ") + " · " + job.reason));
-    card.append(node("p", "Recent exact-name certified LCA cases in local imports: " + job.history.recent_certified_cases + ". Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
+    const association = job.employer_association;
+    card.append(node("p", "Recent certified LCA cases for " + job.history.employer + " in local imports: " + job.history.recent_certified_cases + ". Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
+    if (association?.employer) card.append(node("p", "Candidate-provided employer association, not independently verified · " + association.employer + " · " + association.source_note + " · " + association.changed_at + ". Confirm the actual legal entity before relying on these records."));
+    const historyDetails = node("details");
+    historyDetails.append(node("summary", "View imported employer records"), companyCard(job.history));
+    card.append(historyDetails);
+    const associationDetails = node("details");
+    associationDetails.append(node("summary", "Associate an imported legal employer"));
+    associationDetails.append(node("p", "Use an exact legal employer name from imported DOL or USCIS records after checking the entity. Your association is a research note, not proof of identity or sponsorship."));
+    const associationForm = node("form");
+    associationForm.className = "crm-form";
+    const employerLabel = node("label", "Imported legal employer name");
+    employerLabel.className = "field";
+    const employerInput = node("input"); employerInput.required = true; employerInput.maxLength = 300; employerInput.value = association?.employer || ""; employerLabel.append(employerInput);
+    const noteLabel = node("label", "How you checked the association");
+    noteLabel.className = "field";
+    const noteInput = node("input"); noteInput.required = true; noteInput.maxLength = 500; noteInput.placeholder = "For example, employer careers page and date"; noteLabel.append(noteInput);
+    const confirmLabel = node("label");
+    confirmLabel.className = "check-label";
+    const confirm = node("input"); confirm.type = "checkbox"; confirm.required = true;
+    confirmLabel.append(confirm, document.createTextNode(" I understand this association is not independently verified."));
+    const save = node("button", "Save association"); save.type = "submit"; save.className = "button";
+    const message = node("p"); message.setAttribute("role", "status");
+    associationForm.append(employerLabel, noteLabel, confirmLabel, save, message);
+    associationForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (save.disabled || !confirm.checked) return;
+      save.disabled = true;
+      try {
+        const updated = await api("/api/jobs/" + job.id + "/h1b/employer", "PUT", {
+          employer: employerInput.value, source_note: noteInput.value,
+          expected_revision: association?.revision || 0, acknowledged: true
+        });
+        if (!card.isConnected) return;
+        if (observationTimers.has(observation)) clearTimeout(observationTimers.get(observation));
+        observationTimers.delete(observation);
+        card.replaceWith(jobCard(updated));
+      } catch (error) { message.textContent = error.message; }
+      finally { save.disabled = false; }
+    });
+    if (association?.employer) {
+      const remove = node("button", "Remove association"); remove.type = "button"; remove.className = "button";
+      remove.addEventListener("click", async () => {
+        if (remove.disabled || !window.confirm("Remove this candidate-provided association? The job will again use its posted company name.")) return;
+        remove.disabled = true;
+        try {
+          const updated = await api("/api/jobs/" + job.id + "/h1b/employer", "PUT", {
+            employer: "", source_note: "Association removed by candidate", expected_revision: association.revision, acknowledged: true
+          });
+          if (!card.isConnected) return;
+          if (observationTimers.has(observation)) clearTimeout(observationTimers.get(observation));
+          observationTimers.delete(observation);
+          card.replaceWith(jobCard(updated));
+        } catch (error) { message.textContent = error.message; }
+        finally { remove.disabled = false; }
+      });
+      associationForm.append(remove);
+    }
+    associationDetails.append(associationForm); card.append(associationDetails);
     for (const quote of job.quotes) card.append(node("blockquote", quote));
     card.append(link("Check original job posting", job.url));
     const observation = node("div");

@@ -83,6 +83,36 @@ class ResearchTests(unittest.TestCase):
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
 
+    def test_job_employer_association_is_explicit_versioned_and_reversible(self):
+        job = Job.from_mapping({'company': 'Fictional Brand', 'title': 'Engineer',
+                                'job_url': 'https://example.invalid/job', 'description': 'No visa sponsorship.'})
+        self.store.add_jobs([job])
+        self.ingest([{'EMPLOYER_NAME': 'Fictional Legal LLC'}])
+        self.assertEqual(self.research.job(job)['history']['recent_certified_cases'], 0)
+        data = {'employer': ' fictional   legal llc ', 'source_note': 'Careers page checked',
+                'expected_revision': 0, 'acknowledged': True}
+        for bad in ({**data, 'acknowledged': False}, {**data, 'source_note': ' '},
+                    {**data, 'employer': 'Unknown LLC'}, {**data, 'expected_revision': 1}):
+            with self.assertRaises(ValueError):
+                self.research.link_employer(job, bad)
+        result = self.research.link_employer(job, data)
+        self.assertEqual(result['history']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(result['history']['recent_certified_cases'], 1)
+        self.assertEqual(result['policy'], 'excluded')
+        self.assertEqual(result['employer_association']['revision'], 1)
+        with self.assertRaisesRegex(ValueError, 'reload'):
+            self.research.link_employer(job, data)
+        reopened = Store(Path(self.tmp.name) / 'test.sqlite3')
+        try:
+            self.assertEqual(H1BResearch(reopened).job(job)['employer_association']['source_note'], 'Careers page checked')
+        finally:
+            reopened.connection.close()
+        removed = self.research.link_employer(job, {**data, 'employer': '', 'expected_revision': 1})
+        self.assertEqual(removed['history']['employer'], 'Fictional Brand')
+        self.assertEqual(removed['history']['recent_certified_cases'], 0)
+        self.assertEqual(removed['employer_association']['revision'], 2)
+        self.assertEqual(self.store.connection.execute('SELECT COUNT(*) FROM h1b_employer_links').fetchone()[0], 2)
+
     def test_original_workbook_import_preserves_dates_and_rolls_back_invalid_rows(self):
         try:
             from openpyxl import Workbook

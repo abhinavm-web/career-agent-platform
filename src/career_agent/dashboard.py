@@ -426,6 +426,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
         with Store(config.db_path) as store:
             return H1BResearch(store).job(_get_job(store, job_id))
 
+    @app.put("/api/jobs/{job_id}/h1b/employer")
+    async def h1b_link_employer(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return H1BResearch(store).link_employer(_get_job(store, job_id), data)
+
     @app.get("/api/settings")
     def settings():
         workspace = active_workspace()
