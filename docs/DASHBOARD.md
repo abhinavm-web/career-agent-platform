@@ -18,7 +18,7 @@ All private candidate files should be outside the public repository or under a g
 
 ## What works
 
-- View up to 500 locally tracked jobs, search/filter by title/company, match relevance and sponsorship flags.
+- View locally tracked jobs in bounded batches, search/filter by title/company, match relevance and sponsorship flags.
 - Track a new job by pasting its published URL and details.
 - Draft a Markdown resume and cover note containing **only candidate-attested statements**.
 - Open a draft in the UI, inspect text and source-aware review checklist, then explicitly approve or reject.
@@ -30,7 +30,7 @@ All private candidate files should be outside the public repository or under a g
 
 JobSpy discovery is available through the CLI, the Opportunity board's **Find jobs with JobSpy** form, and opted-in recurring searches under **Saved searches**. Each dashboard search requires explicit acknowledgement that its query and location will be sent to external sources. Profile facts, recruiter contacts and private notes are not included in discovery requests. The app does not submit applications or answer visa screening questions.
 
-The opportunity board loads saved jobs in stable batches and can combine location, source, confirmed remote, sponsorship evidence, and posting observation filters over the loaded set. To bound browser memory, loading stops at 10,000 jobs or 32 Mi characters of JSON; a warning states when older jobs are excluded. Job additions during a load are included on the next refresh. Other features that use the default jobs API, including the AI job picker, still receive at most 500 jobs. Open a job to explicitly check a supported Greenhouse or Lever posting. The saved observation shows its date and source; after 24 hours, or if its date is invalid or in the future, availability is treated as unknown. A listed observation does not guarantee that the employer is hiring or offers sponsorship, and no live check runs merely by loading the board.
+The opportunity board loads saved jobs in stable batches and can combine location, source, confirmed remote, sponsorship evidence, and posting observation filters over the loaded set. To bound browser memory, loading stops at 10,000 jobs or 32 Mi characters of JSON; a warning states when older jobs are excluded. Job additions during a load are included on the next refresh. The AI job picker also loads in batches, up to 10,000 jobs, and warns if older jobs are excluded. Other callers using the default jobs API receive at most 500 jobs per page. Open a job to explicitly check a supported Greenhouse or Lever posting. The saved observation shows its date and source; after 24 hours, or if its date is invalid or in the future, availability is treated as unknown. A listed observation does not guarantee that the employer is hiring or offers sponsorship, and no live check runs merely by loading the board.
 
 Install discovery with `python -m pip install -e ".[web,jobspy]"`, restart the server, then enter a role, location and requested results per source (1–100). The manual JobSpy adapter searches Indeed, LinkedIn and ZipRecruiter for US jobs. Returned jobs are normalized and deduplicated by the existing job store. Manual searches run in an isolated worker with a two-minute deadline; a timeout or server shutdown stops the worker without importing partial results. Saved automatic searches have separate source selection, stricter limits and failure backoff; see [Automation](AUTOMATION.md).
 
