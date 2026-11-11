@@ -15,6 +15,55 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_navigation_pagination_and_contextual_ai_prerequisite(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db = root / 'test.sqlite3'
+            with Store(db) as store:
+                store.add_jobs([Job.from_mapping({'company': 'Fictional Co', 'title': f'Role {i:02}',
+                    'job_url': f'https://example.invalid/jobs/{i}', 'description': 'Python skills.'}) for i in range(12)])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#profile-prompt')).to_be_visible()
+                        expect(page.locator('#sort-label')).to_have_text('Recently added')
+                        expect(page.locator('#jobs-page')).to_have_text('Page 1 of 2')
+                        self.assertEqual(page.locator('#job-list button').count(), 10)
+                        page.locator('#jobs-next').click()
+                        expect(page.locator('#jobs-page')).to_have_text('Page 2 of 2')
+                        self.assertEqual(page.locator('#job-list button').count(), 2)
+                        page.locator('#job-list button').first.click()
+                        selected = page.locator('#job-list button').first.get_attribute('aria-label')
+                        with patch('career_agent.ai.routes', return_value={'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}):
+                            page.get_by_role('button', name='Analyze with AI').click()
+                            expect(page.locator('#ai-screen')).to_be_visible()
+                            expect(page.locator('#ai-status')).to_contain_text('Verify at least one career fact')
+                            expect(page.locator('#ai-run')).to_be_disabled()
+                            self.assertIn(page.locator('#ai-job option:checked').inner_text().split(' — ')[1], selected)
+                            page.locator('#ai-open-profile').click()
+                            expect(page.locator('#profile-screen')).to_be_visible()
+                            expect(page.locator('#ai-screen')).to_be_hidden()
+                            expect(page.locator('#automation-screen')).to_be_hidden()
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_import_preferences_search_and_safe_rendering(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
@@ -86,8 +135,8 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-results')).to_contain_text('does not meet a new-sponsorship preference')
                         expect(page.locator('#h1b-results')).to_contain_text('<script>throw new Error')
                         expect(page.locator('#h1b-results')).to_contain_text('initial approvals/denials: 10/1')
-                        page.get_by_role('button', name='Check live ATS posting').click()
-                        expect(page.locator('#h1b-results')).to_contain_text('Unsupported posting URL')
+                        expect(page.get_by_role('button', name='Check live ATS posting')).to_be_disabled()
+                        expect(page.locator('#h1b-results')).to_contain_text('Check this original posting manually')
                         self.assertEqual(page.locator('#h1b-results script').count(), 0)
                         page.locator('#h1b-query').fill('Unmatched Company')
                         expect(page.locator('#h1b-results')).to_be_empty()
@@ -98,8 +147,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-need')).to_have_value('new')
                         expect(page.locator('#h1b-unknown')).not_to_be_checked()
                         with patch('career_agent.ai.routes', return_value={'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}), patch('career_agent.ai.complete', return_value=json.dumps({'requirements': [{'quote': 'Python skills.', 'fact_ids': ['experience-01'], 'reason': '<script>unsafe()</script>'}]})) as complete:
-                            page.locator('#ai-panel summary').click()
-                            page.locator('#ai-load').click()
+                            page.get_by_role('button', name='AI analysis', exact=True).click()
                             expect(page.locator('#ai-run')).to_be_enabled()
                             options = page.locator('#ai-job option').all()
                             selected = next(option.get_attribute('value') for option in options if 'Unknown role' in option.inner_text())
@@ -118,7 +166,7 @@ class H1BBrowserTests(unittest.TestCase):
                                 expect(page.locator('#ai-status')).to_contain_text('Provider unavailable')
                                 expect(page.locator('#ai-results')).to_be_empty()
                         with patch('career_agent.automation.fetch', return_value=[]):
-                            page.locator('#automation-panel summary').click()
+                            page.get_by_role('button', name='Saved searches', exact=True).click()
                             page.locator('#schedule-query').fill('Fictional AI lead')
                             page.locator('#schedule-consent').check()
                             page.locator('#schedule-save').click()
@@ -126,7 +174,7 @@ class H1BBrowserTests(unittest.TestCase):
                             page.locator('#automation-searches').get_by_role('button', name='Pause', exact=True).click()
                             expect(page.locator('#automation-searches')).to_contain_text('paused')
                             page.reload()
-                            page.locator('#automation-panel summary').click()
+                            page.get_by_role('button', name='Saved searches', exact=True).click()
                             expect(page.locator('#automation-searches')).to_contain_text('paused')
                             page.get_by_role('button', name='Remove saved search', exact=True).click()
                             expect(page.locator('#automation-searches')).to_be_empty()

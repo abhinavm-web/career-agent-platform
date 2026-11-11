@@ -25,14 +25,20 @@
     if (busy) return;
     busy = true; el("ai-load").disabled = true; el("ai-run").disabled = true;
     try {
-      const [models, jobs] = await Promise.all([api("/api/ai/routes"), api("/api/jobs")]);
+      const [models, jobs, settings] = await Promise.all([api("/api/ai/routes"), api("/api/jobs"), api("/api/settings")]);
       routes = models.routes;
       for (const id of ["ai-route", "ai-job"]) el(id).replaceChildren();
       for (const r of routes) { const n = text("option", `${r.route} (${r.provider})`); n.value = r.route; el("ai-route").append(n); }
       for (const j of jobs.jobs) { const n = text("option", `${j.company} — ${j.title}`); n.value = j.id; el("ai-job").append(n); }
+      const requestedJob = el("ai-job").dataset.requestedJob;
+      if (requestedJob && jobs.jobs.some((job) => job.id === requestedJob)) el("ai-job").value = requestedJob;
+      delete el("ai-job").dataset.requestedJob;
       changed();
-      el("ai-run").disabled = !routes.length || !jobs.jobs.length;
-      el("ai-status").textContent = routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.";
+      const ready = settings.facts_configured;
+      el("ai-open-profile").hidden = ready;
+      el("ai-run").disabled = !routes.length || !jobs.jobs.length || !ready;
+      el("ai-status").textContent = !ready ? "Verify at least one career fact before analysis." :
+        (routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.");
     } catch (e) { el("ai-status").textContent = e.message; }
     finally { busy = false; el("ai-load").disabled = false; }
   });
@@ -56,6 +62,9 @@
         el("ai-results").append(section);
       }
     } catch (e) { el("ai-status").textContent = e.message; }
-    finally { busy = false; ids.forEach((id) => { el(id).disabled = false; }); el("ai-consent").checked = false; }
+    finally {
+      busy = false; ids.forEach((id) => { el(id).disabled = false; }); el("ai-consent").checked = false;
+      if (el("ai-job").dataset.requestedJob) el("ai-load").click();
+    }
   });
 })();

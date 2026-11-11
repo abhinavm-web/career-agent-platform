@@ -17,14 +17,16 @@
   <div id="app" data-session="__SESSION_TOKEN__">
     <aside class="rail" aria-label="Workspace navigation">
       <div class="identity">
-        <div class="logo" aria-hidden="true">C<span>A</span></div>
+        <div class="logo" aria-hidden="true">CA</div>
         <div class="identity-text"><strong>Career Agent</strong><small>LOCAL WORKSPACE</small></div>
       </div>
       <div class="rail-divider"></div>
       <nav class="navigation" aria-label="Main">
         <button class="nav-item active" id="nav-jobs" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
         <button class="nav-item" id="nav-tracker" type="button"><span class="nav-glyph" aria-hidden="true">▤</span> Application tracker</button>
-        <button class="nav-item" id="nav-h1b" type="button">H-1B research</button>
+        <button class="nav-item" id="nav-h1b" type="button"><span class="nav-glyph" aria-hidden="true">◇</span> H-1B research</button>
+        <button class="nav-item" id="nav-automation" type="button"><span class="nav-glyph" aria-hidden="true">◷</span> Saved searches</button>
+        <button class="nav-item" id="nav-ai" type="button"><span class="nav-glyph" aria-hidden="true">✦</span> AI analysis</button>
         <button class="nav-item" id="nav-activity" type="button"><span class="nav-glyph" aria-hidden="true">☷</span> Review history</button>
         <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
       </nav>
@@ -48,16 +50,9 @@
       </header>
 
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
-      <section class="welcome">
-        <div>
-          <span class="eyebrow">CAREER INTELLIGENCE / CONTROL CENTER</span>
-          <h1>Find the right opportunity.<br><em>Stay in control.</em></h1>
-          <p>Discover, evaluate and prepare applications backed by verified career facts. Every submission remains your decision.</p>
-        </div>
-        <div class="welcome-art" aria-hidden="true"><div class="orbital orbital-outer"></div><div class="orbital orbital-inner"></div><div class="orb-core">01</div></div>
-      </section>
+      <h1 class="sr-only">Career Agent workspace</h1>
 
-      <section class="metrics" aria-label="Workspace snapshot">
+      <section class="metrics" aria-label="Workspace snapshot" hidden>
         <div class="metric"><small>OPPORTUNITIES</small><strong id="count-jobs">—</strong><span>Tracked job postings</span></div>
         <div class="metric"><small>STAGED</small><strong id="count-staged">—</strong><span>Waiting for submission</span></div>
         <div class="metric"><small>SUBMISSIONS</small><strong id="count-submitted">—</strong><span>Manually confirmed</span></div>
@@ -66,11 +61,13 @@
 
       <section id="jobs-screen" class="screen">
         <div class="section-heading">
-          <div><span class="eyebrow">PIPELINE</span><h2>Opportunity board</h2></div>
+          <div><span class="eyebrow">DISCOVER</span><h2>Opportunity board</h2><p class="section-description">Find, evaluate and prepare for roles that fit your goals.</p></div>
           <button id="show-add-job" class="button button-primary" type="button">+ Add opportunity</button>
         </div>
 
-        <details class="panel profile-editor">
+        <div id="profile-prompt" class="setup-banner" hidden><div><strong>Complete your career profile</strong><p>Add your goals for matching. Verify a career fact to enable AI analysis and application drafts.</p></div><button type="button" class="button" id="open-profile">Set up profile</button></div>
+
+        <details class="panel profile-editor discovery-quick">
           <summary>Find jobs with JobSpy</summary>
           <form id="discover-form">
             <p class="muted">Search Indeed, LinkedIn and ZipRecruiter for US roles. Only your search query and location are sent to job sources; your career facts and notes are not included. Returned jobs are added to this local board. Sources may return partial or no results.</p>
@@ -111,8 +108,9 @@
                 </select>
               </label>
             </div>
-            <div class="list-count"><span id="visible-count">0 opportunities</span><span>Best match first</span></div>
+            <div class="list-count"><span id="visible-count">0 opportunities</span><span id="sort-label">Recently added</span></div>
             <div id="job-list" class="job-list" aria-label="Job postings"><div class="loading">Loading your local jobs…</div></div>
+            <div class="pagination" aria-label="Opportunity pages"><button id="jobs-prev" class="button" type="button">Previous</button><span id="jobs-page" aria-live="polite"></span><button id="jobs-next" class="button" type="button">Next</button></div>
           </div>
           <div id="detail-panel" class="detail-panel panel" aria-label="Job details">
             <div class="empty-detail"><span class="empty-icon" aria-hidden="true">◎</span><h3>Select an opportunity</h3><p>Inspect the job, review a truthful application draft, and track your decision.</p></div>
@@ -261,6 +259,8 @@
         </div>
       </section>
 
+      <section id="automation-screen" class="screen" hidden>
+      <div class="section-heading"><div><span class="eyebrow">DISCOVERY</span><h2>Saved searches</h2><p class="section-description">Manage automatic job searches and review workflow activity.</p></div></div>
       <details class="panel profile-editor" id="automation-panel">
         <summary>Automatic job discovery and workflow runs</summary>
         <p>Save a search once. JobSpy pulls jobs on schedule while this app runs, including when your browser is closed. Overdue searches run after restart. Existing jobs are preserved and duplicates skipped. Source availability and terms vary; no access-control bypass is used.</p>
@@ -285,20 +285,25 @@
         <p>Create a draft on the opportunity board to start a durable workflow. Review pauses survive restarts. Failed local workflows can be resumed if their inputs are unchanged.</p>
         <div id="workflow-runs"></div>
       </details>
+      </section>
+      <section id="ai-screen" class="screen" hidden>
+      <div class="section-heading"><div><span class="eyebrow">INTELLIGENCE</span><h2>AI analysis</h2><p class="section-description">Compare a posting with your verified career facts.</p></div></div>
       <details class="panel profile-editor" id="ai-panel">
         <summary>AI requirement analyst</summary>
         <p>Read-only suggestions from a model you choose. Sends the selected posting and verified fact statements; excludes your name and private evidence notes as separate fields. Statements themselves may contain personal information. No application changes.</p>
-        <button type="button" class="button" id="ai-load">Load configured models and jobs</button>
+        <button type="button" class="button" id="ai-load">Refresh models and jobs</button>
         <form id="ai-form">
           <label>Model route<select id="ai-route" required></select></label>
           <label>Job (up to 500 saved jobs)<select id="ai-job" required></select></label>
           <p id="ai-destination"></p>
-          <label><input type="checkbox" id="ai-consent" required> I consent to sending these statements and this posting to the selected provider. Cloud requests may incur charges. A local server may itself forward requests; check its configuration.</label>
+          <label class="check-label"><input type="checkbox" id="ai-consent" required> I consent to sending these statements and this posting to the selected provider. Cloud requests may incur charges. A local server may itself forward requests; check its configuration.</label>
           <button type="submit" class="button button-primary" id="ai-run" disabled>Analyze requirements</button>
         </form>
         <p id="ai-status" role="status" aria-live="polite">Configure .local/ai.json to enable model routes. Keep API keys in server environment variables.</p>
+        <button type="button" class="button" id="ai-open-profile" hidden>Set up career profile</button>
         <div id="ai-results"></div>
       </details>
+      </section>
       <footer>Working product name · Local prototype · No automated submissions or hosted accounts</footer>
     </main>
   </div>
