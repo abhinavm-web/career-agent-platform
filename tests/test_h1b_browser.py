@@ -160,6 +160,9 @@ class H1BBrowserTests(unittest.TestCase):
                             self.assertEqual(page.locator('#ai-results script').count(), 0)
                             expect(page.locator('#ai-consent')).not_to_be_checked()
                             self.assertNotIn('Private fictional evidence', complete.call_args.args[1])
+                            page.get_by_role('button', name='Application tracker', exact=True).click()
+                            page.get_by_role('button', name='AI analysis', exact=True).click()
+                            expect(page.locator('#ai-results')).to_contain_text('<script>unsafe()</script>')
                             with patch('career_agent.ai.complete', side_effect=ValueError('Provider unavailable')):
                                 page.locator('#ai-consent').check()
                                 page.locator('#ai-run').click()
