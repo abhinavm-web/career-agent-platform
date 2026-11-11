@@ -123,6 +123,22 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
             'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 409)
 
+    def test_legacy_packet_review_does_not_require_configured_profile(self):
+        from career_agent.application import build_packet, save_packet
+        from career_agent.candidate import FactBank
+        from career_agent.dashboard import create_app, DashboardConfig
+        from fastapi.testclient import TestClient
+        packet = build_packet(self.job, CandidateProfile.load(self.profile_path), FactBank.parse(fake_fact_bank()))
+        save_packet(packet, self.packet_dir / (self.job.id + '.json'))
+        app = create_app(DashboardConfig(db_path=self.db, packet_dir=self.packet_dir))
+        with TestClient(app, base_url='http://localhost') as client:
+            landing = client.get('/')
+            token = re.search(r'data-session="([^"]+)"', landing.text).group(1)
+            response = client.post(f'/api/jobs/{self.job.id}/decision', headers={'X-Session-Token': token},
+                json={'approved': True, 'acknowledged': True, 'packet_sha256': packet['packet_sha256']})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['decision'], 'approved_for_manual_submission')
+
     def test_uscis_refresh_failure_and_live_check_require_explicit_action(self):
         from test_uscis import hub_csv, URL
 

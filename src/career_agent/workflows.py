@@ -114,7 +114,7 @@ class Workflows:
                     store.connection.execute("UPDATE workflow_runs SET status='failed',error='Workflow failed; retry after checking inputs and dependencies' WHERE run_id=?", (run_id,))
                 raise
 
-    def review(self, job_id, fingerprint, approved, state):
+    def review(self, job_id, fingerprint, approved, get_state):
         with Store(self.db) as store:
             row = store.connection.execute('SELECT run_id,packet_sha256 FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1',
                                            (job_id,)).fetchone()
@@ -122,5 +122,5 @@ class Workflows:
             return False  # Legacy CLI packets retain their existing review path.
         if row['packet_sha256'] != fingerprint:
             raise ValueError('Workflow publication is incomplete or superseded; resume the latest run or regenerate')
-        self.advance(row['run_id'], signature(state), {'packet_sha256': fingerprint, 'approved': approved, 'reviewed': True})
+        self.advance(row['run_id'], signature(get_state()), {'packet_sha256': fingerprint, 'approved': approved, 'reviewed': True})
         return True

@@ -151,7 +151,7 @@ class DurableWorkflowTests(unittest.TestCase):
         with Store(self.db) as store, store.connection:
             store.connection.execute('UPDATE workflow_runs SET packet_sha256=NULL,status=\'queued\' WHERE run_id=?', (run['run_id'],))
         with self.assertRaises(ValueError):
-            self.manager.review(self.job.id, run['packet']['packet_sha256'], True, self.state)
+            self.manager.review(self.job.id, run['packet']['packet_sha256'], True, lambda: self.state)
         recovered = self.manager.advance(run['run_id'], signature(self.state))
         self.assertEqual(recovered['status'], 'awaiting_human_review')
 

@@ -582,7 +582,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, current["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale packet; reload and review the latest draft")
-        handled = await run_in_threadpool(workflows.review, job_id, fingerprint, data['approved'], current_workflow_inputs(job_id))
+        handled = await run_in_threadpool(workflows.review, job_id, fingerprint, data['approved'], lambda: current_workflow_inputs(job_id))
         with Store(config.db_path) as store:
             result = store.latest_review(job_id, fingerprint) if handled else store.record_review(job_id, fingerprint, approved=data["approved"])
         return {**result, "submission_sent": False}
