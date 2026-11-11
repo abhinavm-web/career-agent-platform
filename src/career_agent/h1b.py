@@ -15,6 +15,57 @@ from .storage import Store
 
 DOL_URL = 'https://www.dol.gov/agencies/eta/foreign-labor/performance'
 STATUSES = {'certified', 'certified-withdrawn', 'denied', 'withdrawn'}
+XLSX_MAX_ROW = 1048576
+XLSX_MAX_COLUMN = 1024
+
+
+def _xlsx_dimensions(workbook, sheet):
+    """Inspect actual cell coordinates; worksheet dimension metadata can lie."""
+    from defusedxml.sax import make_parser
+    from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+    from xml.sax.handler import ContentHandler, feature_namespaces
+    namespace = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+    class Limits(ContentHandler):
+        def __init__(self):
+            self.max_row = self.max_column = self.row_number = self.column_number = 0
+
+        def startElementNS(self, name, _qualified_name, attributes):
+            if name == (namespace, 'row'):
+                raw = attributes.get((None, 'r'))
+                if raw is not None and (not raw.isascii() or not raw.isdigit() or len(raw) > 7):
+                    raise ValueError('Invalid worksheet row number')
+                number = int(raw) if raw is not None else self.row_number + 1
+                if not self.row_number < number <= XLSX_MAX_ROW:
+                    raise ValueError('Worksheet row numbers must be ordered and within Excel limits')
+                self.row_number, self.column_number = number, 0
+                self.max_row = number
+            elif name == (namespace, 'c'):
+                raw = attributes.get((None, 'r'))
+                previous_column = self.column_number
+                if raw:
+                    try:
+                        column, number = coordinate_from_string(raw)
+                        self.column_number = column_index_from_string(column)
+                    except (ValueError, TypeError):
+                        raise ValueError('Invalid worksheet cell coordinate') from None
+                    if number != self.row_number:
+                        raise ValueError('Worksheet cell does not match its row')
+                else:
+                    self.column_number += 1
+                if not 1 <= self.column_number <= XLSX_MAX_COLUMN:
+                    raise ValueError('Workbook has too many columns')
+                if self.column_number <= previous_column:
+                    raise ValueError('Worksheet cell columns must be ordered and distinct')
+                self.max_column = max(self.max_column, self.column_number)
+
+    limits = Limits()
+    parser = make_parser()
+    parser.setFeature(feature_namespaces, True)
+    parser.setContentHandler(limits)
+    with workbook._archive.open(sheet._worksheet_path) as stream:
+        parser.parse(stream)
+    return limits.max_row, limits.max_column
 
 
 def fiscal_year(today=None):
@@ -172,24 +223,26 @@ class H1BResearch:
             fields = required + optional
             matches = []
             for sheet in workbook.worksheets:
-                if sheet.max_column is not None and sheet.max_column > 1024:
-                    raise ValueError('Workbook has too many columns')
-                header = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
+                max_row, max_column = _xlsx_dimensions(workbook, sheet)
+                if not max_row or not max_column:
+                    continue
+                sheet.reset_dimensions()
+                header = next(sheet.iter_rows(min_row=1, max_row=1, max_col=max_column, values_only=True), ())
                 positions = {field: [index for index, value in enumerate(header) if value == field] for field in fields}
                 if all(len(positions[field]) == 1 for field in required):
                     if any(len(positions[field]) > 1 for field in fields):
                         raise ValueError('Workbook has duplicate LCA field headers')
-                    matches.append((sheet, positions))
+                    matches.append((sheet, positions, max_row, max_column))
             if len(matches) != 1:
                 raise ValueError('Workbook must contain exactly one LCA disclosure sheet with the required headers')
-            sheet, positions = matches[0]
+            sheet, positions, max_row, max_column = matches[0]
             def lines():
                 buffer = io.StringIO(newline='')
                 writer = csv.writer(buffer)
                 def line(values):
                     buffer.seek(0); buffer.truncate(0); writer.writerow(values); return buffer.getvalue()
                 yield line(fields)
-                for row in sheet.iter_rows(min_row=2, values_only=True):
+                for row in sheet.iter_rows(min_row=2, max_row=max_row, max_col=max_column, values_only=True):
                     values = [row[positions[field][0]] if positions[field] and positions[field][0] < len(row) else None for field in fields]
                     if all(value is None for value in values):
                         continue

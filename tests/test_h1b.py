@@ -3,6 +3,7 @@ import csv
 import io
 import tempfile
 import unittest
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -164,6 +165,40 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('"added": 1', output.getvalue())
         self.assertEqual(list(Path(self.tmp.name).glob('*.csv')), [])
+
+    def test_workbook_dimensions_are_verified_against_actual_cells(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'fictional.xlsx'
+        original = Path(self.tmp.name) / 'original.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        sheet.append(['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15'])
+        sheet.append(['I-200-25123-000002', 'Fictional Employer', 'H-1B', 'Denied', '2025-04-16'])
+        book.save(original); book.close()
+        def rewrite(transform):
+            with zipfile.ZipFile(original) as source, zipfile.ZipFile(path, 'w') as target:
+                for entry in source.infolist():
+                    data = source.read(entry.filename)
+                    if entry.filename == 'xl/worksheets/sheet1.xml':
+                        data = transform(data)
+                    target.writestr(entry, data)
+        for dimension in (b'<dimension ref="A1:A1"/>', b'', b'<dimension ref="A1:XFD999999999"/>'):
+            rewrite(lambda data: data.replace(b'<dimension ref="A1:E3"/>', dimension))
+            result = self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+            self.assertEqual(result['added'] + result['duplicates'], 2)
+        before = self.research.coverage()['records']
+        for mutate in (
+            lambda data: data.replace(b'<row r="3"', b'<row r="1048577"'),
+            lambda data: data.replace(b'r="E3"', b'r="AMK3"'),
+        ):
+            rewrite(mutate)
+            with self.assertRaises(ValueError):
+                self.research.import_xlsx(path, DOL_URL, '2025-06-02')
+            self.assertEqual(self.research.coverage()['records'], before)
 
     def test_opportunities_need_no_filings_and_respect_need_and_pagination(self):
         descriptions = ['Visa sponsorship is available.', 'H-1B transfers only.',
