@@ -112,7 +112,6 @@ def create_app(config: DashboardConfig) -> FastAPI:
             if request.method not in {"GET", "HEAD"}:
                 if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
                     return JSONResponse({"detail": "Use application/json"}, status_code=415)
-                body = await request.body()
                 limit = (
                     10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
                     3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
@@ -120,8 +119,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     if request.url.path == "/api/workspace" and request.method == "PUT"
                     else API_BODY_LIMIT
                 )
-                if len(body) > limit:
-                    return JSONResponse({"detail": "Request too large"}, status_code=413)
+                chunks = []
+                size = 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > limit:
+                        return JSONResponse({"detail": "Request too large"}, status_code=413)
+                    chunks.append(chunk)
+                # Starlette replays the cached body to the endpoint after middleware.
+                request._body = b"".join(chunks)
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -932,6 +938,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
             return ApplicationCRM(store).update_followup(
                 followup_id, due_date=data.get("due_date"),
             )
+
+    @app.post("/api/crm/followups/{followup_id}/cancel")
+    async def crm_cancel_followup(followup_id: int, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get("acknowledged") is not True:
+            raise HTTPException(status_code=422, detail="Explicit cancellation confirmation is required")
+        with Store(config.db_path) as store:
+            return ApplicationCRM(store).update_followup(followup_id, cancel=True)
 
     return app
 

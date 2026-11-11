@@ -1224,7 +1224,9 @@
       const row = node("div", "crm-record");
       row.append(node("strong", "", followup.title));
       row.append(node("small", "", followup.due_date + (followup.contact_name ? " · " + followup.contact_name : "")));
-      if (followup.completed_at) {
+      if (followup.cancelled) {
+        row.append(chip("Cancelled", "muted"));
+      } else if (followup.completed_at) {
         row.append(chip("Completed", "teal"));
       } else {
         const buttons = node("div", "button-row");
@@ -1232,6 +1234,11 @@
           if (!window.confirm("Confirm this follow-up was completed? No email will be sent.")) return;
           await crmPost("/api/crm/followups/" + followup.followup_id + "/complete",
             {acknowledged: true}, "Follow-up marked completed.");
+        }));
+        buttons.append(button("Cancel follow-up", "button", async () => {
+          if (!window.confirm("Cancel this follow-up? No message will be sent.")) return;
+          await crmPost("/api/crm/followups/" + followup.followup_id + "/cancel",
+            {acknowledged: true}, "Follow-up cancelled.");
         }));
         const newDate = document.createElement("input");
         newDate.type = "date";

@@ -30,7 +30,7 @@ def _regular(path):
         raise ValueError(f'Expected a regular file: {path.name}')
 
 
-def create_backup(db, packets, destination, *, offline=False):
+def create_backup(db, packets, destination, *, offline=False, password=None):
     """Write an archive only after an explicit stopped-server acknowledgement.
 
     The caller must stop all writers: SQLite snapshots alone cannot synchronize
@@ -103,13 +103,18 @@ def create_backup(db, packets, destination, *, offline=False):
                         digest.update(chunk)
                 if digest.hexdigest() != expected['sha256']:
                     raise ValueError('A workspace file changed during backup; stop all writers and retry')
+        if password is not None:
+            from .backup_crypto import encrypt
+            encrypted_path = temp_path / 'archive.encrypted'
+            encrypt(archive_path, encrypted_path, password)
+            archive_path = encrypted_path
         archive_path.chmod(0o600)
         # Atomic create-if-absent; hard link prevents replacing a concurrent file.
         os.link(archive_path, destination)
     return {'archive': str(destination), 'files': len(files)}
 
 
-def restore_backup(archive_path, destination, *, offline=False):
+def restore_backup(archive_path, destination, *, offline=False, password=None):
     """Validate an archive and restore into a newly created directory only."""
     if offline is not True:
         raise ValueError('Stop the app and all workspace writers, then pass --offline')
@@ -119,6 +124,16 @@ def restore_backup(archive_path, destination, *, offline=False):
         raise ValueError('Restore destination already exists; choose a new directory')
     if not destination.parent.is_dir():
         raise ValueError('Restore destination parent does not exist')
+    from .backup_crypto import MAGIC, decrypt
+    with archive_path.open('rb') as source:
+        encrypted = source.read(len(MAGIC)) == MAGIC
+    if encrypted:
+        with tempfile.TemporaryDirectory(prefix='.career-restore-', dir=destination.parent) as temp:
+            decrypted = Path(temp) / 'archive.zip'
+            decrypt(archive_path, decrypted, password)
+            return restore_backup(decrypted, destination, offline=True)
+    if password is not None:
+        raise ValueError('Backup is not encrypted')
     try:
         with zipfile.ZipFile(archive_path) as archive:
             entries = archive.infolist()
@@ -172,3 +187,15 @@ def restore_backup(archive_path, destination, *, offline=False):
         raise ValueError('Invalid or corrupt backup archive') from None
     return {'directory': str(destination), 'database': str(destination / DATABASES[0]),
             'packet_dir': str(destination / 'packets'), 'files': len(files)}
+
+
+def verify_backup(archive_path, *, password=None, temp_dir=None):
+    """Test a restore in temporary storage without changing an existing workspace."""
+    with tempfile.TemporaryDirectory(prefix='.career-verify-', dir=temp_dir) as temp:
+        try:
+            result = restore_backup(archive_path, Path(temp) / 'workspace', offline=True, password=password)
+        except ValueError as error:
+            if str(error).startswith('Restore failed; incomplete files'):
+                raise ValueError('Backup verification failed during extraction or integrity checks') from error
+            raise
+        return {'archive': str(archive_path), 'verified': True, 'files': result['files']}

@@ -4,7 +4,7 @@
 
 Authoritative original data should come from the [U.S. Department of Labor Office of Foreign Labor Certification performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance), specifically LCA program disclosure files and their field layouts. Employer name, fiscal year, and official source URL should remain attached to every imported record.
 
-The legacy packet/CLI evidence adapter accepts **manually curated CSV records** in the format below. The dashboard also provides an [H-1B research workspace](H1B_RESEARCH.md) for importing DOL LCA disclosure sheets exported as CSV, company searches and job-policy assessments. Those DOL workflows do not download or independently authenticate government records. A separate [USCIS adapter](USCIS_LIVE_CHECKS.md) can refresh supported annual CSV files directly or import them locally. Raw `.xlsx` parsing is not implemented.
+The legacy packet/CLI evidence adapter accepts **manually curated CSV records** in the format below. The dashboard also provides an [H-1B research workspace](H1B_RESEARCH.md) for importing DOL LCA disclosure workbooks or CSV files, company searches and job-policy assessments. Those DOL workflows do not download or independently authenticate government records. A separate [USCIS adapter](USCIS_LIVE_CHECKS.md) can refresh supported annual CSV files directly or import them locally. XLSX import requires the optional workbook dependencies.
 
 Format:
 

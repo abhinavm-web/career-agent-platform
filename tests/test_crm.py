@@ -161,6 +161,19 @@ class CRMStoreTests(unittest.TestCase):
             self.crm.add_contact(self.job.id, "")
         self.assertEqual(self.crm.summary()["open_followups"], [])
 
+    def test_cancel_followup_preserves_history_without_completion(self):
+        task = self.crm.add_followup(self.job.id, 'No longer needed', '2026-11-20')
+        task_id = task['followup_id']
+        self.assertEqual(self.crm.update_followup(task_id, cancel=True)['action'], 'cancelled')
+        self.assertEqual(self.crm.summary()['open_followups'], [])
+        saved = self.crm.followups(self.job.id)[0]
+        self.assertTrue(saved['cancelled'])
+        self.assertIsNone(saved['completed_at'])
+        self.assertEqual(self.crm.export_history()['records']['followup_events'][-1]['action'], 'cancelled')
+        for kwargs in ({'cancel': True}, {'complete': True}, {'due_date': '2026-11-21'}):
+            with self.assertRaisesRegex(ValueError, 'Cancelled'):
+                self.crm.update_followup(task_id, **kwargs)
+
     def test_followup_linked_to_same_job_and_overdue(self):
         person = self.crm.add_contact(self.job.id, "Hiring manager")
         result = self.crm.add_followup(
@@ -374,6 +387,18 @@ class CRMApiTests(unittest.TestCase):
         })
         self.assertEqual(details["contacts"][0]["name"], "Older opportunity recruiter")
         self.assertEqual(details["followups"][0]["followup_id"], task["followup_id"])
+
+    def test_followup_cancellation_requires_confirmation(self):
+        task = self.api('POST', f'/api/jobs/{self.job.id}/crm/followups', {
+            'title': 'No longer needed', 'due_date': '2026-11-20',
+        }).json()
+        url = f"/api/crm/followups/{task['followup_id']}/cancel"
+        self.assertEqual(self.api('POST', url, {}).status_code, 422)
+        self.assertEqual(self.api('POST', url, {'acknowledged': True}).status_code, 200)
+        self.assertEqual(self.api('GET', '/api/crm').json()['open_followups'], [])
+        followup = self.api('GET', f'/api/jobs/{self.job.id}/crm').json()['followups'][0]
+        self.assertTrue(followup['cancelled'])
+        self.assertIsNone(followup['completed_at'])
 
     def test_contacts_followup_completion_and_rescheduling(self):
         add = self.api("POST", f"/api/jobs/{self.job.id}/crm/contacts", {

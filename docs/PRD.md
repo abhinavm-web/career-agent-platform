@@ -366,8 +366,8 @@ Separate state machines to avoid conflating preparatory and external actions:
 
 **Deployment stages**
 - **Local MVP:** Single trusted user, loopback-only, private local storage, explicit manual review.
-- **Secure personal beta:** Proper private vault and migrations, dependable background tasks, versioned evidence and role-specific exports. Hosting decision still open.
-- **Hosted multi-user SaaS (conditional):** Authentication, tenant isolation, encryption, access policies, consent management, rate limits, secured event processing, monitoring, deletion, incident handling and commercial policies.
+- **Secure personal release:** A dependable local application for an individual, with a private vault, migrations, dependable background tasks, versioned evidence and role-specific exports.
+- **Hosted individual accounts:** A separate hosted deployment for individuals, requiring authentication, tenant isolation, encryption, access policies, consent management, rate limits, secured event processing, monitoring, deletion, incident handling and commercial policies. Team workspaces are not part of this initial target.
 - **Enterprise/B2B (exploratory):** Opt-in career-coach/recruiter workspaces with separate sharing permissions and governance; never implicit transfer of candidate data.
 
 **Technology choices:** Prefer managed services when hosting is approved; avoid a vendor lock-in commitment now. LangGraph is a recommended orchestration mechanism for multi-step, interruptible workflows, not a mandate to put every function into an agent.
@@ -448,7 +448,7 @@ For each issue or PR:
 | --- | --- | --- |
 | Final brand and domains | Legal risk and go-to-market identity | Unresolved; Career Agent Platform is a working name |
 | Original-code license | Contribution, distribution and commercial strategy | Repository owner has not selected one |
-| Data-hosting model | Privacy/security architecture and operating costs | Local-only currently; hosted service requires separate approval |
+| Data-hosting model | Privacy/security architecture and operating costs | Local app for individuals and a hosted app with individual accounts; provider and operational design remain open |
 | Approved source connectors | Terms, accuracy, rate limits and coverage | Review each source independently |
 | Country/visa expansion | Very different regulatory and data constraints | US/H-1B-focused initial research; international later |
 | LLM choice and AI budget | Cost, privacy, quality and deployment | Provider-neutral goal; no mandatory paid model in MVP |
