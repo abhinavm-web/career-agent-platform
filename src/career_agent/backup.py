@@ -44,9 +44,9 @@ def create_backup(db, packets, destination, *, offline=False):
         raise ValueError('Backup destination already exists')
     if not destination.parent.is_dir():
         raise ValueError('Backup destination directory does not exist')
-    if packets.is_symlink() or (packets.exists() and not packets.is_dir()):
-        raise ValueError('Packet directory must be a regular directory')
-    packet_files = sorted(packets.glob('*.json')) if packets.exists() else []
+    if packets.is_symlink() or not packets.is_dir():
+        raise ValueError('Packet directory does not exist or is not a regular directory; choose the correct --packet-dir')
+    packet_files = sorted(packets.glob('*.json'))
     for path in packet_files:
         _regular(path)
     if len(packet_files) + len(DATABASES) > MAX_ENTRIES:
@@ -68,6 +68,15 @@ def create_backup(db, packets, destination, *, offline=False):
                     original.backup(snapshot)
                     if snapshot.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                         raise ValueError('A SQLite database failed its integrity check')
+                    if name == DATABASES[0] and snapshot.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_runs'"
+                    ).fetchone():
+                        published_ids = {row[0] for row in snapshot.execute(
+                            'SELECT DISTINCT job_id FROM workflow_runs WHERE packet_sha256 IS NOT NULL'
+                        )}
+                        packet_ids = {path.name[:-5] for path in packet_files}
+                        if not published_ids.issubset(packet_ids):
+                            raise ValueError('Published workflow packets are missing from --packet-dir; choose the correct directory')
             files.append((target, name))
         files.extend((path, 'packets/' + path.name) for path in packet_files)
         if any(path.stat().st_size > MAX_FILE for path, _ in files):
@@ -138,6 +147,7 @@ def restore_backup(archive_path, destination, *, offline=False):
             # Create the destination exclusively. Never replace an existing workspace.
             destination.mkdir(mode=0o700)
             try:
+                (destination / 'packets').mkdir(mode=0o700)
                 for name, metadata in files.items():
                     target = destination.joinpath(*PurePosixPath(name).parts)
                     target.parent.mkdir(mode=0o700, exist_ok=True)

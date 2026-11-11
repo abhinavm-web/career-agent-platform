@@ -18,8 +18,13 @@ In PowerShell, from the project directory (replace paths as needed):
 .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 backup private/workspace-backup.zip --packet-dir .local/demo-packets --offline
 ```
 
-The destination directory must already exist; the archive must not. The archive
-is created atomically and an existing destination is never overwritten. The
+The destination directory must already exist; the archive must not. The chosen
+packet directory must already exist, even when empty. The backup checks that
+every published workflow job has a corresponding packet file. This catches
+common wrong-directory mistakes, but cannot establish that a directory is
+complete for legacy/custom packets or that matching files have the intended
+version. Check the path carefully. The archive is created atomically and an
+existing destination is never overwritten. The
 archive contains SHA-256 file checksums and is unencrypted. It excludes external
 legacy `--profile`, `--facts`, and `--filings` files, AI route configuration,
 credentials, and files elsewhere on your machine. Back up any such files

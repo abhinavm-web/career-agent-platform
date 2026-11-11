@@ -59,6 +59,27 @@ class BackupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_backup(self.root / 'missing.sqlite3', self.packets, self.archive, offline=True)
 
+    def test_missing_or_wrong_packet_directory_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, 'Packet directory does not exist'):
+            create_backup(self.db, self.root / 'typo', self.archive, offline=True)
+        connection = sqlite3.connect(self.db)
+        try:
+            connection.execute('CREATE TABLE workflow_runs (job_id TEXT, packet_sha256 TEXT)')
+            connection.execute('INSERT INTO workflow_runs VALUES (?, ?)', ('missing-job', 'published'))
+            connection.commit()
+        finally:
+            connection.close()
+        with self.assertRaisesRegex(ValueError, 'Published workflow packets are missing'):
+            create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertFalse(self.archive.exists())
+
+    def test_empty_packet_directory_restores_as_directory(self):
+        (self.packets / 'abc.json').unlink()
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        destination = self.root / 'restored'
+        restore_backup(self.archive, destination, offline=True)
+        self.assertTrue((destination / 'packets').is_dir())
+
     def test_archive_tamper_and_traversal_are_rejected(self):
         create_backup(self.db, self.packets, self.archive, offline=True)
         with zipfile.ZipFile(self.archive) as source:
