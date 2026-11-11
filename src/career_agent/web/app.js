@@ -399,6 +399,29 @@
     letter.append(node("summary", "", "Cover-note draft"), node("pre", "", packet.cover_note));
     card.append(resume, letter);
 
+    if (Array.isArray(packet.fact_evidence) && Array.isArray(packet.omitted_fact_ids) &&
+        packet.fact_evidence.every((fact) => fact && typeof fact.id === "string" && typeof fact.section === "string" &&
+          typeof fact.statement === "string" && Array.isArray(fact.matched_keywords) && fact.matched_keywords.every((item) => typeof item === "string")) &&
+        packet.omitted_fact_ids.every((item) => typeof item === "string")) {
+      const evidence = node("details", "packet-evidence");
+      evidence.append(node("summary", "", "Review source facts and omissions"),
+        node("p", "", "These statements were confirmed by you when the draft was created. Keyword matches help order facts; they do not establish qualifications or hiring likelihood."));
+      for (const fact of packet.fact_evidence) {
+        const row = node("div", "packet-evidence-row");
+        row.append(node("strong", "", fact.id + " · " + fact.section), node("p", "", fact.statement));
+        row.append(node("small", "", fact.matched_keywords.length
+          ? "Posting keyword matches: " + fact.matched_keywords.join(", ")
+          : "No listed keywords matched the posting."));
+        evidence.append(row);
+      }
+      evidence.append(node("p", "", packet.omitted_fact_ids.length
+        ? "Verified facts not included in this draft: " + packet.omitted_fact_ids.join(", ") + ". Review these in Career profile."
+        : "All verified facts available at drafting were included."));
+      card.append(evidence);
+    } else {
+      card.append(node("p", "muted", "Fact-level comparison is available for newly generated packets. This saved packet remains valid under its original fingerprint."));
+    }
+
     const tools = node("div", "button-row");
     tools.append(button("Copy resume text", "button", () => copyText(packet.resume_markdown)));
     tools.append(button("Copy cover note", "button", () => copyText(packet.cover_note)));

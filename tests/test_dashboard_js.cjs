@@ -295,6 +295,20 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, totalJobs 
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test("packet review shows saved source facts and omissions without interpreting markup", async () => {
+  const h = createHarness(); await flush();
+  h.get("job-list").children[0].click();
+  const packet = fakePacket(ID_A, "Fictional resume");
+  packet.packet.fact_evidence = [{id: "fact-01", section: "experience", statement: "Built <fictional> tools", matched_keywords: ["Python"]}];
+  packet.packet.omitted_fact_ids = ["fact-02"];
+  h.waiting.get(ID_A)(ok(packet)); await flush();
+  const detail = h.get("detail-panel").textContent;
+  assert.match(detail, /Review source facts and omissions/);
+  assert.match(detail, /Built <fictional> tools/);
+  assert.match(detail, /Posting keyword matches: Python/);
+  assert.match(detail, /Verified facts not included in this draft: fact-02/);
+});
+
 test("expired session explains how to recover without discarding input", async () => {
   const h = createHarness({discovery: () => Promise.resolve({
     ok: false, status: 403, json: async () => ({detail: "Session token required"})

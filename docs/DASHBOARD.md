@@ -22,6 +22,7 @@ All private candidate files should be outside the public repository or under a g
 - Track a new job by pasting its published URL and details.
 - Draft a Markdown resume and cover note containing **only candidate-attested statements**.
 - Open a draft in the UI, inspect text and source-aware review checklist, then explicitly approve or reject.
+- New drafts include a fingerprinted list of selected verified facts, posting keyword matches and IDs of verified facts omitted by the 12-fact selection limit. The review panel shows those details without exposing private source notes. Older packets remain reviewable under their original fingerprints; regenerate to see the comparison.
 - Approval/rejection is stored in a local append-only SQLite table with the packet fingerprint.
 - After **manually applying on an employer site**, record a confirmation reference and attestation to update application status.
 - Show dashboard counts and recent review decisions.

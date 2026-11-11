@@ -163,6 +163,25 @@ class PacketTests(unittest.TestCase):
         self.assertNotIn("Fictional internal project record", content)
         self.assertIn("delivery-01", content)
 
+    def test_packet_evidence_tracks_verified_selection_and_omissions(self):
+        raw = fictional_facts()
+        for i in range(12):
+            raw["facts"].append({"id": f"extra-{i:02d}", "section": "experience",
+                "statement": f"Fictional verifiable achievement number {i}.", "keywords": [],
+                "source_note": "Private supporting record", "verified_by_candidate": True})
+        bank = FactBank.parse(raw)
+        packet = build_packet(self.job, fictional_preferences(), bank)
+        self.assertEqual([fact["id"] for fact in packet["fact_evidence"]], packet["selected_fact_ids"])
+        self.assertEqual(len(packet["fact_evidence"]), 12)
+        self.assertEqual(len(packet["omitted_fact_ids"]), 3)
+        self.assertEqual(set(packet["selected_fact_ids"]) | set(packet["omitted_fact_ids"]),
+                         {fact.fact_id for fact in bank.facts})
+        self.assertNotIn("Private supporting record", json.dumps(packet))
+        self.assertTrue(any("Python" in fact["matched_keywords"] for fact in packet["fact_evidence"]))
+        packet["fact_evidence"][0]["statement"] = "Unreviewed changed statement"
+        with self.assertRaisesRegex(ValueError, "changed"):
+            validate_packet(packet)
+
     def test_tampering_requires_fresh_review(self):
         self.packet["resume_markdown"] += "\n- Invented success.\n"
         with self.assertRaisesRegex(ValueError, "changed"):

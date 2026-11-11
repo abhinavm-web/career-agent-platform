@@ -1,0 +1,61 @@
+"""Browser exercise of fact-backed application review with fictional inputs."""
+import json
+import os
+import socket
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+from career_agent.models import CandidateProfile
+from career_agent.storage import Store
+from test_dashboard import fake_fact_bank, fake_job
+
+
+@unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
+class DocumentReviewBrowserTests(unittest.TestCase):
+    def test_draft_evidence_review_and_approval(self):
+        import uvicorn
+        from playwright.sync_api import expect, sync_playwright
+        from career_agent.dashboard import DashboardConfig, create_app
+        from dataclasses import asdict
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            db, packet_dir = root / 'workspace.sqlite3', root / 'packets'
+            facts, profile = root / 'facts.json', root / 'profile.json'
+            facts.write_text(json.dumps(fake_fact_bank()))
+            profile.write_text(json.dumps(asdict(CandidateProfile(target_titles=('AI Program Lead',),
+                skills=('Python',), preferred_locations=(), allow_remote=True))))
+            with Store(db) as store:
+                store.add_jobs([fake_job()])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=packet_dir, profile_path=profile, facts_path=facts))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as playwright:
+                    browser = playwright.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#job-list button').first.click()
+                        page.get_by_role('button', name='Create application draft').click()
+                        evidence = page.locator('.packet-evidence')
+                        expect(evidence).to_be_visible()
+                        evidence.locator('summary').click()
+                        expect(evidence).to_contain_text('experience-01')
+                        expect(evidence).to_contain_text('Delivered a fictional AI program')
+                        expect(evidence).not_to_contain_text('Private fictional evidence')
+                        page.get_by_text('I have personally reviewed this draft and its claims.').click()
+                        page.get_by_role('button', name='Approve for manual submission').click()
+                        expect(page.locator('.review-card')).to_contain_text('approved for manual submission')
+                        expect(page.locator('#detail-panel')).not_to_contain_text('Submission recorded')
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
