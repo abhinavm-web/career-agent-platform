@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage = null, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage = null, workspaceRead = null, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -229,7 +229,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
         revisions.unshift({revision: workspace.revision, change_type: "edited", created_at: "now"});
         return Promise.resolve(ok({workspace}));
       }
-      return Promise.resolve(ok({workspace}));
+      return workspaceRead ? workspaceRead(workspace) : Promise.resolve(ok({workspace}));
     }
     if (url === "/api/workspace/history") return Promise.resolve(ok({revisions}));
     if (url.startsWith("/api/workspace/facts/") && url.endsWith("/verification")) {
@@ -294,6 +294,39 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("overlapping profile loads retain the newest revision and keep the editor locked", async () => {
+  for (const olderFirst of [true, false]) {
+    const pending = [];
+    const h = createHarness({workspaceRead: () => new Promise((resolve) => pending.push(resolve))});
+    await flush();
+    const first = h.get("nav-profile").click();
+    h.get("nav-jobs").click();
+    const second = h.get("nav-profile").click();
+    const base = {profile: {name: "Candidate", headline: "", target_titles: [], skills: [], preferred_locations: [], allow_remote: true}, facts: []};
+    const old = ok({workspace: {...base, revision: 1}});
+    const current = ok({workspace: {...base, revision: 2}});
+    if (olderFirst) {
+      pending[0](old); await first;
+      assert.equal(h.get("profile-screen").inert, true);
+      pending[1](current); await second;
+    } else {
+      pending[1](current); await second;
+      pending[0](old); await first;
+    }
+    assert.equal(h.get("profile-screen").inert, false);
+    assert.match(h.get("profile-revision").textContent, /Revision 2/);
+  }
+});
+
+test("an older server snapshot cannot replace an already loaded profile revision", async () => {
+  let read = 0;
+  const h = createHarness({workspaceRead: (workspace) => Promise.resolve(ok({workspace: {...workspace, revision: ++read === 1 ? 2 : 1}}))});
+  await flush(); await h.get("nav-profile").click();
+  assert.match(h.get("profile-revision").textContent, /Revision 2/);
+  h.get("nav-jobs").click(); await h.get("nav-profile").click();
+  assert.match(h.get("profile-revision").textContent, /Revision 2/);
+});
 
 test("packet review shows saved source facts and omissions without interpreting markup", async () => {
   const h = createHarness(); await flush();

@@ -91,6 +91,12 @@ class MatchingTests(unittest.TestCase):
                 self.assertEqual(score_job(sample_job(text), preferences).matched_skills, ())
         self.assertEqual(score_job(sample_job("C and C++"), preferences).matched_skills, ("C",))
 
+    def test_versioned_cpp_and_csharp_mentions_are_recognized(self):
+        from dataclasses import replace
+        preferences = replace(self.profile, skills=("C++", "C#"))
+        self.assertEqual(score_job(sample_job("C++17 and C#12"), preferences).matched_skills, ("C++", "C#"))
+        self.assertEqual(score_job(sample_job("C++extended and C#other"), preferences).matched_skills, ())
+
     def test_remote_match_does_not_claim_geographic_eligibility(self):
         from dataclasses import replace
         job = replace(sample_job("AWS and Python"), location="Remote - Canada only", remote=True)

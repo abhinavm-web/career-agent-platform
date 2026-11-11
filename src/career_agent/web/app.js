@@ -16,6 +16,8 @@
   let freshnessTimer = null;
   let selectedAvailabilityUpdater = null;
   let workspaceMutationBusy = false;
+  let workspaceLoadSequence = 0;
+  let profileNavigationSequence = 0;
 
   const byId = (id) => document.getElementById(id);
   const node = (tag, cls, content) => {
@@ -631,17 +633,19 @@
   }
 
   async function loadWorkspace(preserveEditor = false) {
+    const sequence = ++workspaceLoadSequence;
     try {
       const [data, history] = await Promise.all([
         api("/api/workspace"), api("/api/workspace/history")
       ]);
-      if (state.screen !== "profile") return;
+      if (sequence !== workspaceLoadSequence || state.screen !== "profile") return;
+      if (state.workspace && data.workspace.revision < state.workspace.revision) return;
       const draft = preserveEditor && state.workspace ? snapshotEditorInputs() : null;
       state.workspace = data.workspace;
       renderWorkspace(history.revisions);
       if (draft) restoreEditorInputs(draft);
     } catch (error) {
-      notice("Unable to load private career workspace: " + error.message, true);
+      if (sequence === workspaceLoadSequence) notice("Unable to load private career workspace: " + error.message, true);
     }
   }
 
@@ -1230,11 +1234,16 @@
     if (state.screen === "profile") return;
     showScreen("profile");
     if (workspaceMutationBusy) return;
+    const sequence = ++profileNavigationSequence;
     const profileScreen = byId("profile-screen");
     profileScreen.inert = true;
     profileScreen.setAttribute("aria-busy", "true");
     try { await loadWorkspace(true); }
-    finally { profileScreen.inert = false; profileScreen.setAttribute("aria-busy", "false"); }
+    finally {
+      if (sequence === profileNavigationSequence && !workspaceMutationBusy) {
+        profileScreen.inert = false; profileScreen.setAttribute("aria-busy", "false");
+      }
+    }
   });
   byId("nav-tracker").addEventListener("click", async () => {showScreen("tracker"); await loadCRM();});
   byId("crm-export").addEventListener("click", async () => {

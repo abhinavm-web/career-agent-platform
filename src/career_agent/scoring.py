@@ -24,7 +24,9 @@ def words(value: str) -> set[str]:
 def contains_phrase(text: str, phrase: str) -> bool:
     escaped = re.escape(phrase.strip().lower()).replace(r"\ ", r"\s+")
     # C, C++ and C# are separate languages, not interchangeable mentions.
-    suffix = r"(?![a-z0-9+#])" if phrase.strip().lower() == "c" else r"(?![a-z0-9])"
+    name = phrase.strip().lower()
+    suffix = (r"(?![a-z0-9+#])" if name == "c" else
+              r"(?![a-z+#])" if name in {"c++", "c#"} else r"(?![a-z0-9])")
     return bool(escaped and re.search(
         r"(?<![a-z0-9])" + escaped + suffix, text.lower()
     ))
