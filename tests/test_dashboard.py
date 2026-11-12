@@ -425,6 +425,18 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(self.call('POST', path, request).status_code, 422)
             self.assertEqual(self.call('POST', path, request).status_code, 200)
 
+    def test_ai_route_test_reports_sanitized_missing_model(self):
+        import httpx
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        def handler(request):
+            return httpx.Response(404, json={'error': {'message': 'PRIVATE PROVIDER DETAIL'}})
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))):
+            request = {'route': 'local', 'route_fingerprint': ai.route_fingerprint('local', route['local']), 'acknowledged': True}
+            response = self.call('POST', '/api/ai/test-route', request)
+        self.assertEqual(response.status_code, 422)
+        self.assertIn('model or endpoint', response.json()['detail'])
+        self.assertNotIn('PRIVATE', response.text)
+
     def test_ai_history_limit_applies_across_dashboard_features(self):
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='OK') as complete:

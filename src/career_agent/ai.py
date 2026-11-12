@@ -159,13 +159,55 @@ def _excerpt_scope_notice(route, excerpts):
             'Review the complete posting; this is not a complete requirements list.')
 
 
+class _MissingCredential(ValueError):
+    pass
+
+
+class _IncompleteResponse(ValueError):
+    pass
+
+
+def _provider_error_message(error):
+    """Map fixed error categories only; never return provider text or payloads."""
+    suffix = ' No fallback was attempted.'
+    if isinstance(error, _MissingCredential):
+        return 'The selected provider credential is not configured in the server environment.' + suffix
+    if isinstance(error, _IncompleteResponse):
+        return 'The provider response was incomplete or requested a tool; no result was accepted.' + suffix
+    response = getattr(error, 'response', None)
+    metadata = response.get('ResponseMetadata', {}) if isinstance(response, dict) else {}
+    status = getattr(error, 'status_code', None)
+    if type(status) is not int and isinstance(metadata, dict):
+        status = metadata.get('HTTPStatusCode')
+    if type(status) is int:
+        if status in (401, 403):
+            return 'The provider rejected authentication or access. Check credentials and model permissions.' + suffix
+        if status == 404:
+            return 'The provider could not find the model or endpoint. Check the selected model and destination.' + suffix
+        if status == 429:
+            return 'The provider reported a rate or quota limit. Check provider limits before retrying.' + suffix
+        if 500 <= status <= 599:
+            return 'The provider reported a server error. Check its availability before retrying.' + suffix
+    current, seen, kinds = error, set(), set()
+    while current is not None and id(current) not in seen and len(seen) < 8:
+        seen.add(id(current)); kinds.add(type(current).__name__)
+        current = current.__cause__ or current.__context__
+    if kinds & {'APITimeoutError', 'ConnectTimeout', 'ReadTimeout', 'WriteTimeout', 'PoolTimeout', 'ConnectTimeoutError', 'ReadTimeoutError', 'TimeoutError'}:
+        return 'The provider request timed out. Check model loading and server availability before retrying.' + suffix
+    if kinds & {'APIConnectionError', 'ConnectError', 'EndpointConnectionError'}:
+        return 'The app could not connect to the provider. Check the server and configured destination.' + suffix
+    if kinds & {'NoCredentialsError', 'PartialCredentialsError'}:
+        return 'AWS credentials are unavailable or incomplete in the server environment.' + suffix
+    return 'AI request failed or was incomplete. Check credentials, model access and provider availability;' + suffix
+
+
 def _key(route):
     defaults = {'anthropic': 'ANTHROPIC_API_KEY', 'azure': 'AZURE_OPENAI_API_KEY'}
     name = route.get('key_env', defaults.get(route['provider']))
     if name:
         value = os.environ.get(name)
         if not value:
-            raise ValueError('Selected provider credential is not configured in the server environment')
+            raise _MissingCredential()
         return value
     return 'local-no-key'
 
@@ -191,7 +233,7 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                     messages=[{'role': 'user', 'content': [{'text': prompt}]}],
                     inferenceConfig={'maxTokens': maximum})
             if r.get('stopReason') != 'end_turn':
-                raise ValueError('Incomplete model response')
+                raise _IncompleteResponse()
             return ''.join(c['text'] for c in r['output']['message']['content'] if 'text' in c)
         # Ignore ambient proxies; local requests never leave through a proxy.
         with closing(_transport()) as transport:
@@ -202,7 +244,7 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                     r = client.messages.create(model=route['model'], max_tokens=maximum,
                         system=system, messages=[{'role': 'user', 'content': prompt}])
                 if r.stop_reason != 'end_turn':
-                    raise ValueError('Incomplete model response')
+                    raise _IncompleteResponse()
                 return ''.join(c.text for c in r.content if c.type == 'text')
             from openai import OpenAI
             with OpenAI(api_key=_key(route), base_url=route['base_url'],
@@ -214,13 +256,13 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                 r = client.chat.completions.create(model=route['model'],
                     messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}], **kwargs)
             if len(r.choices) != 1 or r.choices[0].finish_reason != 'stop' or r.choices[0].message.tool_calls:
-                raise ValueError('Incomplete model response')
+                raise _IncompleteResponse()
             return r.choices[0].message.content
     except ImportError:
         raise ValueError('Install the optional AI dependencies: pip install -e ".[ai]"') from None
-    except Exception:
+    except Exception as error:
         # Provider exception text can contain prompts, keys or endpoint details.
-        raise ValueError('AI request failed or was incomplete. Check credentials, model access and provider availability; no fallback was attempted.') from None
+        raise ValueError(_provider_error_message(error)) from None
 
 
 def resume_fact_suggestions(route_name, resume_text, acknowledged=False):

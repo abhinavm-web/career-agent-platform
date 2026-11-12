@@ -253,6 +253,36 @@ class SDKContracts(unittest.TestCase):
             with self.subTest(finish=finish), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))), self.assertRaises(ValueError):
                 ai.complete(route, 'fictional prompt')
 
+    def test_provider_error_categories_are_useful_and_never_echo_private_details(self):
+        import httpx
+        route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
+        for code, phrase in [(401, 'authentication or access'), (403, 'authentication or access'),
+                             (404, 'model or endpoint'), (429, 'rate or quota'), (503, 'server error')]:
+            def handler(request):
+                return httpx.Response(code, json={'error': {'message': 'PRIVATE PROMPT SECRET'}})
+            with self.subTest(code=code), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))):
+                with self.assertRaises(ValueError) as caught:
+                    ai.complete(route, 'fictional private prompt')
+                self.assertIn(phrase, str(caught.exception))
+                self.assertIn('No fallback', str(caught.exception))
+                self.assertNotIn('PRIVATE', str(caught.exception))
+                self.assertNotIn('fictional private', str(caught.exception))
+        def timeout(request):
+            raise httpx.ReadTimeout('PRIVATE PROMPT SECRET', request=request)
+        with patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(timeout))):
+            with self.assertRaisesRegex(ValueError, 'timed out') as caught:
+                ai.complete(route, 'fictional private prompt')
+            self.assertNotIn('PRIVATE', str(caught.exception))
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': ''}):
+            with self.assertRaisesRegex(ValueError, 'credential is not configured'):
+                ai.complete({'provider': 'anthropic', 'model': 'fictional'}, 'fictional')
+        from botocore.exceptions import ClientError, NoCredentialsError
+        error = ClientError({'Error': {'Code': 'AccessDeniedException', 'Message': 'PRIVATE SECRET'},
+                             'ResponseMetadata': {'HTTPStatusCode': 403}}, 'Converse')
+        self.assertIn('authentication or access', ai._provider_error_message(error))
+        self.assertNotIn('PRIVATE', ai._provider_error_message(error))
+        self.assertIn('AWS credentials', ai._provider_error_message(NoCredentialsError()))
+
     def test_openai_compatible_providers_and_azure_token_parameter(self):
         import httpx
         original = httpx.Client

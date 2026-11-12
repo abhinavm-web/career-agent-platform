@@ -11,6 +11,38 @@ from unittest.mock import patch
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class AIHistoryBrowserTests(unittest.TestCase):
+    def test_missing_local_model_shows_safe_actionable_error(self):
+        import httpx
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        def handler(request):
+            return httpx.Response(404, json={'error': {'message': 'PRIVATE PROVIDER DETAIL'}})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))), sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-ai').click()
+                        expect(page.locator('#ai-test-route')).to_be_enabled()
+                        page.locator('#ai-test-consent').check(); page.locator('#ai-test-route').click()
+                        expect(page.locator('#ai-test-status')).to_contain_text('model or endpoint')
+                        expect(page.locator('#ai-test-status')).not_to_contain_text('PRIVATE')
+                    finally: browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_request_limit_and_private_history(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
