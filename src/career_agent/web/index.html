@@ -319,11 +319,12 @@
             <p id="resume-status" role="status" aria-live="polite"></p>
             <details>
               <summary>Stage several statements for review</summary>
-              <p class="muted">Select up to 30 distinct lines. Suggested categories follow headings and may be wrong. Statements remain unverified until you review and verify them individually. The same private source note is attached to each selected line.</p>
+              <p class="muted">Select up to 30 distinct lines to stage separately, or select wrapped lines to combine into one statement for review. Suggested categories follow headings and may be wrong. Staged statements remain unverified. The same private source note is attached to each separately staged line.</p>
               <label class="block-label">Statements to stage<select id="resume-bulk-lines" multiple size="8"></select></label>
-              <label class="block-label">Category for unclassified lines<select id="resume-bulk-category"><option value="">Choose only if needed</option><option value="experience">Experience</option><option value="projects">Projects</option><option value="skills">Skills</option><option value="education">Education</option><option value="certifications">Certifications</option></select></label>
+              <label class="block-label">Category for unclassified or mixed lines<select id="resume-bulk-category"><option value="">Choose only if needed</option><option value="experience">Experience</option><option value="projects">Projects</option><option value="skills">Skills</option><option value="education">Education</option><option value="certifications">Certifications</option></select></label>
               <label class="block-label">Private source note for these statements<textarea id="resume-bulk-source" rows="2" maxlength="500" placeholder="Where you will check these statements"></textarea></label>
               <button id="resume-bulk-save" type="button" class="button" disabled>Stage selected statements</button>
+              <button id="resume-combine" type="button" class="button" disabled>Review selected lines as one fact</button>
               <p id="resume-bulk-status" role="status" aria-live="polite"></p>
             </details>
             <details>
