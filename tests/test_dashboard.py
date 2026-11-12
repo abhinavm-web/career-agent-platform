@@ -1408,6 +1408,31 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(store.get_job(self.job.id).description, self.job.description)
             self.assertEqual(store.description_revision(self.job.id), 0)
 
+    def test_linkedin_slug_capture_requires_matching_unambiguous_job_number(self):
+        saved = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer',
+            'job_url': 'https://www.linkedin.com/jobs/view/1234567890', 'description': ''})
+        with Store(self.db) as store: store.add_jobs([saved])
+        path = f'/api/jobs/{saved.id}/capture-preview'
+        payload = {'format': 'career-agent-job-capture-v1', 'selection': 'Fictional job text.',
+                   'url': 'https://www.linkedin.com/jobs/view/fictional-engineer-1234567890?refId=example'}
+        result = self.call('POST', path, payload)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()['match_method'], 'linkedin_job_number')
+        for suffix in ('fictional-engineer-1234567891',
+                       'fictional-engineer-1234567890?currentJobId=999999',
+                       'fictional-engineer-1234567890?jobId=999999',
+                       'fictional-engineer-1234567890?ref=other'):
+            with self.subTest(suffix=suffix):
+                self.assertEqual(self.call('POST', path, {**payload, 'url': 'https://www.linkedin.com/jobs/view/' + suffix}).status_code, 422)
+        with Store(self.db) as store:
+            self.assertEqual(store.get_job(saved.id).description, '')
+            self.assertEqual(store.description_revision(saved.id), 0)
+        conflicting = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer',
+            'job_url': 'https://www.linkedin.com/jobs/view/1234567890?currentJobId=999999', 'description': ''})
+        with Store(self.db) as store: store.add_jobs([conflicting])
+        self.assertEqual(self.call('POST', f'/api/jobs/{conflicting.id}/capture-preview',
+                                   {**payload, 'url': conflicting.url}).status_code, 422)
+
     def test_description_correction_invalidates_even_if_restored_and_locks_after_submission(self):
         path = f'/api/jobs/{self.job.id}/description'
         fingerprint = self._draft()

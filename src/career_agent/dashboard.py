@@ -30,6 +30,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .application import MAX_TAILORED_FACTS, _reject_symlink_components, load_packet
 from .candidate import FactBank, SECTIONS
+from .capture_matching import linkedin_capture_matches, linkedin_current_id_conflicts
 from . import ai
 from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
@@ -978,11 +979,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
             url = canonical_url(data['url'])
         except ValueError as error:
             raise ValueError(str(error)) from None
+        match_method = None
         with Store(config.db_path) as store:
             job = _get_job(store, job_id)
+            if linkedin_current_id_conflicts(job.url) or linkedin_current_id_conflicts(data['url']):
+                raise ValueError('LinkedIn URL contains a conflicting or repeated selected job number; review and paste manually')
             if url != canonical_url(job.url):
-                raise ValueError('Capture URL does not match this saved job; review and paste manually if appropriate')
-        return {'job_id': job.id, 'description': data['selection']}
+                if not linkedin_capture_matches(job.url, data['url']):
+                    raise ValueError('Capture URL does not match this saved job; review and paste manually if appropriate')
+                match_method = 'linkedin_job_number'
+        result = {'job_id': job.id, 'description': data['selection']}
+        if match_method:
+            result['match_method'] = match_method
+        return result
 
     @app.put("/api/jobs/{job_id}/description")
     async def correct_job_description(job_id: str, request: Request):

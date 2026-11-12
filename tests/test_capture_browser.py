@@ -24,7 +24,7 @@ class CaptureBrowserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); db = root / 'fictional.sqlite3'
             job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer',
-                                    'job_url': 'https://example.invalid/job', 'description': ''})
+                                    'job_url': 'https://www.linkedin.com/jobs/view/1234567890', 'description': ''})
             with Store(db) as store:
                 store.add_jobs([job])
                 CandidateWorkspace(store).import_legacy(CandidateProfile(('Engineer',), ('Python',), (), True), FactBank.parse(fake_fact_bank()))
@@ -48,8 +48,8 @@ class CaptureBrowserTests(unittest.TestCase):
                         page = browser.new_page()
                         attempted = []
                         page.route('https://tracking.invalid/**', lambda route: (attempted.append(route.request.url), route.abort()))
-                        page.route('https://example.invalid/**', lambda route: route.fulfill(status=200, content_type='text/html', body=body))
-                        page.goto(job.url)
+                        page.route('https://www.linkedin.com/**', lambda route: route.fulfill(status=200, content_type='text/html', body=body))
+                        page.goto('https://www.linkedin.com/jobs/view/fictional-engineer-1234567890?refId=fictional')
                         page.evaluate('''() => {
                             window.copiedCapture = null;
                             Object.defineProperty(navigator, 'clipboard', {value: {writeText: async value => { window.copiedCapture = value; }}});
@@ -69,6 +69,7 @@ class CaptureBrowserTests(unittest.TestCase):
                         editor.get_by_label('Browser capture JSON').fill(captured)
                         editor.get_by_role('button', name='Fill description from capture').click()
                         expect(editor.get_by_label('Corrected job description')).to_have_value(json.loads(captured)['selection'])
+                        expect(editor).to_contain_text('LinkedIn URL job numbers match')
                         expect(editor.get_by_label('I reviewed this corrected description.')).not_to_be_checked()
                         with Store(db) as store: self.assertEqual(store.get_job(job.id).description, '')
                         editor.get_by_label('I reviewed this corrected description.').check()

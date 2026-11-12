@@ -646,6 +646,7 @@
           input.value = result.description; acknowledged.checked = false;
           if (capture.text_source === "structured_description" && !source.value.trim()) source.value = "Structured JobPosting on captured page; source not independently verified.";
           captureStatus.textContent = capture.text_source === "structured_description" ? "Structured page text loaded into the editor only. It may be incomplete or describe another job; compare with the original and confirm before saving." : "Text loaded into the editor only. Review it and confirm before saving.";
+          if (result.match_method === "linkedin_job_number") captureStatus.textContent += " LinkedIn URL job numbers match; compare the title and employer before saving.";
         } catch (error) { captureStatus.textContent = error instanceof SyntaxError ? "Paste a valid browser capture." : error.message; }
         finally { captureButton.disabled = false; submit.disabled = false; }
       });
