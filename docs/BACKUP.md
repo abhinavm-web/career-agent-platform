@@ -43,9 +43,12 @@ match its latest published workflow. It rejects missing, altered, oversized, or
 older workflow packets rather than silently archiving inconsistent review state.
 Published workflow packets are limited to 8 MiB for this validation.
 When published workflows exist, their sibling workflow checkpoint database is
-required as well; otherwise a restored review could not resume. The check confirms
-the database is present and structurally readable, not that every individual
-graph checkpoint can be resumed; test a restored workspace before relying on it.
+required as well; otherwise a restored review could not resume. Backup, verification
+and restore also check for a root checkpoint entry for each published workflow,
+without deserializing or running the graph. Missing entries or an unrecognized
+checkpoint schema produce warnings while preserving the archive for salvage.
+Presence does not prove checkpoint contents are valid, complete, current, or
+resumable; test a restored workspace before relying on it.
 If a legacy tool overwrote a workflow-managed packet, reconcile the packet or
 resume the current workflow before backup. Other legacy/custom packets are copied
 without interpreting their contents; their completeness cannot be established.
