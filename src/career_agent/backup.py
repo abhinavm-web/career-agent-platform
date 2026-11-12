@@ -96,6 +96,8 @@ def create_backup(db, packets, destination, *, offline=False, password=None, ai_
         config_path = Path(ai_config)
         _reject_symlink_components(config_path)
         _regular(config_path)
+        if config_path.stat().st_size > MAX_AI_CONFIG:
+            raise ValueError('AI configuration is too large')
         config_data = json.dumps(routes(config_path), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
         if len(config_data) > MAX_AI_CONFIG:
             raise ValueError('AI configuration is too large')

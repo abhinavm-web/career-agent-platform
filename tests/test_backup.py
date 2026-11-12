@@ -100,6 +100,15 @@ class BackupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=link)
 
+    def test_oversized_ai_config_rejected_before_parser_reads_it(self):
+        config = self.root / 'oversized-ai.json'
+        config.write_bytes(b' ' * 32769)
+        with patch('career_agent.ai.routes') as routes:
+            with self.assertRaisesRegex(ValueError, 'too large'):
+                create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=config)
+            routes.assert_not_called()
+        self.assertFalse(self.archive.exists())
+
     def test_restore_rejects_injected_ai_configuration(self):
         create_backup(self.db, self.packets, self.archive, offline=True)
         injected = b'{"cloud":{"provider":"anthropic","model":"fictional","api_key":"secret"}}'
