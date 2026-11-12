@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 MAX_FILE = 2 * 1024 * 1024 * 1024
 MAX_TOTAL = 4 * 1024 * 1024 * 1024
 MAX_ENTRIES = 10002
+MAX_WORKFLOW_PACKET = 8 * 1024 * 1024
 DATABASES = ('workspace.sqlite3', 'workspace.workflows.sqlite3', 'workspace.discovery.sqlite3')
 
 
@@ -28,6 +29,30 @@ def _digest(path):
 def _regular(path):
     if path.is_symlink() or not path.is_file():
         raise ValueError(f'Expected a regular file: {path.name}')
+
+
+def _published_packets(db):
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_runs'").fetchone():
+        return {}
+    return dict(db.execute('''
+        SELECT w.job_id, w.packet_sha256 FROM workflow_runs w
+        JOIN (SELECT job_id, MAX(rowid) AS latest FROM workflow_runs
+              WHERE packet_sha256 IS NOT NULL GROUP BY job_id) p ON w.rowid = p.latest
+    '''))
+
+
+def _validate_published_packets(published, packet_names, read_packet):
+    if not published.keys() <= packet_names.keys():
+        raise ValueError('Published workflow packets are missing from --packet-dir; choose the correct directory')
+    from .application import validate_packet
+    for job_id, expected in published.items():
+        try:
+            packet = json.loads(read_packet(packet_names[job_id]))
+            actual = validate_packet(packet)
+            if packet['job_id'] != job_id or actual != expected:
+                raise ValueError('Packet does not match its latest published workflow')
+        except (ValueError, KeyError, TypeError, UnicodeError):
+            raise ValueError('A published workflow packet is invalid or does not match the latest published workflow; check --packet-dir and reconcile the packet before backup') from None
 
 
 def create_backup(db, packets, destination, *, offline=False, password=None):
@@ -58,6 +83,7 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
         sources = [(db, DATABASES[0]), (db.with_suffix('.workflows.sqlite3'), DATABASES[1]),
                    (db.with_suffix('.discovery.sqlite3'), DATABASES[2])]
         files = []
+        published_packets = {}
         for source, name in sources:
             if not source.exists() and source != db:
                 continue
@@ -68,16 +94,14 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
                     original.backup(snapshot)
                     if snapshot.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                         raise ValueError('A SQLite database failed its integrity check')
-                    if name == DATABASES[0] and snapshot.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_runs'"
-                    ).fetchone():
-                        published_ids = {row[0] for row in snapshot.execute(
-                            'SELECT DISTINCT job_id FROM workflow_runs WHERE packet_sha256 IS NOT NULL'
-                        )}
+                    if name == DATABASES[0]:
+                        published_packets = _published_packets(snapshot)
                         packet_ids = {path.name[:-5] for path in packet_files}
-                        if not published_ids.issubset(packet_ids):
+                        if not published_packets.keys() <= packet_ids:
                             raise ValueError('Published workflow packets are missing from --packet-dir; choose the correct directory')
             files.append((target, name))
+        if published_packets and DATABASES[1] not in {name for _, name in files}:
+            raise ValueError('Published workflows require the sibling workflow checkpoint database; restore it or reconcile the workspace before backup')
         files.extend((path, 'packets/' + path.name) for path in packet_files)
         if any(path.stat().st_size > MAX_FILE for path, _ in files):
             raise ValueError('A workspace file exceeds the backup file size limit')
@@ -103,6 +127,14 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
                         digest.update(chunk)
                 if digest.hexdigest() != expected['sha256']:
                     raise ValueError('A workspace file changed during backup; stop all writers and retry')
+            # Validate the bytes actually archived, not just the selected filename.
+            # Older and unrelated legacy packets remain opaque and are not interpreted.
+            packet_names = {path.name[:-5]: 'packets/' + path.name for path in packet_files}
+            def read_archived_packet(name):
+                if archive.getinfo(name).file_size > MAX_WORKFLOW_PACKET:
+                    raise ValueError('A published workflow packet exceeds the validation size limit')
+                return archive.read(name)
+            _validate_published_packets(published_packets, packet_names, read_archived_packet)
         if password is not None:
             from .backup_crypto import encrypt
             encrypted_path = temp_path / 'archive.encrypted'
@@ -180,6 +212,17 @@ def restore_backup(archive_path, destination, *, offline=False, password=None):
                         with closing(sqlite3.connect(target.resolve().as_uri() + '?mode=ro', uri=True)) as db:
                             if db.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
                                 raise ValueError('Restored database failed its integrity check')
+                with closing(sqlite3.connect((destination / DATABASES[0]).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+                    published = _published_packets(db)
+                if published and DATABASES[1] not in files:
+                    raise ValueError('Published workflows require a workflow checkpoint database')
+                packet_names = {PurePosixPath(name).name[:-5]: name for name in files if name.startswith('packets/')}
+                def read_restored_packet(name):
+                    target = destination.joinpath(*PurePosixPath(name).parts)
+                    if target.stat().st_size > MAX_WORKFLOW_PACKET:
+                        raise ValueError('A published workflow packet exceeds the validation size limit')
+                    return target.read_bytes()
+                _validate_published_packets(published, packet_names, read_restored_packet)
             except Exception:
                 # Leave partial files in the new directory for inspection; never delete user data.
                 raise ValueError(f'Restore failed; incomplete files are in the new directory {destination}') from None
