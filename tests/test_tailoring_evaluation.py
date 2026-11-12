@@ -9,11 +9,41 @@ from career_agent.candidate import FactBank
 from career_agent.models import Job
 from career_agent.tailoring_checks import wording_review_warnings
 from scripts.evaluate_tailoring import evaluate
+from scripts.evaluate_live_tailoring import evaluate as evaluate_live
+from career_agent.ai_history import DailyRequestLimit
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class TailoringEvaluationTests(unittest.TestCase):
+    def test_live_evaluation_requires_consent_and_only_sends_fictional_cases(self):
+        route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
+        with patch('scripts.evaluate_live_tailoring.ai.routes', return_value={'local': route}), \
+             patch('scripts.evaluate_live_tailoring.run_recorded') as run:
+            with self.assertRaisesRegex(ValueError, 'Confirm'):
+                evaluate_live('local', Path('fictional.sqlite3'))
+            run.assert_not_called()
+            run.return_value = {'model': 'fictional', 'reported_model': 'resolved', 'suggestions': []}
+            report = evaluate_live('local', Path('fictional.sqlite3'), True)
+            self.assertEqual(run.call_count, 3)
+            self.assertEqual(len(report['cases']), 3)
+            self.assertTrue(all(row['status'] == 'validated_response' for row in report['cases']))
+            self.assertIn('not a benchmark', report['notice'])
+            self.assertTrue(all(call.args[4].company == 'Fictional employer' for call in run.call_args_list))
+            self.assertTrue(all(call.kwargs['expected_route_fingerprint'] for call in run.call_args_list))
+
+    def test_live_evaluation_stops_after_limit_or_route_change(self):
+        route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
+        with patch('scripts.evaluate_live_tailoring.ai.routes', return_value={'local': route}), \
+             patch('scripts.evaluate_live_tailoring.run_recorded', side_effect=DailyRequestLimit('Local limit')) as run:
+            report = evaluate_live('local', Path('fictional.sqlite3'), True)
+            self.assertEqual(report['cases'][0]['status'], 'not_sent_limit')
+            self.assertEqual(run.call_count, 1)
+        with patch('scripts.evaluate_live_tailoring.ai.routes', return_value={'local': route}), \
+             patch('scripts.evaluate_live_tailoring.run_recorded', side_effect=ValueError('Model destination or configuration changed')) as run:
+            report = evaluate_live('local', Path('fictional.sqlite3'), True)
+            self.assertEqual(report['cases'][0]['status'], 'failed')
+            self.assertEqual(run.call_count, 1)
     def test_fixed_benchmark_reports_flagged_and_missed_cases(self):
         fixture = json.loads((ROOT / 'examples' / 'tailoring-evaluation.json').read_text(encoding='utf-8'))
         report = evaluate(fixture)
