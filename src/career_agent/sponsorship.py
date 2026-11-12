@@ -132,6 +132,15 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
             r'|\b(?:at (?:the |our )?discretion|on a discretionary basis)\b'
             r'|\b(?:for|in) (?:some|certain|other|select) (?:roles?|positions?|jobs?|cases?|circumstances?)\b'
             r'|\b(?:except|excluding) (?:for )?(?:this|the) (?:role|position|job)\b', value))
+        # A restriction explicitly scoped to other or unspecified roles is not
+        # evidence that the current role is excluded. Preserve an explicit
+        # current-role restriction even if another clause mentions other roles.
+        scoped_restriction = bool(re.search(
+            r'\bsponsorship\b[^,;.!?]{0,60}\b(?:for|in) (?:some|certain|other|select) (?:roles?|positions?|jobs?)\b', value))
+        current_role = bool(re.search(r'\b(?:for|in) (?:this|the current) (?:role|position|job)\b', value))
+        if is_negative and scoped_restriction and not current_role:
+            is_negative = False
+            is_conditional = True
         no_requirement = bool(re.search(r'no (?:visa )?sponsorship (?:is )?(?:required|needed|restrictions)', value))
         # A transfer-specific restriction says nothing about new sponsorship.
         # Keep mixed claims conflicting, and apply the restriction to a transfer need.
