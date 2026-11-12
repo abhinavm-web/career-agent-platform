@@ -1370,6 +1370,25 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("textContent", source)
         self.assertNotRegex(source, r"\b(?:innerHTML|outerHTML)\s*=")
 
+    def test_existing_job_capture_preview_is_local_read_only_and_checks_url(self):
+        path = f'/api/jobs/{self.job.id}/capture-preview'
+        payload = {'format': 'career-agent-job-capture-v1', 'url': self.job.url + '?utm_source=fictional',
+                   'selection': 'Fictional selected description.'}
+        self.assertEqual(self.call('POST', path, payload, token='bad').status_code, 403)
+        for change in ({'url': 'https://example.invalid/a-different-job'},
+                       {'url': self.job.url + '?ref=another-job'},
+                       {'url': self.job.url + '#another-job'},
+                       {'url': 'https://user:password@example.invalid/job'},
+                       {'selection': ''}, {'selection': 'x' * 50001}, {'selection': 'bad\x00text'}):
+            with self.subTest(change=change):
+                self.assertEqual(self.call('POST', path, {**payload, **change}).status_code, 422)
+        result = self.call('POST', path, payload)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json(), {'job_id': self.job.id, 'description': payload['selection']})
+        with Store(self.db) as store:
+            self.assertEqual(store.get_job(self.job.id).description, self.job.description)
+            self.assertEqual(store.description_revision(self.job.id), 0)
+
     def test_description_correction_invalidates_even_if_restored_and_locks_after_submission(self):
         path = f'/api/jobs/{self.job.id}/description'
         fingerprint = self._draft()

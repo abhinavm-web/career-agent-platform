@@ -24,6 +24,8 @@ pages, and long selections must be shortened. No listing is fetched or verified;
 confirm it with the employer before applying. Existing job deduplication uses the
 URL and does not automatically merge possible duplicates.
 
+For an existing saved job, open **Correct saved description → Use a browser capture for this job**, paste the capture and choose **Fill description from capture**. The app checks the URL against the saved job locally, ignoring the same tracking parameters used in job deduplication, then fills the editor without saving. Review the selected text and source, explicitly confirm and save the correction; existing draft and approval safeguards still apply. Captures with a URL fragment, an ambiguous `ref` query parameter or a different URL are not matched automatically; if appropriate, inspect the original posting and paste the text into the editor manually. Matching a URL does not verify the posting's accuracy or current availability.
+
 The extension requests `activeTab`, `scripting`, and `clipboardWrite`; access to
 the active page is temporary and only used on an explicit button click. It does
 not request broad website permissions or persist captured text in extension

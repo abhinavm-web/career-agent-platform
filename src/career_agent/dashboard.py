@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -35,7 +36,7 @@ from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM, StageConflict
 from .discovery import DiscoveryUnavailable, discover_isolated, validate_sites
-from .models import CandidateProfile, Job
+from .models import CandidateProfile, Job, canonical_url
 from .h1b import H1BResearch, validate_lca_source
 from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
@@ -131,6 +132,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                         10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
                         5 * 1024 * 1024 if request.url.path == "/api/workspace/import-portable" else
                         3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
+                        512 * 1024 if re.fullmatch(r'/api/jobs/[a-f0-9]{16}/(?:description|capture-preview)', request.url.path) else
                         WORKSPACE_BODY_LIMIT
                         if request.url.path == "/api/workspace" and request.method == "PUT"
                         else API_BODY_LIMIT
@@ -948,6 +950,33 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def interview_preparation(job_id: str):
         from .interview_prep import preparation_guide
         return preparation_guide(fit_evidence(job_id))
+
+    @app.post('/api/jobs/{job_id}/capture-preview')
+    async def capture_description_preview(job_id: str, request: Request):
+        """Validate a user-pasted capture without modifying a job or fetching a URL."""
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'format', 'url', 'selection'} or
+                data['format'] != 'career-agent-job-capture-v1' or not isinstance(data['url'], str) or
+                len(data['url']) > 2048 or not isinstance(data['selection'], str) or
+                not data['selection'].strip() or len(data['selection']) > 50000 or '\x00' in data['selection']):
+            raise ValueError('Paste a valid capture with selected job text of at most 50,000 characters')
+        try:
+            data['selection'].encode('utf-8')
+            captured = urlsplit(data['url'])
+            if captured.fragment:
+                raise ValueError('Capture URL contains a fragment that may identify another job; review and paste manually')
+            # The generic job canonicalizer drops ref. It can identify a job on
+            # some sites, so a capture carrying it is ambiguous for this join.
+            if any(key.casefold() == 'ref' for key, _ in parse_qsl(captured.query, keep_blank_values=True)):
+                raise ValueError('Capture URL contains an ambiguous ref parameter; review and paste the description manually')
+            url = canonical_url(data['url'])
+        except ValueError as error:
+            raise ValueError(str(error)) from None
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            if url != canonical_url(job.url):
+                raise ValueError('Capture URL does not match this saved job; review and paste manually if appropriate')
+        return {'job_id': job.id, 'description': data['selection']}
 
     @app.put("/api/jobs/{job_id}/description")
     async def correct_job_description(job_id: str, request: Request):
