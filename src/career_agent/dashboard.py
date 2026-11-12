@@ -34,7 +34,7 @@ from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM, StageConflict
-from .discovery import DiscoveryUnavailable, discover_isolated
+from .discovery import DiscoveryUnavailable, discover_isolated, validate_sites
 from .models import CandidateProfile, Job
 from .h1b import H1BResearch, validate_lca_source
 from .uscis import USCISRecords
@@ -772,11 +772,20 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=422, detail="Location must be 1–240 characters")
         if type(results) is not int or not 1 <= results <= 100:
             raise HTTPException(status_code=422, detail="Results per source must be an integer from 1 to 100")
+        sites = data.get('sites')
+        if 'sites' in data:
+            try:
+                sites = validate_sites(sites)
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from None
         if not discovery_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="A job search is already running. Wait for it to finish.")
         try:
             try:
-                jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop)
+                if sites is None:
+                    jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop)
+                else:
+                    jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop, sites=sites)
             except DiscoveryUnavailable as error:
                 raise HTTPException(status_code=503, detail='Job discovery unavailable. Install the jobspy extra and retry.') from error
             except DiscoveryTimedOut as error:

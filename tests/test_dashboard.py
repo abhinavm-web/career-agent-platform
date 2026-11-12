@@ -735,11 +735,22 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call("POST", "/api/discover", valid, headers={"Origin": "https://example.invalid"}).status_code, 403)
             for change in ({"acknowledged": False}, {"acknowledged": "true"}, {"query": " "},
                            {"query": "x" * 201}, {"location": None}, {"results": True},
-                           {"results": 0}, {"results": 101}, {"results": 1.5}):
+                           {"results": 0}, {"results": 101}, {"results": 1.5},
+                           {"sites": []}, {"sites": None}, {"sites": ['indeed', 'indeed']},
+                           {"sites": ['unknown']}, {"sites": [[]]}):
                 with self.subTest(change=change):
                     self.assertEqual(self.call("POST", "/api/discover", {**valid, **change}).status_code, 422)
             self.assertEqual(self.call("POST", "/api/discover", []).status_code, 422)
             discover.assert_not_called()
+
+    def test_manual_discovery_sends_only_selected_sources(self):
+        payload = {'query': 'Fictional role', 'location': 'USA', 'results': 5,
+                   'sites': ['indeed'], 'acknowledged': True}
+        with patch('career_agent.dashboard.discover_isolated', return_value=[]) as discover:
+            result = self.call('POST', '/api/discover', payload)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(discover.call_args.kwargs['sites'], ['indeed'])
+        self.assertEqual(discover.call_args.args[:3], ('Fictional role', 'USA', 5))
 
     def test_manual_discovery_reports_sanitized_partial_source_status(self):
         from career_agent.discovery import DiscoveryResults
