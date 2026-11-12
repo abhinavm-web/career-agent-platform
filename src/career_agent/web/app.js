@@ -1028,9 +1028,10 @@
       }
       card.append(node("small", "muted", "Private evidence: " + fact.source_note));
       const actions = node("div", "button-row");
-      actions.append(button("Edit", "button", () => editFact(fact)));
-      actions.append(button(fact.verified_by_candidate ? "Revoke verification" : "Verify this fact", fact.verified_by_candidate ? "button" : "button button-primary", () => toggleFactVerification(fact)));
-      actions.append(button("Delete", "button button-danger", () => deleteFact(fact.id)));
+      const factActions = [button("Edit", "button", () => editFact(fact)),
+        button(fact.verified_by_candidate ? "Revoke verification" : "Verify this fact", fact.verified_by_candidate ? "button" : "button button-primary", () => toggleFactVerification(fact)),
+        button("Delete", "button button-danger", () => deleteFact(fact.id))];
+      for (const action of factActions) { action.disabled = workspaceMutationBusy; actions.append(action); }
       card.append(actions);
       list.append(card);
     }
@@ -1048,6 +1049,7 @@
     workspaceMutationBusy = busy;
     byId("profile-screen").inert = busy;
     byId("career-facts-list").inert = busy;
+    for (const action of byId("career-facts-list").querySelectorAll?.(".career-fact button") || []) action.disabled = busy;
     byId("profile-screen").setAttribute("aria-busy", String(busy));
     for (const id of ["career-profile-form", "career-fact-form"]) {
       const submit = byId(id).querySelector?.('button[type="submit"]');
