@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import asyncio
 import base64
 import json
 import re
@@ -88,6 +89,44 @@ class DashboardTests(unittest.TestCase):
         if payload is None:
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
+
+    def test_oversized_request_is_rejected(self):
+        from career_agent.dashboard import API_BODY_LIMIT
+
+        response = self.client.post(
+            '/api/workspace/resume-extract',
+            headers={'X-Session-Token': self.session, 'Content-Type': 'application/json'},
+            content=b'x' * (3 * 1024 * 1024 + 1),
+        )
+        self.assertEqual(response.status_code, 413)
+        response = self.client.post(
+            '/api/jobs',
+            headers={'X-Session-Token': self.session, 'Content-Type': 'application/json'},
+            content=b'x' * (API_BODY_LIMIT + 1),
+        )
+        self.assertEqual(response.status_code, 413)
+
+    def test_oversized_stream_stops_reading(self):
+        import httpx
+        from career_agent.dashboard import API_BODY_LIMIT
+
+        consumed = []
+
+        async def body():
+            consumed.append('first')
+            yield b'x' * (API_BODY_LIMIT + 1)
+            consumed.append('second')
+            yield b'x'
+
+        async def send():
+            transport = httpx.ASGITransport(app=self.app)
+            async with httpx.AsyncClient(transport=transport, base_url='http://localhost') as client:
+                return await client.post('/api/jobs', content=body(), headers={
+                    'X-Session-Token': self.session, 'Content-Type': 'application/json',
+                })
+
+        self.assertEqual(asyncio.run(send()).status_code, 413)
+        self.assertEqual(consumed, ['first'])
 
     def test_resume_extract_is_local_and_does_not_change_workspace(self):
         before = self.call('GET', '/api/workspace').json()

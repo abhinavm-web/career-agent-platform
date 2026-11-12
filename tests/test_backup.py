@@ -1,5 +1,6 @@
 """Offline archive tests use fictional records and temporary workspaces only."""
 import json
+import importlib.util
 import sqlite3
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from career_agent.backup import create_backup, restore_backup
+from career_agent.backup import create_backup, restore_backup, verify_backup
 from career_agent.cli import main
 
 
@@ -51,6 +52,54 @@ class BackupTests(unittest.TestCase):
         self.assertEqual((destination / 'packets' / 'abc.json').read_text(), '{"fictional":true}')
         with self.assertRaisesRegex(ValueError, 'already exists'):
             restore_backup(self.archive, destination, offline=True)
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
+    def test_encrypted_backup_roundtrip_and_authentication(self):
+        create_backup(self.db, self.packets, self.archive, offline=True, password='fictional passphrase')
+        self.assertNotIn(b'fictional candidate', self.archive.read_bytes())
+        with self.assertRaisesRegex(ValueError, 'passphrase or corrupted'):
+            restore_backup(self.archive, self.root / 'wrong', offline=True, password='wrong')
+        self.assertFalse((self.root / 'wrong').exists())
+        damaged = self.root / 'damaged'
+        data = bytearray(self.archive.read_bytes())
+        data[-17] ^= 1
+        damaged.write_bytes(data)
+        with self.assertRaisesRegex(ValueError, 'passphrase or corrupted'):
+            restore_backup(damaged, self.root / 'damaged-restore', offline=True, password='fictional passphrase')
+        self.assertFalse((self.root / 'damaged-restore').exists())
+        destination = self.root / 'encrypted-restored'
+        restore_backup(self.archive, destination, offline=True, password='fictional passphrase')
+        self.assertEqual((destination / 'packets' / 'abc.json').read_text(), '{"fictional":true}')
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
+    def test_encrypted_cli_prompts_and_restores(self):
+        with patch('career_agent.cli.getpass.getpass', side_effect=['test password', 'test password']):
+            self.assertEqual(main(['--db', str(self.db), 'backup', str(self.archive), '--packet-dir', str(self.packets), '--offline', '--encrypted']), 0)
+        with patch('career_agent.cli.getpass.getpass', return_value='test password'):
+            self.assertEqual(main(['restore', str(self.archive), str(self.root / 'cli-restored'), '--offline', '--encrypted']), 0)
+        self.assertTrue((self.root / 'cli-restored' / 'workspace.sqlite3').is_file())
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
+    def test_verify_encrypted_backup_and_remove_temporary_files(self):
+        create_backup(self.db, self.packets, self.archive, offline=True, password='test password')
+        staging = self.root / 'staging'
+        staging.mkdir()
+        self.assertEqual(verify_backup(self.archive, password='test password', temp_dir=staging)['files'], 4)
+        self.assertEqual(list(staging.iterdir()), [])
+        with self.assertRaisesRegex(ValueError, 'passphrase or corrupted'):
+            verify_backup(self.archive, password='wrong', temp_dir=staging)
+        self.assertEqual(list(staging.iterdir()), [])
+        with patch('career_agent.cli.getpass.getpass', return_value='test password'):
+            self.assertEqual(main(['verify-backup', str(self.archive), '--encrypted', '--temp-dir', str(staging)]), 0)
+        self.assertEqual(list(staging.iterdir()), [])
+
+    def test_verify_plain_backup_detects_corruption(self):
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertTrue(verify_backup(self.archive, temp_dir=self.root)['verified'])
+        self.archive.write_bytes(b'not a backup')
+        with self.assertRaisesRegex(ValueError, 'Invalid or corrupt'):
+            verify_backup(self.archive, temp_dir=self.root)
+        self.assertEqual(list(self.root.glob('.career-verify-*')), [])
 
     def test_offline_acknowledgement_and_missing_source(self):
         with self.assertRaisesRegex(ValueError, 'Stop the app'):

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import getpass
 import json
 import sqlite3
 import sys
@@ -99,10 +100,16 @@ def parser() -> argparse.ArgumentParser:
     backup.add_argument("destination", help="New archive path; never overwritten")
     backup.add_argument("--packet-dir", default=".local/packets")
     backup.add_argument("--offline", action="store_true", help="Confirm the app and all writers are stopped")
+    backup.add_argument("--encrypted", action="store_true", help="Protect the archive with a prompted passphrase")
     restore = cmd.add_parser("restore", help="Restore a backup into a new directory")
     restore.add_argument("archive")
     restore.add_argument("destination", help="New directory; never overwrites existing data")
     restore.add_argument("--offline", action="store_true", help="Confirm the app and all writers are stopped")
+    restore.add_argument("--encrypted", action="store_true", help="Prompt for the encrypted archive passphrase")
+    verify = cmd.add_parser("verify-backup", help="Check a backup by restoring it into temporary storage")
+    verify.add_argument("archive")
+    verify.add_argument("--encrypted", action="store_true", help="Prompt for the encrypted archive passphrase")
+    verify.add_argument("--temp-dir", help="Existing directory for temporary plaintext files")
     return root
 
 
@@ -143,11 +150,22 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "backup":
             from .backup import create_backup
-            print(json.dumps(create_backup(args.db, args.packet_dir, args.destination, offline=args.offline)))
+            password = None
+            if args.encrypted:
+                password = getpass.getpass('Backup passphrase: ')
+                if not password or password != getpass.getpass('Repeat passphrase: '):
+                    raise ValueError('Passphrases must be nonempty and match')
+            print(json.dumps(create_backup(args.db, args.packet_dir, args.destination, offline=args.offline, password=password)))
             return 0
         if args.command == "restore":
             from .backup import restore_backup
-            print(json.dumps(restore_backup(args.archive, args.destination, offline=args.offline)))
+            password = getpass.getpass('Backup passphrase: ') if args.encrypted else None
+            print(json.dumps(restore_backup(args.archive, args.destination, offline=args.offline, password=password)))
+            return 0
+        if args.command == "verify-backup":
+            from .backup import verify_backup
+            password = getpass.getpass('Backup passphrase: ') if args.encrypted else None
+            print(json.dumps(verify_backup(args.archive, password=password, temp_dir=args.temp_dir)))
             return 0
         if args.command == "serve":
             from .dashboard import DashboardConfig, serve

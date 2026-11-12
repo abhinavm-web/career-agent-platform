@@ -26,7 +26,7 @@ The API requires the session token, exact current packet fingerprint and an appr
 
 ## Limits and verification
 
-Only the deterministic packet format is supported: headings, plain paragraphs and bullets. Raw HTML is escaped; arbitrary Markdown links, images and styling are not interpreted. Contact details are not synthesized. No guaranteed ATS acceptance, page-count limit, DOCX export, cover-letter PDF or historical-export workflow is provided. Unicode coverage depends on installed system fonts; inspect names and non-Latin text before use.
+Only the deterministic packet format is supported: headings, plain paragraphs and bullets. Raw HTML is escaped; arbitrary Markdown links, images and styling are not interpreted. Contact details are not synthesized. No guaranteed ATS acceptance, page-count limit, cover-letter PDF or historical-export workflow is provided. Unicode coverage depends on installed system fonts; inspect names and non-Latin text before use.
 
 Optional real-render tests (also run in CI):
 

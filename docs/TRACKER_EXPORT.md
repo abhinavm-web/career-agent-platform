@@ -17,10 +17,10 @@ The top-level `format` is `career-agent-tracker-history`, with `schema_version: 
 | `priority_events` | All recorded priority changes |
 | `contacts` | Current recruiter/contact records, including private notes |
 | `interview_notes` | All dated interview notes |
-| `followups` | Open and completed tasks, linked job/contact IDs and current due dates |
-| `followup_events` | Creation, rescheduling and completion events linked to tasks |
+| `followups` | Tasks, linked job/contact IDs, current due dates and completion times |
+| `followup_events` | Creation, rescheduling, completion and cancellation events linked to tasks |
 
-Events are ordered by their numeric IDs, and jobs/applications by job ID. SQLite event timestamps are UTC; due dates and interview dates are candidate-entered calendar dates without a time zone. `remote` is stored as `0` or `1`. Empty collections are empty arrays.
+A cancellation is represented by a `cancelled` event; its task has no completion time. Events are ordered by their numeric IDs, and jobs/applications by job ID. SQLite event timestamps are UTC; due dates and interview dates are candidate-entered calendar dates without a time zone. `remote` is stored as `0` or `1`. Empty collections are empty arrays.
 
 The export uses one database read transaction so concurrent edits cannot mix different snapshots. It reads explicit columns and has no dashboard row caps. Contact edits retain only the current record because the CRM does not store contact edit history. Application records likewise represent the current stored state; the export does not invent missing historical events or certify employer receipts.
 

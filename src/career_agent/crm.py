@@ -127,6 +127,8 @@ class ApplicationCRM:
                 actor TEXT NOT NULL DEFAULT 'candidate',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE INDEX IF NOT EXISTS idx_crm_followup_events_task_action
+                ON crm_followup_events(followup_id, action);
             """
         )
 
@@ -258,21 +260,24 @@ class ApplicationCRM:
         return row
 
     def update_followup(self, followup_id: Any, *,
-                        complete: bool = False, due_date: Any = None) -> dict:
-        row = self._followup(followup_id)
-        if row["completed_at"] is not None:
-            raise ValueError("Completed follow-up tasks cannot be changed")
-        if type(complete) is not bool or (complete == (due_date is not None)):
-            raise ValueError("Choose exactly one action: complete or reschedule")
-        new_date = _due(due_date) if due_date is not None else row["due_date"]
-        action = "completed" if complete else "rescheduled"
-        with self.conn:
+                        complete: bool = False, cancel: bool = False, due_date: Any = None) -> dict:
+        if type(complete) is not bool or type(cancel) is not bool or sum((complete, cancel, due_date is not None)) != 1:
+            raise ValueError("Choose exactly one action: complete, cancel or reschedule")
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self._followup(followup_id)
+            if row["completed_at"] is not None:
+                raise ValueError("Completed follow-up tasks cannot be changed")
+            if self.conn.execute("SELECT 1 FROM crm_followup_events WHERE followup_id=? AND action='cancelled'", (row["followup_id"],)).fetchone():
+                raise ValueError("Cancelled follow-up tasks cannot be changed")
+            new_date = _due(due_date) if due_date is not None else row["due_date"]
+            action = "completed" if complete else "cancelled" if cancel else "rescheduled"
             if complete:
                 self.conn.execute(
                     "UPDATE crm_followups SET completed_at=CURRENT_TIMESTAMP WHERE followup_id=?",
                     (row["followup_id"],),
                 )
-            else:
+            elif not cancel:
                 self.conn.execute(
                     "UPDATE crm_followups SET due_date=? WHERE followup_id=?",
                     (new_date, row["followup_id"]),
@@ -281,15 +286,20 @@ class ApplicationCRM:
                 "INSERT INTO crm_followup_events(followup_id,action,due_date) VALUES(?,?,?)",
                 (row["followup_id"], action, new_date),
             )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
         return {"followup_id": row["followup_id"], "action": action, "due_date": new_date}
 
     def followups(self, job_id: str) -> list[dict]:
         self.store.get_job(job_id)
         rows = self.conn.execute(
             "SELECT f.followup_id,f.title,f.due_date,f.completed_at,f.created_at,"
-            " f.contact_id,c.name AS contact_name FROM crm_followups f"
+            " f.contact_id,c.name AS contact_name,"
+            " EXISTS(SELECT 1 FROM crm_followup_events e WHERE e.followup_id=f.followup_id AND e.action='cancelled') AS cancelled FROM crm_followups f"
             " LEFT JOIN crm_contacts c ON c.contact_id=f.contact_id"
-            " WHERE f.job_id=? ORDER BY (f.completed_at IS NOT NULL),f.due_date LIMIT 100",
+            " WHERE f.job_id=? ORDER BY (f.completed_at IS NOT NULL OR cancelled),f.due_date LIMIT 100",
             (job_id,),
         ).fetchall()
         return [dict(row) for row in rows]
@@ -412,7 +422,7 @@ class ApplicationCRM:
             "SELECT f.followup_id,f.job_id,f.title,f.due_date,"
             " j.company,j.title AS job_title "
             "FROM crm_followups f JOIN jobs j ON j.job_id=f.job_id "
-            "WHERE f.completed_at IS NULL ORDER BY f.due_date,f.followup_id LIMIT 50"
+            "WHERE f.completed_at IS NULL AND NOT EXISTS (SELECT 1 FROM crm_followup_events e WHERE e.followup_id=f.followup_id AND e.action='cancelled') ORDER BY f.due_date,f.followup_id LIMIT 50"
         ).fetchall()
         today = date.today().isoformat()
         upcoming = [{**dict(row), "overdue": row["due_date"] < today} for row in rows]

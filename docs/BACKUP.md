@@ -1,6 +1,24 @@
 # Local workspace backup and restore
 
-Backups contain private, unencrypted workspace data. Store them in a protected,
+## Passphrase-protected backups
+
+Install `python -m pip install -e ".[backup]"`, then add `--encrypted` to
+both the backup and restore commands below. The command prompts for the
+passphrase without echoing it; backup asks twice. Choose a strong passphrase
+and keep it somewhere safe: it cannot be recovered if lost. Encrypted archives
+use scrypt and AES-256-GCM, and restore verifies authentication before creating
+the destination. Existing unencrypted ZIP backups remain supported without
+`--encrypted`.
+
+Encryption protects the final archive, not the working workspace. Backup and
+restore temporarily stage plaintext files in a temporary directory
+under the destination's parent; the operating system or disk may retain traces
+after deletion. Use an encrypted local disk and a trusted account. The restore
+destination itself is plaintext. Never commit archives or passphrases to Git.
+
+## Backup procedure
+
+Unencrypted backups contain private workspace data. Store them in a protected,
 encrypted backup location and never commit them to Git. The backup copies the
 main SQLite database, any sibling LangGraph workflow and discovery checkpoint
 databases, and JSON files in the selected packet directory. SQLite's backup API
@@ -25,10 +43,26 @@ common wrong-directory mistakes, but cannot establish that a directory is
 complete for legacy/custom packets or that matching files have the intended
 version. Check the path carefully. The archive is created atomically and an
 existing destination is never overwritten. The
-archive contains SHA-256 file checksums and is unencrypted. It excludes external
+archive contains SHA-256 file checksums. Without `--encrypted` it is unencrypted. It excludes external
 legacy `--profile`, `--facts`, and `--filings` files, AI route configuration,
 credentials, and files elsewhere on your machine. Back up any such files
 separately if you still use them. Do not put credentials in the archive.
+
+## Verify a backup
+
+Test an archive without replacing or changing your workspace:
+
+```powershell
+.\.venv\Scripts\python.exe -m career_agent.cli verify-backup private/workspace-backup.zip --encrypted --temp-dir private
+```
+
+Omit `--encrypted` for an unencrypted ZIP. Verification performs a temporary
+restore, checking authentication for encrypted archives, paths, checksums and
+SQLite integrity. It removes the temporary directory afterward. `--temp-dir`
+must name an existing directory on a trusted, encrypted disk; if omitted, the
+operating system's temporary directory is used. Temporary files include
+plaintext, and disk traces may remain. Verification does not prove that omitted
+external files were backed up or that the captured data is complete or current.
 
 To restore, keep the app stopped and choose a **new, non-existing** directory:
 
