@@ -30,15 +30,18 @@ class PostingDatesBrowserTests(unittest.TestCase):
                     if server.started: break
                     time.sleep(0.05)
                 self.assertTrue(server.started)
-                with patch('career_agent.dashboard.discover_isolated', return_value=DiscoveryResults([job])), sync_playwright() as p:
+                with patch('career_agent.dashboard.discover_isolated', return_value=DiscoveryResults([job])) as discover, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Fictional engineer')
+                        page.locator('#discover-site-linkedin').uncheck()
+                        page.locator('#discover-site-zip').uncheck()
                         page.locator('#discover-consent').check()
                         page.get_by_role('button', name='Search and import jobs').click()
                         expect(page.locator('#discover-status')).to_contain_text('1 added')
+                        self.assertEqual(discover.call_args.kwargs['sites'], ['indeed'])
                         page.reload()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         detail = page.locator('#detail-panel')

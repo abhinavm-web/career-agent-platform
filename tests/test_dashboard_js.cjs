@@ -112,6 +112,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
     return elements.get(id);
   };
   get("app").dataset.session = "testing-only";
+  for (const id of ["discover-site-indeed", "discover-site-linkedin", "discover-site-zip"]) get(id).checked = true;
   const waiting = new Map();
   let workspace = {
     revision: 0,
@@ -764,7 +765,7 @@ test("JobSpy search requires consent, blocks duplicate clicks and reports import
   await submit();
   assert.equal(harness.discoveryRequests.length, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(harness.discoveryRequests[0])), {
-    query: "AI Lead", location: "United States", results: 5, acknowledged: true
+    query: "AI Lead", location: "United States", results: 5, sites: ["indeed", "linkedin", "zip_recruiter"], acknowledged: true
   });
   await harness.get("nav-profile").click();
   harness.get("career-headline").value = "Unsaved headline during search";
@@ -790,6 +791,30 @@ test("partial discovery shows source errors and inconclusive empty sources", asy
   await h.get("discover-form").handlers.submit({preventDefault() {}});
   assert.match(h.get("discover-status").textContent, /linkedin: reported an error/);
   assert.match(h.get("discover-status").textContent, /zip_recruiter: no usable rows; inconclusive/);
+});
+
+test("manual discovery binds consent to selected sources and inputs", async () => {
+  let finish;
+  const h = createHarness({discovery: () => new Promise(resolve => { finish = resolve; })});
+  await flush();
+  h.get('discover-query').value = 'Engineer'; h.get('discover-location').value = 'USA'; h.get('discover-results').value = '5';
+  h.get('discover-consent').checked = true;
+  h.get('discover-site-linkedin').checked = false; h.get('discover-site-linkedin').handlers.change();
+  assert.equal(h.get('discover-consent').checked, false);
+  h.get('discover-site-zip').checked = false; h.get('discover-site-zip').handlers.change();
+  h.get('discover-consent').checked = true;
+  const running = h.get('discover-form').handlers.submit({preventDefault() {}});
+  assert.deepEqual(JSON.parse(JSON.stringify(h.discoveryRequests[0].sites)), ['indeed']);
+  assert.equal(h.get('discover-query').disabled, true);
+  assert.equal(h.get('discover-site-indeed').disabled, true);
+  finish(ok({found: 0, new: 0, duplicates: 0})); await running;
+  assert.equal(h.get('discover-query').disabled, false);
+  assert.equal(h.get('discover-consent').checked, false);
+  h.get('discover-site-indeed').checked = false;
+  h.get('discover-consent').checked = true;
+  await h.get('discover-form').handlers.submit({preventDefault() {}});
+  assert.equal(h.discoveryRequests.length, 1);
+  assert.match(h.get('discover-status').textContent, /Choose at least one/);
 });
 
 test("failed discovery preserves search input and enables retry", async () => {

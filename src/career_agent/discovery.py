@@ -22,6 +22,15 @@ class DiscoveryResults(list):
 
 
 _jobspy_lock = Lock()
+SUPPORTED_SITES = ('indeed', 'linkedin', 'zip_recruiter')
+
+
+def validate_sites(sites):
+    if (not isinstance(sites, list) or not 1 <= len(sites) <= len(SUPPORTED_SITES)
+            or not all(isinstance(site, str) and site in SUPPORTED_SITES for site in sites)
+            or len(set(sites)) != len(sites)):
+        raise ValueError('Choose one or more distinct supported job sources')
+    return list(sites)
 
 
 class _SkippedZipRecords(logging.Handler):
@@ -48,7 +57,7 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
         from jobspy import scrape_jobs
     except ImportError as error:
         raise DiscoveryUnavailable('Install JobSpy: pip install -e ".[jobspy]"') from error
-    selected = sites or ["indeed", "linkedin", "zip_recruiter"]
+    selected = validate_sites(sites) if sites is not None else list(SUPPORTED_SITES)
     # JobSpy 1.4 can log skipped ZipRecruiter rows without putting them in
     # DataFrame.attrs['warnings']. Keep only the signal, never provider text.
     # Discovery normally runs in its own process; serialize direct calls too.
@@ -87,11 +96,12 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
     return DiscoveryResults(jobs, status)
 
 
-def discover_isolated(query: str, location: str, results: int, stop) -> list[Job]:
+def discover_isolated(query: str, location: str, results: int, stop, *, sites=None) -> list[Job]:
     """Run manual searches in the same bounded process used by saved searches."""
     from .automation import fetch
+    selected = validate_sites(sites) if sites is not None else list(SUPPORTED_SITES)
     if importlib.util.find_spec('jobspy') is None:
         raise DiscoveryUnavailable('Install JobSpy: pip install -e ".[jobspy]"')
     rows = fetch({'query': query, 'location': location, 'results': results,
-                  'sites': ['indeed', 'linkedin', 'zip_recruiter']}, stop)
+                  'sites': selected}, stop)
     return DiscoveryResults([Job.from_mapping(row) for row in rows], getattr(rows, 'source_status', {}))

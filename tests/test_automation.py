@@ -275,6 +275,15 @@ class AutomationTests(unittest.TestCase):
             'query': 'Fictional role', 'location': 'USA', 'results': 5,
             'sites': ['indeed', 'linkedin', 'zip_recruiter']})
         self.assertIs(worker.call_args.args[1], self.auto.stop)
+        with patch('career_agent.discovery.importlib.util.find_spec', return_value=object()), \
+             patch('career_agent.automation.fetch', return_value=[asdict(job)]) as worker:
+            discover_isolated('Fictional role', 'USA', 5, self.auto.stop, sites=['linkedin'])
+        self.assertEqual(worker.call_args.args[0]['sites'], ['linkedin'])
+        with patch('career_agent.automation.fetch') as worker:
+            for sites in ([], ['unknown'], ['indeed', 'indeed']):
+                with self.assertRaises(ValueError):
+                    discover_isolated('Fictional role', 'USA', 5, self.auto.stop, sites=sites)
+            worker.assert_not_called()
         with patch('career_agent.discovery.importlib.util.find_spec', return_value=None), \
              patch('career_agent.automation.fetch') as worker:
             with self.assertRaises(DiscoveryUnavailable):

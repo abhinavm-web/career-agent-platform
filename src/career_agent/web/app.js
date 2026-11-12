@@ -1732,6 +1732,11 @@
   });
   byId("setup-add-job").addEventListener("click", () => byId("show-add-job").click());
   byId("ai-open-profile").addEventListener("click", () => byId("nav-profile").click());
+  const manualSources = [["discover-site-indeed", "indeed"], ["discover-site-linkedin", "linkedin"], ["discover-site-zip", "zip_recruiter"]];
+  for (const id of ["discover-query", "discover-location", "discover-results", ...manualSources.map(([id]) => id)]) {
+    byId(id).addEventListener("input", () => { byId("discover-consent").checked = false; });
+    byId(id).addEventListener("change", () => { byId("discover-consent").checked = false; });
+  }
   byId("discover-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const submit = byId("discover-submit");
@@ -1741,13 +1746,17 @@
       status.textContent = "Confirm sending this search to external job sources.";
       return;
     }
+    const sites = manualSources.filter(([id]) => byId(id).checked).map(([, source]) => source);
+    if (!sites.length) { status.textContent = "Choose at least one job source."; return; }
+    const controls = ["discover-query", "discover-location", "discover-results", "discover-consent", ...manualSources.map(([id]) => id)];
+    controls.forEach(id => { byId(id).disabled = true; });
     submit.disabled = true;
     byId("discover-form").setAttribute("aria-busy", "true");
     status.textContent = "Searching job sources… This may take a few minutes.";
     try {
       const result = await api("/api/discover", "POST", {
         query: byId("discover-query").value, location: byId("discover-location").value,
-        results: Number(byId("discover-results").value), acknowledged: true
+        results: Number(byId("discover-results").value), sites, acknowledged: true
       });
       status.textContent = result.found + " returned · " + result.new + " added · " + result.duplicates +
         " duplicates. Sources may return partial results." + (result.found ? "" : " No usable rows is inconclusive and may indicate a source failure.");
@@ -1761,6 +1770,7 @@
     } catch (error) {
       status.textContent = error.message;
     } finally {
+      controls.forEach(id => { byId(id).disabled = false; });
       submit.disabled = false;
       byId("discover-form").setAttribute("aria-busy", "false");
     }
