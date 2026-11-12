@@ -4,7 +4,7 @@
 
 Authoritative original data should come from the [U.S. Department of Labor Office of Foreign Labor Certification performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance), specifically LCA program disclosure files and their field layouts. Employer name, fiscal year, and official source URL should remain attached to every imported record.
 
-The legacy packet/CLI evidence adapter accepts **manually curated CSV records** in the format below. The dashboard provides an [H-1B research workspace](H1B_RESEARCH.md) for importing DOL LCA CSV files, company searches and job-policy assessments; the separate CLI importer also accepts XLSX workbooks with optional dependencies. DOL imports do not download or independently authenticate government records. A separate [USCIS adapter](USCIS_LIVE_CHECKS.md) can refresh supported annual CSV files directly or import them locally.
+The legacy packet/CLI evidence adapter accepts **manually curated CSV records** in the format below. The [H-1B research workspace](H1B_RESEARCH.md) supports local DOL LCA CSV and XLSX imports, explicit downloads of supported DOL workbooks, company searches and job-policy assessments. The CLI also imports local workbooks with optional dependencies. Downloaded files have transport provenance and a fingerprint, not independent verification of their completeness or accuracy; locally supplied files are not independently authenticated. A separate [USCIS adapter](USCIS_LIVE_CHECKS.md) can refresh supported annual CSV files directly or import them locally.
 
 Format:
 
@@ -30,7 +30,7 @@ Never automatically answer screening questions about citizenship, status, petiti
 
 ## Future scope
 
-- Download official workbooks directly and independently validate reporting-period metadata; support additional USCIS release formats.
+- Independently validate reporting-period metadata and support additional DOL paths and USCIS release formats.
 - Improve reviewed employer legal-entity mapping beyond explicit candidate-provided associations.
 - Add current employer career-page statements and explicit timestamps.
 - Keep employer historical probability models separate from job-specific assertions.
