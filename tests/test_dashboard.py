@@ -1259,6 +1259,88 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(result['correction'].status_code, 200)
         self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
 
+    def test_exports_recheck_legacy_files_after_rendering(self):
+        for extension, target, changed_file in (('pdf', 'resume_pdf', 'facts'),
+                                                ('docx', 'resume_docx', 'profile'),
+                                                ('docx', 'resume_docx', 'missing_facts')):
+            with self.subTest(extension=extension, changed_file=changed_file):
+                self.facts_path.write_text(json.dumps(fake_fact_bank()))
+                from dataclasses import asdict
+                self.profile_path.write_text(json.dumps(asdict(CandidateProfile(
+                    target_titles=('AI Program Lead',), skills=('Python',), preferred_locations=(), allow_remote=True))))
+                fingerprint = self._draft()
+                self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                    'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+                def render(_packet):
+                    if changed_file == 'missing_facts':
+                        self.facts_path.unlink()
+                    elif changed_file == 'facts':
+                        changed = fake_fact_bank(); changed['facts'][0]['statement'] += ' Changed.'
+                        self.facts_path.write_text(json.dumps(changed))
+                    else:
+                        self.profile_path.write_text(json.dumps({'target_titles': ['Different role']}))
+                    return b'fictional-document'
+                with patch('career_agent.dashboard.' + target, side_effect=render):
+                    response = self.call('GET', f'/api/jobs/{self.job.id}/resume.{extension}?packet_sha256={fingerprint}')
+                self.assertEqual(response.status_code, 409, response.text)
+
+    def test_submission_rechecks_legacy_facts_inside_transaction(self):
+        fingerprint = self._draft()
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        original = Store.workspace_revision
+        def changed(store):
+            changed = fake_fact_bank(); changed['facts'][0]['statement'] += ' Changed.'
+            self.facts_path.write_text(json.dumps(changed))
+            return original(store)
+        with patch.object(Store, 'workspace_revision', changed):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+                'packet_sha256': fingerprint, 'receipt': 'fictional-receipt', 'attest_confirmed': True})
+        self.assertEqual(response.status_code, 409, response.text)
+        with Store(self.db) as store:
+            self.assertNotEqual(store.stage_of(self.job.id), 'submitted')
+
+    def test_missing_legacy_facts_fail_closed_before_export_or_review(self):
+        fingerprint = self._draft()
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        self.facts_path.unlink()
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet')
+        self.assertEqual(packet.status_code, 200, packet.text)
+        self.assertTrue(packet.json()['stale'])
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/resume.docx?packet_sha256={fingerprint}').status_code, 409)
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 409)
+
+    def test_workflow_review_rechecks_legacy_facts_inside_transaction(self):
+        from career_agent.workflows import Workflows
+        fingerprint = self._draft()
+        original = Workflows.advance
+        def advance(manager, run_id, signature, decision=None, **kwargs):
+            if decision is not None:
+                changed = fake_fact_bank(); changed['facts'][0]['statement'] += ' Changed.'
+                self.facts_path.write_text(json.dumps(changed))
+            return original(manager, run_id, signature, decision, **kwargs)
+        with patch.object(Workflows, 'advance', advance):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertIn(response.status_code, (409, 422), response.text)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
+    def test_workflow_review_handles_file_disappearing_after_stale_check(self):
+        from career_agent.workflows import Workflows
+        fingerprint = self._draft()
+        original = Workflows.review
+        def review(manager, *args, **kwargs):
+            self.facts_path.unlink()
+            return original(manager, *args, **kwargs)
+        with patch.object(Workflows, 'review', review):
+            response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+                'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertNotIn(str(self.facts_path), response.text)
+        self.assertEqual(self.call('GET', '/api/reviews').json()['reviews'], [])
+
     def test_pdf_export_rechecks_description_after_rendering(self):
         fingerprint = self._draft()
         self.call('POST', f'/api/jobs/{self.job.id}/decision', {
