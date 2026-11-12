@@ -584,13 +584,13 @@ class H1BResearch:
                 'next_offset': offset + 25 if offset + 25 < len(matches) else None,
                 'settings': settings}
 
-    def search(self, query, offset=0, *, name_mode='literal'):
+    def search_employers(self, query, offset=0, *, name_mode='literal', include_location=True):
+        """Search imported filing names without scanning saved jobs."""
         query = text(query, 'Company search', 200)
-        if len(query) < 2 or type(offset) is not int or offset < 0:
-            raise ValueError('Use at least two characters and a nonnegative offset')
+        if len(query) < 2 or type(offset) is not int or not 0 <= offset <= 9223372036854775807:
+            raise ValueError('Use at least two characters and a nonnegative supported offset')
         if name_mode not in ('literal', 'punctuation'):
             raise ValueError('Unknown employer name search mode')
-        settings = self.settings()
         # instr treats SQL wildcard characters literally. Search suggestions never imply an entity match.
         key = employer_key(query)
         employers = 'WITH employers AS (SELECT employer_key,employer FROM h1b_lca UNION ALL SELECT employer_key,employer FROM uscis_employers) '
@@ -605,12 +605,26 @@ class H1BResearch:
         else:
             total = self.conn.execute(employers + 'SELECT COUNT(DISTINCT employer_key) FROM employers WHERE instr(employer_key,?)>0', (key,)).fetchone()[0]
             companies = self.conn.execute(employers + 'SELECT MIN(employer) AS employer FROM employers WHERE instr(employer_key,?)>0 GROUP BY employer_key ORDER BY employer_key LIMIT 25 OFFSET ?', (key, offset)).fetchall()
+        # A single DOL filing location is a clue for human review, not proof of
+        # identity. Do not build complete company histories for a name picker.
+        suggestions = []
+        for row in companies:
+            example = (self.conn.execute('SELECT city,state FROM h1b_lca WHERE employer_key=? ORDER BY decision_date DESC,case_number LIMIT 1',
+                                         (employer_key(row['employer']),)).fetchone() if include_location else None)
+            suggestions.append({'employer': row['employer'], 'records': [dict(example)] if example else []})
+        return {'companies': suggestions, 'company_total': total, 'offset': offset,
+                'next_offset': offset + 25 if offset + 25 < total else None, 'name_mode': name_mode}
+
+    def search(self, query, offset=0, *, name_mode='literal'):
+        result = self.search_employers(query, offset, name_mode=name_mode, include_location=False)
+        settings = self.settings()
+        result['companies'] = [self.company(item['employer'], settings) for item in result['companies']]
+        key = employer_key(query.strip())
+        candidate_key = employer_search_key(query.strip()) if name_mode == 'punctuation' else None
         jobs = [self.job(job, settings) for job in self.store.list_jobs(limit=-1)
                 if (candidate_key in employer_search_key(job.company) if name_mode == 'punctuation'
                     else key in employer_key(job.company))]
         if not settings['include_unknown']:
             jobs = [job for job in jobs if job['policy'] != 'unknown']
-        return {'companies': [self.company(row['employer'], settings) for row in companies],
-                'company_total': total, 'offset': offset, 'next_offset': offset + 25 if offset + 25 < total else None,
-                'jobs': jobs, 'settings': settings, 'coverage': self.coverage(), 'name_mode': name_mode,
+        return {**result, 'jobs': jobs, 'settings': settings, 'coverage': self.coverage(),
                 'warning': 'LCA and USCIS history are separate from current job policy. No records means unknown, not no sponsorship. Live checks are dated ATS observations, not hiring or sponsorship guarantees.'}

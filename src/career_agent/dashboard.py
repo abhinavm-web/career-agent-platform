@@ -668,6 +668,11 @@ def create_app(config: DashboardConfig) -> FastAPI:
         with Store(config.db_path) as store:
             return H1BResearch(store).opportunities(q, category, offset)
 
+    @app.get("/api/h1b/employers")
+    def h1b_employers(q: str, offset: int = 0, name_mode: str = 'literal'):
+        with Store(config.db_path) as store:
+            return H1BResearch(store).search_employers(q, offset, name_mode=name_mode)
+
     @app.get("/api/h1b/search")
     def h1b_search(q: str, offset: int = 0, name_mode: str = 'literal'):
         with Store(config.db_path) as store:

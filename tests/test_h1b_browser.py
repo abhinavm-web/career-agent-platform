@@ -57,6 +57,17 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(results).to_contain_text('Certified LCA cases in imported data since FY')
                         expect(results).to_contain_text('No USCIS snapshots have been imported')
                         expect(results).not_to_contain_text('No DOL LCA or USCIS records have been imported')
+                        requests = []
+                        page.on('request', lambda request: requests.append(request.url))
+                        results.get_by_text('Associate an imported legal employer').click()
+                        results.get_by_role('button', name='Search imported employer names').click()
+                        expect(results).to_contain_text('Possible names only')
+                        results.get_by_role('button', name='Use Fictional Employer').click()
+                        results.get_by_label('How you checked the association').fill('Fictional source checked')
+                        results.get_by_text('I understand this association is not independently verified.').click()
+                        results.get_by_role('button', name='Save association', exact=True).click()
+                        expect(results).to_contain_text('Candidate-provided employer association')
+                        self.assertTrue(any('/api/h1b/employers?' in url for url in requests))
                         with Store(db) as store:
                             self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM h1b_lca').fetchone()[0], 1)
                         page.locator('#nav-jobs').click(); page.locator('#refresh').click()

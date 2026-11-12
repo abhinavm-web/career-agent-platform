@@ -283,7 +283,7 @@
       const request = ++lookupSequence;
       lookup.disabled = true; candidates.replaceChildren(); lookupStatus.textContent = "Searching local records…";
       try {
-        const result = await api("/api/h1b/search?q=" + encodeURIComponent(query) + "&offset=" + offset + "&name_mode=" + mode);
+        const result = await api("/api/h1b/employers?q=" + encodeURIComponent(query) + "&offset=" + offset + "&name_mode=" + mode);
         if (!card.isConnected) return;
         if (request !== lookupSequence) return;
         const first = result.companies.length ? offset + 1 : 0;

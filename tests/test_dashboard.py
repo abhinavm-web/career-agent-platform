@@ -720,6 +720,13 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers['cache-control'], 'no-store')
         self.assertEqual(response.json()['companies'][0]['recent_certified_cases'], 1)
+        with patch('career_agent.storage.Store.list_jobs', side_effect=AssertionError('unexpected job scan')):
+            lookup = self.call('GET', '/api/h1b/employers?q=Example')
+        self.assertEqual(lookup.status_code, 200)
+        self.assertEqual(lookup.json()['companies'][0]['employer'], self.job.company)
+        self.assertNotIn('jobs', lookup.json())
+        self.assertEqual(self.call('GET', '/api/h1b/employers?q=x').status_code, 422)
+        self.assertEqual(self.call('GET', '/api/h1b/employers?q=Example&offset=9999999999999999999999').status_code, 422)
         self.assertEqual(response.json()['jobs'][0]['policy'], 'possible')
         self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['need'], 'new')
         self.assertEqual(self.call('GET', '/api/h1b/search?q=x').status_code, 422)
