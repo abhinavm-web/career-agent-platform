@@ -27,7 +27,9 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                 store.add_jobs([Job.from_mapping({'company': 'Fictional Co', 'title': title,
                     'job_url': 'https://example.invalid/' + slug, 'description': 'Python role.'})
                     for title, slug in [('First role', 'first'), ('Second role', 'second')]])
-                H1BResearch(store).import_csv(io.StringIO(lca_csv([{'EMPLOYER_NAME': 'Fictional Co LLC'}])), DOL_URL, '2025-06-01')
+                names = [{'EMPLOYER_NAME': 'Fictional Co LLC'}] + [
+                    {'EMPLOYER_NAME': f'Fictional Co Z {i:02} LLC'} for i in range(26)]
+                H1BResearch(store).import_csv(io.StringIO(lca_csv(names)), DOL_URL, '2025-06-01')
             app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
@@ -46,6 +48,16 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                         expect(first).to_be_visible()
                         first.get_by_text('Associate an imported legal employer', exact=True).click()
                         first.get_by_role('button', name='Search imported employer names').click()
+                        expect(first.get_by_role('button', name='Use Fictional Co LLC')).to_be_visible()
+                        expect(first).to_contain_text('Showing 1–25 of 27')
+                        first.get_by_role('button', name='Next employer names').click()
+                        expect(first).to_contain_text('Showing 26–27 of 27')
+                        expect(first.get_by_role('button', name='Use Fictional Co Z 25 LLC')).to_be_visible()
+                        expect(first.get_by_label('Imported legal employer name')).to_have_value('')
+                        first.get_by_role('button', name='Use Fictional Co Z 25 LLC').click()
+                        expect(first.get_by_label('Imported legal employer name')).to_have_value('Fictional Co Z 25 LLC')
+                        expect(first.get_by_label('I understand this association is not independently verified.')).not_to_be_checked()
+                        first.get_by_role('button', name='Previous employer names').click()
                         expect(first.get_by_role('button', name='Use Fictional Co LLC')).to_be_visible()
                         first.get_by_label('Find possible filing names').fill('Other')
                         expect(first.get_by_role('button', name='Use Fictional Co LLC')).to_have_count(0)
