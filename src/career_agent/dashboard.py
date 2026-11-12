@@ -28,7 +28,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
 from .application import _reject_symlink_components, load_packet
-from .candidate import FactBank
+from .candidate import FactBank, SECTIONS
 from . import ai
 from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
@@ -305,8 +305,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
             job = _get_job(store, job_id)
             job_revision = store.description_revision(job.id)
             run = store.connection.execute('SELECT input_json FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1', (job.id,)).fetchone()
-            selection = json.loads(run['input_json']).get('tailored_fact_ids') if run else None
-        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None, job_revision or None, selection)
+            previous_inputs = json.loads(run['input_json']) if run else {}
+            selection = previous_inputs.get('tailored_fact_ids')
+            section_order = previous_inputs.get('tailored_section_order')
+        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None, job_revision or None, selection, section_order)
 
     @app.post('/api/workflows/{run_id}/retry')
     async def workflow_retry(run_id: str, request: Request):
@@ -776,7 +778,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def facts_hash(facts):
         return hashlib.sha256(json.dumps(facts, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
-    def create_draft(job_id: str, selection=None, expected_revision=None, expected_facts=None):
+    def create_draft(job_id: str, selection=None, expected_revision=None, expected_facts=None, section_order=None):
         workspace = active_workspace()
         if expected_revision is not None and (type(expected_revision) is not int or expected_revision != workspace['revision']):
             raise HTTPException(status_code=409, detail='Career profile changed; reload verified facts before tailoring')
@@ -808,7 +810,11 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     or not all(isinstance(item, str) and item in verified for item in selection)
                     or len(set(selection)) != len(selection)):
                 raise ValueError('Select 1–12 distinct verified career facts')
-        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None, selection), guard_workspace=True)
+        if section_order is not None and (not isinstance(section_order, list) or len(section_order) != len(SECTIONS)
+                or not all(isinstance(item, str) and item in SECTIONS for item in section_order)
+                or len(set(section_order)) != len(SECTIONS) or selection is None):
+            raise ValueError('Choose each resume section exactly once')
+        run = workflows.start(workflow_inputs(job, profile, bank, records, workspace['revision'] or None, job_revision or None, selection, section_order), guard_workspace=True)
         packet = run['packet']
         return {
             "job_id": job.id,
@@ -825,15 +831,17 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.post("/api/jobs/{job_id}/tailored-draft")
     async def tailored_draft(job_id: str, request: Request):
         data = await request.json()
-        if not isinstance(data, dict) or set(data) != {'fact_ids', 'workspace_revision', 'facts_sha256'}:
+        if not isinstance(data, dict) or set(data) not in ({'fact_ids', 'workspace_revision', 'facts_sha256'}, {'fact_ids', 'workspace_revision', 'facts_sha256', 'section_order'}):
             raise ValueError('Select verified facts and include the profile revision')
         if type(data['workspace_revision']) is not int or data['workspace_revision'] < 0:
             raise ValueError('Invalid profile revision')
         if not isinstance(data['fact_ids'], list):
             raise ValueError('Select 1-12 distinct verified career facts')
+        if 'section_order' in data and not isinstance(data['section_order'], list):
+            raise ValueError('Choose each resume section exactly once')
         if not isinstance(data['facts_sha256'], str) or len(data['facts_sha256']) != 64 or any(c not in '0123456789abcdef' for c in data['facts_sha256']):
             raise ValueError('Invalid verified facts fingerprint')
-        return await run_in_threadpool(create_draft, job_id, data['fact_ids'], data['workspace_revision'], data['facts_sha256'])
+        return await run_in_threadpool(create_draft, job_id, data['fact_ids'], data['workspace_revision'], data['facts_sha256'], data.get('section_order'))
 
     @app.get("/api/jobs/{job_id}/packet")
     def get_packet(job_id: str):

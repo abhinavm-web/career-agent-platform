@@ -48,6 +48,8 @@ Private profile, source notes and application drafts are stored in local plainte
 
 New dashboard drafts and review decisions advance durable LangGraph runs. Legacy packets retain their existing direct-review path. Input hashes, packet fingerprints and candidate revisions prevent stale approval; resumable runs and status history appear in the automation panel.
 
+For a tailored draft, choose verified facts and arrange the order of résumé sections and facts within each section. Facts remain verbatim and traceable to the selected IDs; to change wording, edit and reverify the fact in Career profile. Creating a new layout creates a new fingerprint and requires another review. Empty sections do not appear in the exported résumé. This is a structured layout editor, not a free-form document editor.
+
 Reviews and application statuses are distinct: approving a packet means **ready for manual submission**. A job moves to "submitted" only after the person checks an explicit external-submission box and enters an employer receipt. The UI never sends an application.
 
 ## Tests
