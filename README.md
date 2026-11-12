@@ -39,8 +39,8 @@ never commit them, your résumé, or credentials to Git.
 2. On **Opportunity board**, use **Find jobs with JobSpy** or add a job manually.
    **Saved searches** can run while the server is running after you opt in. Source
    results can be incomplete. Review constraints and the original posting.
-3. In **H-1B research**, import and inspect DOL or USCIS CSV records and associate
-   an employer when needed. The CLI also accepts DOL workbooks. Historical filings
+3. In **H-1B research**, download a supported DOL workbook or import a local DOL
+   workbook/CSV or USCIS CSV, and associate an employer when needed. Historical filings
    are not a job-specific sponsorship commitment; unknowns require employer confirmation.
 4. Create and review a draft from verified facts. Approve the current version before
    exporting. Apply yourself on the employer site, then record your actual
@@ -92,7 +92,7 @@ Optional source-backed sponsorship history:
 
     .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 sponsorship JOB_ID --filings my-private-filings.csv
 
-Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This pipeline uses deterministic keyword heuristics, not an external LLM. The dashboard supports reviewed résumé DOCX and [PDF export](docs/RESUME_PDF.md); PDF export requires optional dependencies. DOL workbooks can be imported locally; direct DOL downloads, ATS form operations and application submission are not implemented.
+Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This CLI pipeline uses deterministic keyword heuristics; optional dashboard AI features are described in [AI models](docs/AI_MODELS.md). The dashboard supports reviewed résumé DOCX and [PDF export](docs/RESUME_PDF.md); PDF export requires optional dependencies. Supported DOL workbooks can be downloaded explicitly or imported locally. ATS form operations and application submission are not implemented.
 
 Original source code license is not yet selected; public visibility does not grant reuse rights. Upstream projects retain their MIT licenses. Not employment or immigration legal advice.
 
@@ -130,7 +130,7 @@ Existing --profile and --facts files are never modified automatically. If both a
  
 ## Local application CRM (v0.5 preview)
 
-The **H-1B research** tab supports new/transfer preferences, a fiscal-year window, DOL LCA CSV imports, company-record search and job-policy evidence. It also supports explicit [USCIS annual CSV refresh/import and live Greenhouse/Lever checks](docs/USCIS_LIVE_CHECKS.md). See [H-1B research](docs/H1B_RESEARCH.md). Company search uses the local index; filing history never establishes job availability or immigration eligibility.
+The **H-1B research** tab supports new/transfer preferences, a fiscal-year window, local DOL LCA CSV/XLSX imports, explicit downloads of supported DOL workbooks, company-record search and job-policy evidence. It also supports explicit [USCIS annual CSV refresh/import and live Greenhouse/Lever checks](docs/USCIS_LIVE_CHECKS.md). See [H-1B research](docs/H1B_RESEARCH.md). Company search uses the local index; filing history never establishes job availability or immigration eligibility.
 
 Use the new **Application tracker** tab in the loopback dashboard to record interview stages, recruiter contacts, follow-up dates, and outcomes. Pre-application organizer stages never imply submission. The CRM does not send emails, reminders or applications.
 
