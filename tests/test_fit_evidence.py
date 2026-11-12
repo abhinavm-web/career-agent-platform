@@ -39,8 +39,25 @@ class FitEvidenceTests(unittest.TestCase):
         self.assertEqual([row['quote'] for row in rows],
                          ['- Python experience is helpful,\n  but not required.',
                           '- Rust experience\n  in production.', '- SQL'])
-        self.assertEqual([row['category'] for row in rows], ['required', 'required', 'preferred'])
+        self.assertEqual([row['category'] for row in rows], ['unspecified', 'required', 'preferred'])
+        self.assertIn('optional or negated', rows[0]['classification_note'])
         self.assertEqual(rows[0]['suggested_facts'][0]['id'], 'fact-01')
+
+    def test_optional_and_negated_wording_does_not_inherit_a_required_label(self):
+        optional = ('Python is not required.', 'Python is not necessary.', 'Python experience is optional.',
+                    'Python experience is a plus.', 'Python experience is preferred.',
+                    'No prior experience is required.', 'Python or equivalent experience.',
+                    'Python is not a prerequisite.', 'Python requirement may be waived.')
+        for item in optional:
+            with self.subTest(item=item):
+                row = requirement_evidence('Requirements:\n- ' + item, self.facts)['requirements'][0]
+                self.assertEqual(row['category'], 'unspecified')
+                self.assertIn('optional or negated', row['classification_note'])
+                self.assertEqual(row['quote'], '- ' + item)
+        rows = requirement_evidence('Preferred:\n- Python is not preferred.\n- SQL is preferred.', self.facts)['requirements']
+        self.assertEqual([row['category'] for row in rows], ['unspecified', 'preferred'])
+        row = requirement_evidence('Requirements:\n- Python is not only required but essential.', self.facts)['requirements'][0]
+        self.assertEqual(row['category'], 'required')
 
     def test_long_wrapped_bullet_is_omitted_whole(self):
         result = requirement_evidence('Requirements:\n- Python\n  ' + 'x' * 1000, self.facts)
