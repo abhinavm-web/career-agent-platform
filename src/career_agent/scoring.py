@@ -149,9 +149,18 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
     )
     title_points = round(40 * overlap)
     text = f"{job.title}\n{job.description}"
-    matches = tuple(skill for skill in profile.skills if contains_phrase(text, skill))
-    unmentioned_candidate_skills = tuple(skill for skill in profile.skills if skill not in matches)
-    skill_points = round(50 * len(matches) / len(profile.skills)) if profile.skills else 0
+    # Matching ignores capitalization and whitespace runs, so use those same
+    # semantics to avoid giving repeated spellings extra weight. Keep the
+    # candidate's first spelling for explanations; never rewrite their profile.
+    unique_skills = {}
+    for skill in profile.skills:
+        normalized = re.sub(r"\s+", " ", skill.strip()).lower()
+        if normalized:
+            unique_skills.setdefault(normalized, skill.strip())
+    skills = tuple(unique_skills.values())
+    matches = tuple(label for key, label in unique_skills.items() if contains_phrase(text, key))
+    unmentioned_candidate_skills = tuple(label for key, label in unique_skills.items() if not contains_phrase(text, key))
+    skill_points = round(50 * len(matches) / len(skills)) if skills else 0
     place_ok = profile.allow_remote and job.remote
     place_ok = place_ok or any(
         contains_location(job.location, loc)
@@ -171,7 +180,7 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
         candidate_skills_not_mentioned_in_posting=unmentioned_candidate_skills,
         reasons=(
             f"Title overlap: {title_points}/40",
-            f"Profile skills mentioned: {len(matches)}/{len(profile.skills)} ({skill_points}/50)",
+            f"Profile skills mentioned: {len(matches)}/{len(skills)} ({skill_points}/50)",
             f"Skills found in posting: {', '.join(matches)}" if matches else "No configured profile skills found in the posting; this does not establish a qualification gap.",
             f"Location/remote preference: {location_points}/10 — {location_note}.",
             "Keyword score only; it does not assess qualification, work authorization, or hiring likelihood.",
