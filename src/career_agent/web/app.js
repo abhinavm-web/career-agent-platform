@@ -21,6 +21,7 @@
   let profileNavigationSequence = 0;
 
   const byId = (id) => document.getElementById(id);
+  const modelInfo = (result) => ` Configured model: ${result.model}. Provider-reported model: ${result.reported_model || "not available"} (unverified).`;
   const node = (tag, cls, content) => {
     const el = document.createElement(tag);
     if (cls) el.className = cls;
@@ -1942,7 +1943,7 @@
       profileChatHistory.push({role: "user", content: question}, {role: "assistant", content: response.answer});
       byId("profile-chat-answer").append(node("p", "", "You: " + question), node("p", "", "Assistant: " + response.answer));
       byId("profile-chat-question").value = "";
-      byId("profile-chat-status").textContent = `Unverified suggestion · ${response.provider} · ${response.model}. No profile changes were made.` +
+      byId("profile-chat-status").textContent = `Unverified suggestion · ${response.provider}. No profile changes were made.` + modelInfo(response) +
         (profileChatHistory.length >= 12 ? " Conversation limit reached; clear it to start again." : "");
     } catch (error) {
       byId("profile-chat-status").textContent = error.message;
@@ -2042,7 +2043,7 @@
       if (byId("resume-text").value !== source || byId("resume-ai-route").value !== route) {
         byId("resume-ai-status").textContent = "Text or route changed; suggestions were discarded. Review and request again."; return;
       }
-      byId("resume-ai-status").textContent = response.notice;
+      byId("resume-ai-status").textContent = response.notice + modelInfo(response);
       if (!response.suggestions.length) byId("resume-ai-results").append(node("p", "muted", "No suggestions returned; this does not mean there are no career facts."));
       for (const suggestion of response.suggestions) {
         const card = node("section", "career-fact");

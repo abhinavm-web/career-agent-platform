@@ -146,7 +146,7 @@ def test_route(route_name, acknowledged=False):
                       system='This is a connectivity test. Reply briefly.')
     if not isinstance(answer, str) or not answer.strip():
         raise ValueError('Provider returned an empty response; check model availability')
-    return {'route': route_name, 'provider': route['provider'], 'model': route['model'],
+    return {'route': route_name, 'provider': route['provider'], 'model': route['model'], 'reported_model': getattr(answer, 'reported_model', None),
             'notice': 'The provider returned a response to a synthetic test. This does not verify output quality, privacy settings, or future availability.'}
 
 
@@ -217,6 +217,15 @@ def _transport():
     return httpx.Client(timeout=httpx.Timeout(60, connect=10), trust_env=False, follow_redirects=False)
 
 
+class _CompletionText(str):
+    """Text-compatible completion carrying optional untrusted provider metadata."""
+    def __new__(cls, value, reported_model=None):
+        item = super().__new__(cls, value)
+        item.reported_model = (reported_model if isinstance(reported_model, str) and
+                               re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/@-]{0,199}', reported_model) else None)
+        return item
+
+
 def complete(route, prompt, *, system=SYSTEM, json_schema=None):
     """One attempt, no fallback; SDK errors are sanitized before reaching UI/logs."""
     provider = route['provider']
@@ -234,7 +243,7 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                     inferenceConfig={'maxTokens': maximum})
             if r.get('stopReason') != 'end_turn':
                 raise _IncompleteResponse()
-            return ''.join(c['text'] for c in r['output']['message']['content'] if 'text' in c)
+            return _CompletionText(''.join(c['text'] for c in r['output']['message']['content'] if 'text' in c))
         # Ignore ambient proxies; local requests never leave through a proxy.
         with closing(_transport()) as transport:
             if provider == 'anthropic':
@@ -245,7 +254,7 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                         system=system, messages=[{'role': 'user', 'content': prompt}])
                 if r.stop_reason != 'end_turn':
                     raise _IncompleteResponse()
-                return ''.join(c.text for c in r.content if c.type == 'text')
+                return _CompletionText(''.join(c.text for c in r.content if c.type == 'text'), getattr(r, 'model', None))
             from openai import OpenAI
             with OpenAI(api_key=_key(route), base_url=route['base_url'],
                         http_client=transport, max_retries=0) as client:
@@ -257,7 +266,8 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                     messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}], **kwargs)
             if len(r.choices) != 1 or r.choices[0].finish_reason != 'stop' or r.choices[0].message.tool_calls:
                 raise _IncompleteResponse()
-            return r.choices[0].message.content
+            content = r.choices[0].message.content
+            return _CompletionText(content, getattr(r, 'model', None)) if isinstance(content, str) else content
     except ImportError:
         raise ValueError('Install the optional AI dependencies: pip install -e ".[ai]"') from None
     except Exception as error:
@@ -309,7 +319,7 @@ def resume_fact_suggestions(route_name, resume_text, acknowledged=False):
             seen.add(quote)
     except (ValueError, TypeError):
         raise ValueError('AI output failed résumé excerpt/schema validation; no result accepted') from None
-    return {'route': route_name, 'provider': route['provider'], 'model': route['model'], 'suggestions': rows,
+    return {'route': route_name, 'provider': route['provider'], 'model': route['model'], 'reported_model': getattr(raw, 'reported_model', None), 'suggestions': rows,
             'notice': 'Unverified excerpts and category suggestions. Exact text matching does not establish truth or correct classification; review and verify each fact separately.'}
 
 
@@ -340,7 +350,7 @@ def profile_chat(route_name, message, claims, acknowledged=False, history=None):
     answer = complete(route, prompt, system=PROFILE_SYSTEM)
     if not isinstance(answer, str) or not answer.strip() or len(answer) > 6000:
         raise ValueError('AI response was empty or too long; no result accepted')
-    return {'answer': answer.strip(), 'route': route_name, 'provider': route['provider'], 'model': route['model']}
+    return {'answer': answer.strip(), 'route': route_name, 'provider': route['provider'], 'model': route['model'], 'reported_model': getattr(answer, 'reported_model', None)}
 
 
 def analyze(job, bank, route_name, acknowledged=False):
@@ -401,7 +411,7 @@ def analyze(job, bank, route_name, acknowledged=False):
             row['status'] = 'suggested_evidence_needs_review' if ids else 'unknown'
     except (ValueError, TypeError):
         raise ValueError('AI output failed evidence/schema validation; no result accepted') from None
-    return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'],
+    return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'], 'reported_model': getattr(raw, 'reported_model', None),
             'observed_at': datetime.now(timezone.utc).isoformat(), 'prompt_version': 1,
             'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(), 'requirements': rows,
             'notice': ('AI suggestions only. Exact quotes and fact IDs were checked; semantic relevance still needs human review. No eligibility determination or application changes.'
@@ -492,7 +502,7 @@ def tailoring_suggestions(job, bank, route_name, acknowledged=False):
             row['review_warnings'] = wording_review_warnings(claims[fact_id], wording)
     except (ValueError, TypeError):
         raise ValueError('AI output failed evidence/schema validation; no result accepted') from None
-    return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'],
+    return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'], 'reported_model': getattr(raw, 'reported_model', None),
             'observed_at': datetime.now(timezone.utc).isoformat(), 'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(),
             'suggestions': rows,
             'notice': ('Unverified wording suggestions only. Valid fact IDs, exact job quotes and an absence of warnings do not prove the rewrite is accurate. Review every claim and verify it separately before using it.'

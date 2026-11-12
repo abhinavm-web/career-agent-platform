@@ -62,6 +62,8 @@ Each dashboard request is bound to the displayed route name, provider, model and
 
 **Test fictional analysis** is a separate consented request using a fixed fictional job and fictional career fact. It exercises the same evidence and response validation as real requirement analysis without reading a saved job or candidate profile. Results are displayed only for review and cannot be saved as a candidate fact or application. The selected provider receives the fictional sample; cloud calls may incur charges and a local server may forward requests. A passing sample is not a quality benchmark. It counts toward the route's local daily limit and, when enabled, appears in request history as `sample_analysis` without prompts or responses.
 
+The result identifies the configured route model separately from the optional model name reported by the provider. Aliases can resolve to another name; the provider's label is unverified and may be unavailable or omitted if malformed. The local request journal retains only the configured model, not the provider-reported name or response.
+
 Alternatively, use the CLI:
 
 ```powershell
