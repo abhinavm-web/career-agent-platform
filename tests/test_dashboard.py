@@ -827,6 +827,17 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(discover.call_args.kwargs['sites'], ['indeed'])
         self.assertEqual(discover.call_args.args[:3], ('Fictional role', 'USA', 5))
 
+    def test_manual_discovery_details_require_consent_and_bounded_results(self):
+        payload = {'query': 'Fictional role', 'location': 'USA', 'results': 5,
+                   'sites': ['linkedin'], 'fetch_details': True, 'acknowledged': True}
+        with patch('career_agent.dashboard.discover_isolated', return_value=[]) as discover:
+            self.assertEqual(self.call('POST', '/api/discover', {**payload, 'acknowledged': False}).status_code, 422)
+            self.assertEqual(self.call('POST', '/api/discover', {**payload, 'results': 21}).status_code, 422)
+            self.assertEqual(self.call('POST', '/api/discover', {**payload, 'fetch_details': 'true'}).status_code, 422)
+            discover.assert_not_called()
+            self.assertEqual(self.call('POST', '/api/discover', payload).status_code, 200)
+            self.assertIs(discover.call_args.kwargs['fetch_details'], True)
+
     def test_manual_discovery_reports_sanitized_partial_source_status(self):
         from career_agent.discovery import DiscoveryResults
         statuses = {'indeed': {'state': 'returned', 'returned': 1},

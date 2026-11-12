@@ -44,9 +44,16 @@
       input.type = "checkbox"; input.checked = s.settings.sites.includes(id); siteFields[id] = input;
       wrapper.prepend(input); form.append(wrapper);
     }
+    const detailLabel = node("label", " Request individual job details when supported on each run (additional external requests; up to 20 results per source).");
+    const detail = document.createElement("input"); detail.type = "checkbox"; detail.checked = s.settings.fetch_details === true;
+    detailLabel.prepend(detail); form.append(detailLabel);
     const consentLabel = node("label", " I confirm these settings for future recurring searches.");
     const consent = document.createElement("input"); consent.type = "checkbox"; consent.required = true;
     consentLabel.prepend(consent); form.append(consentLabel);
+    for (const field of [query, location, minutes, results, ...Object.values(siteFields), detail]) {
+      field.addEventListener("input", () => { consent.checked = false; });
+      field.addEventListener("change", () => { consent.checked = false; });
+    }
     const save = node("button", "Save paused search"); save.type = "submit";
     const cancel = node("button", "Cancel editing"); cancel.type = "button";
     const message = node("p", "The search stays paused. Resume separately to allow future requests. Past run history does not retain the old query or all previous settings."); message.setAttribute("role", "status");
@@ -54,12 +61,12 @@
     cancel.addEventListener("click", () => { openEditors.delete(details); details.open = false; load(); });
     form.addEventListener("submit", async event => {
       event.preventDefault(); if (save.disabled || !consent.checked) return;
-      const controls = [query, location, minutes, results, ...Object.values(siteFields), consent, save, cancel];
+      const controls = [query, location, minutes, results, ...Object.values(siteFields), detail, consent, save, cancel];
       controls.forEach(control => { control.disabled = true; });
       try {
         await api(`/api/automation/searches/${s.id}`, {query: query.value, location: location.value,
           interval_minutes: Number(minutes.value), results: Number(results.value),
-          sites: Object.keys(siteFields).filter(id => siteFields[id].checked), acknowledged: true,
+          sites: Object.keys(siteFields).filter(id => siteFields[id].checked), ...(detail.checked ? {fetch_details: true} : {}), acknowledged: true,
           expected_settings: s.settings, expected_interval_minutes: s.interval_minutes}, "PUT");
         openEditors.delete(details); details.open = false; await load();
       } catch (e) { message.textContent = e.message; }
@@ -76,6 +83,7 @@
       for (const id of ["automation-searches", "automation-runs", "workflow-runs"]) el(id).replaceChildren();
       for (const s of data.schedules) {
         const card = node("section", `${s.settings.query} · ${s.settings.location} · ${s.settings.sites.join(", ")} · every ${s.interval_minutes / 60}h · ${s.enabled ? "enabled" : "paused"} · next due ${new Date(s.next_run * 1000).toLocaleString()}`);
+        if (s.settings.fetch_details) card.append(node("p", "Individual job detail requests enabled for each run."));
         if (s.enabled && s.failures > 0 && s.settings.sites.length > 1) card.append(node("p", `The last ${s.failures} run(s) were incomplete or failed, so backoff affects every source. Pause to create separate source searches with independent future backoff.`));
         card.append(action(s.enabled ? "Pause" : "Resume", `/api/automation/searches/${s.id}`, {enabled: !s.enabled, acknowledged: true}));
         if (!s.enabled) {
@@ -112,6 +120,10 @@
     finally { loading = false; }
   }
   el("automation-refresh").addEventListener("click", load);
+  for (const id of ["schedule-query", "schedule-location", "schedule-hours", "schedule-results", "schedule-indeed", "schedule-linkedin", "schedule-zip_recruiter", "schedule-details"]) {
+    el(id).addEventListener("input", () => { el("schedule-consent").checked = false; });
+    el(id).addEventListener("change", () => { el("schedule-consent").checked = false; });
+  }
   el("automation-panel").addEventListener("toggle", () => { if (el("automation-panel").open) load(); });
   el("schedule-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -120,7 +132,7 @@
     try {
       await api("/api/automation/searches", {query: el("schedule-query").value, location: el("schedule-location").value,
         interval_minutes: Number(el("schedule-hours").value) * 60, results: Number(el("schedule-results").value),
-        sites: ["indeed", "linkedin", "zip_recruiter"].filter((s) => el("schedule-" + s).checked), acknowledged: true});
+        sites: ["indeed", "linkedin", "zip_recruiter"].filter((s) => el("schedule-" + s).checked), ...(el("schedule-details").checked ? {fetch_details: true} : {}), acknowledged: true});
       el("schedule-consent").checked = false; await load();
     } catch (e) { el("automation-status").textContent = e.message; }
     finally { el("schedule-save").disabled = false; }

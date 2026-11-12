@@ -116,7 +116,13 @@ class Automation:
         interval, results = data.get('interval_minutes', 360), data.get('results', 20)
         if type(interval) is not int or not 60 <= interval <= 10080 or type(results) is not int or not 1 <= results <= 50:
             raise ValueError('Use 60–10080 minutes and 1–50 results per source')
-        settings = json.dumps({k: data[k] for k in ('query', 'location', 'sites')} | {'results': results}, sort_keys=True)
+        fetch_details = data.get('fetch_details', False)
+        if type(fetch_details) is not bool or (fetch_details and results > 20):
+            raise ValueError('Detail fetching requires a boolean and at most 20 results per source')
+        settings_data = {k: data[k] for k in ('query', 'location', 'sites')} | {'results': results}
+        if fetch_details:
+            settings_data['fetch_details'] = True
+        settings = json.dumps(settings_data, sort_keys=True)
         return settings, interval
 
     def save(self, data):

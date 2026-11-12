@@ -21,7 +21,7 @@ class PostingDatesBrowserTests(unittest.TestCase):
             root = Path(directory)
             app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets'))
             job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer', 'job_url': 'https://example.invalid/role',
-                                    'description': 'Fictional posting', 'site': 'indeed', 'date_posted': '2025-02-03'})
+                                    'description': '', 'site': 'indeed', 'date_posted': '2025-02-03'})
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
             thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
@@ -39,14 +39,20 @@ class PostingDatesBrowserTests(unittest.TestCase):
                         page.locator('#discover-site-linkedin').uncheck()
                         page.locator('#discover-site-zip').uncheck()
                         page.locator('#discover-consent').check()
+                        page.locator('#discover-details').check()
+                        expect(page.locator('#discover-consent')).not_to_be_checked()
+                        page.locator('#discover-consent').check()
                         page.get_by_role('button', name='Search and import jobs').click()
                         expect(page.locator('#discover-status')).to_contain_text('1 added')
                         self.assertEqual(discover.call_args.kwargs['sites'], ['indeed'])
+                        self.assertIs(discover.call_args.kwargs['fetch_details'], True)
+                        expect(page.locator('#job-list')).to_contain_text('Description missing')
                         page.reload()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         detail = page.locator('#detail-panel')
                         expect(detail).to_contain_text('Source-reported posting date: 2025-02-03')
                         expect(detail).to_contain_text('does not establish that the role is open')
+                        expect(detail).to_contain_text('Matching and sponsorship analysis cannot assess missing posting text')
                     finally:
                         browser.close()
             finally:

@@ -80,6 +80,7 @@ class SearchEditBrowserTests(unittest.TestCase):
                         card.get_by_label('Indeed').uncheck()
                         card.get_by_label('LinkedIn').check()
                         card.get_by_label('Every (minutes)').fill('720')
+                        card.get_by_label('Request individual job details when supported on each run').check()
                         page.locator('#automation-refresh').click()
                         expect(card.get_by_label('Job titles / query')).to_have_value('Fictional data engineer')
                         card.get_by_label('I confirm these settings for future recurring searches.').check()
@@ -93,6 +94,7 @@ class SearchEditBrowserTests(unittest.TestCase):
                         self.assertFalse(row['enabled'])
                         self.assertEqual(row['settings']['sites'], ['linkedin'])
                         self.assertEqual(row['interval_minutes'], 720)
+                        self.assertTrue(row['settings']['fetch_details'])
                         fetch.assert_not_called()
                     finally: browser.close()
             finally:

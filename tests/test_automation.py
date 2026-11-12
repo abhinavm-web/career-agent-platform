@@ -39,6 +39,43 @@ class AutomationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.auto.save(self.search)
 
+    def test_detail_fetching_is_opt_in_bounded_and_preserved_through_split(self):
+        for invalid in ('yes', 1, None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.auto.save(self.search | {'fetch_details': invalid})
+        with self.assertRaisesRegex(ValueError, 'at most 20'):
+            self.auto.save(self.search | {'fetch_details': True, 'results': 21})
+        sid = self.auto.save(self.search | {'sites': ['indeed', 'linkedin'], 'fetch_details': True})['id']
+        original = self.auto.list()['schedules'][0]
+        self.assertTrue(original['settings']['fetch_details'])
+        self.auto.enable(sid, False)
+        self.auto.split_sources(sid, {'acknowledged': True, 'expected_settings': original['settings'],
+                                      'expected_interval_minutes': original['interval_minutes']})
+        self.assertTrue(all(row['settings']['fetch_details'] for row in self.auto.list()['schedules']))
+
+    def test_detail_option_reaches_jobspy_only_when_opted_in(self):
+        from career_agent.discovery import discover_jobspy
+        class Frame:
+            attrs = {}
+            def to_dict(self, orient): return []
+        calls = []
+        def scrape(**kwargs): calls.append(kwargs); return Frame()
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=scrape)}):
+            discover_jobspy('Fictional role', 'USA', 5, sites=['linkedin'])
+            discover_jobspy('Fictional role', 'USA', 5, sites=['linkedin'], fetch_details=True)
+        self.assertNotIn('fetch_description', calls[0])
+        self.assertIs(calls[1]['fetch_description'], True)
+
+    def test_isolated_worker_forwards_detail_opt_in(self):
+        from career_agent.discovery_worker import main
+        payload = {'query': 'Fictional', 'location': 'USA', 'results': 5,
+                   'sites': ['linkedin'], 'fetch_details': True}
+        with patch('sys.stdin', StringIO(json.dumps(payload))), \
+             patch('career_agent.discovery_worker.discover_jobspy', return_value=DiscoveryResults([])) as discover, \
+             redirect_stdout(StringIO()):
+            main()
+        self.assertEqual(discover.call_args.kwargs, {'sites': ['linkedin'], 'fetch_details': True})
+
     def test_split_sources_creates_paused_independent_searches_without_network(self):
         sid = self.auto.save(self.search | {'sites': ['indeed', 'linkedin', 'zip_recruiter']})['id']
         original = self.auto.list()['schedules'][0]

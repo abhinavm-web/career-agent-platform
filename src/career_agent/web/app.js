@@ -244,6 +244,7 @@
       if (job.constraint_evidence?.some((row) => row.status === "flagged")) lower.append(chip("Constraint flagged", "amber"));
       else if (job.constraint_evidence?.some((row) => row.status === "unknown")) lower.append(chip("Constraint unknown", "amber"));
       if (job.source) lower.append(chip("Source: " + job.source));
+      if (!job.description?.trim()) lower.append(chip("Description missing", "amber"));
       if (job.discovery_observations?.some((row) => row.description_comparison === "differs")) lower.append(chip("Source text differs", "amber"));
       const observation = postingObservation(job);
       lower.append(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""));
@@ -584,6 +585,7 @@
 
     const desc = section("Job description");
     desc.append(node("p", "description", job.description || "No description saved."));
+    if (!job.description?.trim()) desc.append(node("p", "muted", "Matching and sponsorship analysis cannot assess missing posting text. Open the original posting and use the description editor below to add text you have reviewed."));
     if (job.description_correction) {
       desc.append(node("p", "muted", "Manually corrected locally on " + job.description_correction.changed_at +
         ". Source note: " + (job.description_correction.source_note || "Not provided") + ". The source was not independently verified."));
@@ -1778,7 +1780,7 @@
   byId("setup-add-job").addEventListener("click", () => byId("show-add-job").click());
   byId("ai-open-profile").addEventListener("click", () => byId("nav-profile").click());
   const manualSources = [["discover-site-indeed", "indeed"], ["discover-site-linkedin", "linkedin"], ["discover-site-zip", "zip_recruiter"]];
-  for (const id of ["discover-query", "discover-location", "discover-results", ...manualSources.map(([id]) => id)]) {
+  for (const id of ["discover-query", "discover-location", "discover-results", "discover-details", ...manualSources.map(([id]) => id)]) {
     byId(id).addEventListener("input", () => { byId("discover-consent").checked = false; });
     byId(id).addEventListener("change", () => { byId("discover-consent").checked = false; });
   }
@@ -1793,7 +1795,7 @@
     }
     const sites = manualSources.filter(([id]) => byId(id).checked).map(([, source]) => source);
     if (!sites.length) { status.textContent = "Choose at least one job source."; return; }
-    const controls = ["discover-query", "discover-location", "discover-results", "discover-consent", ...manualSources.map(([id]) => id)];
+    const controls = ["discover-query", "discover-location", "discover-results", "discover-details", "discover-consent", ...manualSources.map(([id]) => id)];
     controls.forEach(id => { byId(id).disabled = true; });
     submit.disabled = true;
     byId("discover-form").setAttribute("aria-busy", "true");
@@ -1801,7 +1803,7 @@
     try {
       const result = await api("/api/discover", "POST", {
         query: byId("discover-query").value, location: byId("discover-location").value,
-        results: Number(byId("discover-results").value), sites, acknowledged: true
+        results: Number(byId("discover-results").value), sites, ...(byId("discover-details").checked ? {fetch_details: true} : {}), acknowledged: true
       });
       status.textContent = result.found + " returned · " + result.new + " added · " + result.duplicates +
         " duplicates. Sources may return partial results." + (result.found ? "" : " No usable rows is inconclusive and may indicate a source failure.");

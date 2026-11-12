@@ -92,6 +92,7 @@
               <label class="check-label"><input id="discover-site-linkedin" type="checkbox" checked> LinkedIn</label>
               <label class="check-label"><input id="discover-site-zip" type="checkbox" checked> ZipRecruiter</label>
             </fieldset>
+            <label class="check-label"><input id="discover-details" type="checkbox"> Request individual job details when supported (additional external requests; up to 20 results per source). Descriptions may still be unavailable; existing saved jobs are not overwritten.</label>
             <label class="check-label"><input id="discover-consent" type="checkbox" required> Send this search to external job sources</label>
             <div class="form-footer"><span id="discover-status" role="status" aria-live="polite"></span><button id="discover-submit" class="button button-primary" type="submit">Search and import jobs</button></div>
           </form>
@@ -401,6 +402,7 @@
             <label><input type="checkbox" id="schedule-linkedin"> LinkedIn</label>
             <label><input type="checkbox" id="schedule-zip_recruiter"> ZipRecruiter</label>
           </fieldset>
+          <label><input type="checkbox" id="schedule-details"> Request individual job details when supported on each run (additional external requests; up to 20 results per source). Existing saved jobs are not overwritten.</label>
           <label><input type="checkbox" id="schedule-consent" required> Enable recurring requests with these search filters to the selected sources. I have checked that my intended use is permitted.</label>
           <button type="submit" id="schedule-save" class="button button-primary">Enable automatic search</button>
         </form>

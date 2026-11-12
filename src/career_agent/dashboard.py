@@ -848,6 +848,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=422, detail="Location must be 1–240 characters")
         if type(results) is not int or not 1 <= results <= 100:
             raise HTTPException(status_code=422, detail="Results per source must be an integer from 1 to 100")
+        fetch_details = data.get('fetch_details', False)
+        if type(fetch_details) is not bool or (fetch_details and results > 20):
+            raise HTTPException(status_code=422, detail='Detail fetching requires a boolean and at most 20 results per source')
         sites = data.get('sites')
         if 'sites' in data:
             try:
@@ -858,10 +861,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=409, detail="A job search is already running. Wait for it to finish.")
         try:
             try:
-                if sites is None:
-                    jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop)
-                else:
-                    jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop, sites=sites)
+                options = {}
+                if sites is not None:
+                    options['sites'] = sites
+                if fetch_details:
+                    options['fetch_details'] = True
+                jobs = await run_in_threadpool(discover_isolated, query.strip(), location.strip(), results, automation.stop, **options)
             except DiscoveryUnavailable as error:
                 raise HTTPException(status_code=503, detail='Job discovery unavailable. Install the jobspy extra and retry.') from error
             except DiscoveryTimedOut as error:
