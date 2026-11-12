@@ -49,10 +49,11 @@ class TailoringEvaluationTests(unittest.TestCase):
         report = evaluate(fixture)
         self.assertEqual((report['total'], report['unsupported_cases'], report['unsupported_with_warning'],
                           report['unsupported_without_warning'], report['supported_cases'], report['supported_with_warning']),
-                         (18, 12, 8, 4, 6, 1))
+                         (22, 15, 12, 3, 7, 2))
         by_id = {row['id']: row for row in report['cases']}
-        self.assertFalse(by_id['new-skill-blindspot']['warning_emitted'])
-        self.assertEqual(by_id['new-skill-blindspot']['reference_label'], 'unsupported')
+        self.assertTrue(by_id['new-skill']['warning_emitted'])
+        self.assertFalse(by_id['new-employer-blindspot']['warning_emitted'])
+        self.assertTrue(by_id['supported-negation-paraphrase']['warning_emitted'])
         self.assertTrue(by_id['false-positive-format']['warning_emitted'])
         self.assertIn('not semantic validation', report['scope'])
 
@@ -64,8 +65,14 @@ class TailoringEvaluationTests(unittest.TestCase):
         self.assertTrue(wording_review_warnings('Built 3 dashboards.', 'Built 30 dashboards.'))
         self.assertTrue(wording_review_warnings('Change was 5%.', 'Change was -5%.'))
         self.assertTrue(wording_review_warnings('Did not lead a team.', 'Led a team.'))
+        self.assertIn('Negation', ' '.join(wording_review_warnings('Can’t deploy it.', 'Can deploy it.')))
         self.assertTrue(wording_review_warnings('Helped deliver a project.', 'Led a project.'))
-        self.assertEqual(wording_review_warnings('Built a Python tool.', 'Built a Rust tool.'), [])
+        self.assertIn('Rust', ' '.join(wording_review_warnings('Built a Python tool.', 'Built a Rust tool.')))
+        self.assertEqual(wording_review_warnings('Built a JavaScript tool.', 'Built a JavaScript tool.'), [])
+        self.assertTrue(wording_review_warnings('Did not build dashboards and tested reports.', 'Built dashboards and did not test reports.'))
+        self.assertTrue(wording_review_warnings('Handled up to 20 requests.', 'Handled 20 requests.'))
+        self.assertTrue(wording_review_warnings('Worked from 2021 to 2023.', 'Worked from 2023 to 2021.'))
+        self.assertEqual(wording_review_warnings('Did not deploy the dashboard.', 'Did not deploy the dashboard!'), [])
 
     def test_model_output_with_valid_citations_still_shows_warning_and_stays_unverified(self):
         job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Data Analyst',
