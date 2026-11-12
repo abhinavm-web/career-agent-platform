@@ -93,7 +93,10 @@ class DuplicateBrowserTests(unittest.TestCase):
                         page = browser.new_page()
                         page.add_init_script("""const originalFetch = window.fetch;
                           window.fetch = async (...args) => {
-                            if (String(args[0]).includes('/packet')) await new Promise(resolve => setTimeout(resolve, 1200));
+                            if (String(args[0]).includes('/packet')) {
+                              await new Promise(resolve => setTimeout(resolve, 1200));
+                              try { return await originalFetch(...args); } finally { window.packetSettled = true; }
+                            }
                             return originalFetch(...args);
                           };""")
                         page.goto(f'http://127.0.0.1:{port}')
@@ -102,7 +105,7 @@ class DuplicateBrowserTests(unittest.TestCase):
                         page.get_by_role('button', name='Find possible duplicates').click()
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
                         expect(page.locator('#detail-panel')).to_contain_text('Submission recorded')
-                        page.wait_for_timeout(1500)  # The delayed packet response must not erase the duplicate results.
+                        page.wait_for_function('window.packetSettled === true')
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
                         page.get_by_role('button', name='Open other saved opportunity').click()
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
