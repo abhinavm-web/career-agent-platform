@@ -182,6 +182,13 @@ class H1BResearch:
                 changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(company_key,revision)
             );
+            CREATE TABLE IF NOT EXISTS h1b_policy_notes (
+                id INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id),
+                discussed_on TEXT NOT NULL, source TEXT NOT NULL, pathway TEXT NOT NULL,
+                response TEXT NOT NULL, statement TEXT NOT NULL,
+                recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS h1b_policy_notes_job ON h1b_policy_notes(job_id,id DESC);
         ''')
         from .uscis import USCISRecords
         from .posting_checks import PostingChecks
@@ -470,6 +477,32 @@ class H1BResearch:
             self.conn.execute('INSERT INTO h1b_employer_links(job_id,revision,employer,source_note) VALUES(?,?,?,?)',
                               (job.id, revision + 1, name, note))
         return self.job(job)
+
+    def policy_notes(self, job):
+        rows = self.conn.execute('''SELECT id,discussed_on,source,pathway,response,statement,recorded_at
+            FROM h1b_policy_notes WHERE job_id=? ORDER BY id DESC LIMIT 50''', (job.id,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_policy_note(self, job, data):
+        fields = {'discussed_on', 'source', 'pathway', 'response', 'statement', 'acknowledged'}
+        if not isinstance(data, dict) or set(data) != fields or data['acknowledged'] is not True:
+            raise ValueError('Provide all fields and acknowledge this is a candidate-entered note')
+        try:
+            discussed = date.fromisoformat(data['discussed_on'])
+            if discussed.isoformat() != data['discussed_on'] or discussed > date.today():
+                raise ValueError()
+        except (TypeError, ValueError):
+            raise ValueError('Discussion date must be YYYY-MM-DD and no later than today') from None
+        source = text(data['source'], 'Source', 300)
+        statement = text(data['statement'], 'Statement', 2000)
+        if not isinstance(data['pathway'], str) or data['pathway'] not in ('new', 'transfer', 'unspecified'):
+            raise ValueError('Choose new sponsorship, transfer, or unspecified')
+        if not isinstance(data['response'], str) or data['response'] not in ('supports', 'does_not_support', 'conditional', 'unclear'):
+            raise ValueError('Choose a response category')
+        with self.conn:
+            self.conn.execute('''INSERT INTO h1b_policy_notes(job_id,discussed_on,source,pathway,response,statement)
+                VALUES(?,?,?,?,?,?)''', (job.id, discussed.isoformat(), source, data['pathway'], data['response'], statement))
+        return self.policy_notes(job)
 
     def job(self, job, settings=None):
         from .posting_checks import target

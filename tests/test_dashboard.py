@@ -48,6 +48,35 @@ def fake_job(url="https://example.invalid/jobs/alpha"):
 
 @unittest.skipUnless(HAS_WEB, 'Install test dependencies with pip install -e ".[web,dev]"')
 class DashboardTests(unittest.TestCase):
+    def test_sponsorship_policy_notes_are_scoped_and_do_not_change_posting_assessment(self):
+        from career_agent.h1b import H1BResearch
+        path = f'/api/jobs/{self.job.id}/h1b/policy-notes'
+        original = self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()
+        data = {'discussed_on': '2025-05-01', 'source': 'Fictional recruiter', 'pathway': 'transfer',
+                'response': 'conditional', 'statement': 'Only if the team approves.', 'acknowledged': True}
+        self.assertEqual(self.call('POST', path, data, token='wrong').status_code, 403)
+        for change in ({'acknowledged': False}, {'discussed_on': '9999-01-01'},
+                       {'pathway': 'both'}, {'statement': ' '}, {'response': []}):
+            with self.subTest(change=change):
+                self.assertEqual(self.call('POST', path, {**data, **change}).status_code, 422)
+        saved = self.call('POST', path, data)
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()['notes'][0]['statement'], data['statement'])
+        self.assertEqual(self.call('GET', path).json(), saved.json())
+        other = Job.from_mapping({'company': self.job.company, 'title': 'Another role',
+                                  'job_url': 'https://example.invalid/another', 'description': 'Python skills.'})
+        with Store(self.db) as store:
+            store.add_jobs([other])
+        self.assertEqual(self.call('GET', f'/api/jobs/{other.id}/h1b/policy-notes').json()['notes'], [])
+        correction = self.call('POST', path, {**data, 'response': 'unclear', 'statement': 'Correction: still checking.'}).json()
+        self.assertEqual([row['statement'] for row in correction['notes']], ['Correction: still checking.', data['statement']])
+        with Store(self.db) as store:
+            self.assertEqual(len(H1BResearch(store).policy_notes(self.job)), 2)
+        self.assertEqual(self.call('POST', '/api/jobs/' + 'f' * 16 + '/h1b/policy-notes', data).status_code, 404)
+        after = self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()
+        self.assertEqual((after['policy'], after['potential_match'], after['history']),
+                         (original['policy'], original['potential_match'], original['history']))
+
     def setUp(self):
         from fastapi.testclient import TestClient
         from career_agent.dashboard import DashboardConfig, create_app
