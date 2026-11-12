@@ -58,6 +58,13 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#ai-results')).to_contain_text('Python skills.')
                         expect(page.locator('#ai-results')).to_contain_text('Delivered a fictional AI program')
                         self.assertEqual(complete.call_count, 1)
+                        complete.return_value = json.dumps({'suggestions': [{'fact_id': 'experience-01',
+                            'job_quote': 'Python skills.', 'wording': 'A fictional suggested rewrite.'}]})
+                        page.locator('#ai-consent').check(); page.locator('#ai-tailor').click()
+                        expect(page.locator('#ai-results')).to_contain_text('Unverified suggested wording: A fictional suggested rewrite.')
+                        expect(page.locator('#ai-results')).to_contain_text('Delivered a fictional AI program')
+                        expect(page.locator('#ai-results')).to_contain_text('do not change your profile')
+                        self.assertEqual(complete.call_count, 2)
                     finally:
                         browser.close()
             finally:
@@ -94,7 +101,13 @@ class ApplicationJourneyTests(unittest.TestCase):
                         page.locator('#career-skills').fill('Python')
                         page.get_by_role('button', name='Save preferences').click()
                         expect(page.locator('#notice')).to_contain_text('Preferences saved')
-                        page.locator('#fact-statement').fill('Built a fictional Python analytics dashboard.')
+                        page.get_by_text('Import and review résumé text', exact=True).click()
+                        page.locator('#resume-text').fill('Experience:\nBuilt a fictional Python analytics dashboard.')
+                        page.locator('#resume-extract').click()
+                        expect(page.locator('#resume-lines')).to_contain_text('Suggested experience')
+                        page.locator('#resume-use-line').click()
+                        expect(page.locator('#fact-statement')).to_have_value('Built a fictional Python analytics dashboard.')
+                        expect(page.locator('#career-facts-list')).to_contain_text('No career facts yet')
                         page.locator('#fact-source').fill('Fictional private source note.')
                         page.locator('#fact-keywords').fill('Python')
                         page.get_by_role('button', name='Save unverified fact').click()

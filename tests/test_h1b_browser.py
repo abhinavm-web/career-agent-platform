@@ -308,6 +308,10 @@ class H1BBrowserTests(unittest.TestCase):
                         page.locator('#h1b-consent').check()
                         page.get_by_role('button', name='Import records locally', exact=True).click()
                         expect(page.locator('#h1b-status')).to_contain_text('1 added')
+                        page.get_by_text('Recent DOL import history (up to 10)').click()
+                        expect(page.locator('#h1b-coverage')).to_contain_text('observed decisions 2025-04-15–2025-04-15')
+                        expect(page.locator('#h1b-coverage')).to_contain_text('selected-field SHA-256')
+                        expect(page.locator('#h1b-coverage')).to_contain_text('not a verified reporting period')
                         page.get_by_text('USCIS employer decisions: refresh or import', exact=True).click()
                         page.locator('#uscis-source').fill(URL)
                         page.locator('#uscis-year').fill('2025')
@@ -343,6 +347,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-results')).to_contain_text('No employer records found')
                         page.reload()
                         page.get_by_role('button', name='H-1B research', exact=True).click()
+                        expect(page.locator('#h1b-coverage')).to_contain_text('Recent DOL import history')
                         expect(page.locator('#h1b-need')).to_have_value('new')
                         expect(page.locator('#h1b-unknown')).not_to_be_checked()
                         with patch('career_agent.ai.routes', return_value={'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}), patch('career_agent.ai.complete', return_value=json.dumps({'requirements': [{'quote': 'Python skills.', 'fact_ids': ['experience-01'], 'reason': '<script>unsafe()</script>'}]})) as complete:

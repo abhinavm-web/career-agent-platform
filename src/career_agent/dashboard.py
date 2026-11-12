@@ -350,6 +350,21 @@ def create_app(config: DashboardConfig) -> FastAPI:
         finally:
             ai_lock.release()
 
+    @app.post("/api/jobs/{job_id}/ai-tailoring-suggestions")
+    async def ai_tailoring_suggestions(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm sending this posting and verified fact statements to the selected provider')
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                job = _get_job(store, job_id)
+            bank = configured_facts()
+            return await run_in_threadpool(ai.tailoring_suggestions, job, bank, data.get('route'), True)
+        finally:
+            ai_lock.release()
+
     @app.get("/api/h1b")
     def h1b_settings():
         with Store(config.db_path) as store:

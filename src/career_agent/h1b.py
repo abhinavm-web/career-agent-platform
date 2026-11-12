@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
+import json
 import re
 import zipfile
 from datetime import date, datetime, timezone
@@ -95,6 +97,11 @@ class H1BResearch:
                 source_url TEXT NOT NULL, captured_on TEXT NOT NULL, imported_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS h1b_employer ON h1b_lca(employer_key,fiscal_year);
+            CREATE TABLE IF NOT EXISTS h1b_lca_imports (
+                id INTEGER PRIMARY KEY, source_url TEXT NOT NULL, captured_on TEXT NOT NULL,
+                imported_at TEXT NOT NULL, selected_fields_sha256 TEXT NOT NULL,
+                first_decision TEXT, last_decision TEXT, counts_json TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS h1b_employer_links (
                 job_id TEXT NOT NULL REFERENCES jobs(job_id), revision INTEGER NOT NULL,
                 employer TEXT NOT NULL, source_note TEXT NOT NULL,
@@ -143,11 +150,20 @@ class H1BResearch:
             raise ValueError('Use DOL LCA CSV headers: ' + ', '.join(sorted(required)))
         counts = {'added': 0, 'updated': 0, 'duplicates': 0, 'older_skipped': 0, 'other_visas_skipped': 0}
         imported_at = datetime.now(timezone.utc).isoformat()
+        digest = hashlib.sha256()
+        fields = sorted(required | {'EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE'})
+        first_decision = last_decision = None
+        row_count = 0
         with self.conn:
             self.conn.execute('BEGIN IMMEDIATE')
             for line, row in enumerate(reader, 2):
                 if None in row or any(row.get(key) is None for key in required):
                     raise ValueError(f'Row {line}: malformed CSV row')
+                # Hash only fields that the importer examines, in source order. This
+                # is an audit fingerprint, not a checksum of the original file.
+                selected = [row.get(key) or '' for key in fields]
+                digest.update((json.dumps(selected, ensure_ascii=True, separators=(',', ':')) + '\n').encode('ascii'))
+                row_count += 1
                 visa = text(row['VISA_CLASS'], f'Row {line} VISA_CLASS').upper()
                 if visa in ('E-3 AUSTRALIAN', 'H-1B1 CHILE', 'H-1B1 SINGAPORE'):
                     counts['other_visas_skipped'] += 1
@@ -170,6 +186,8 @@ class H1BResearch:
                         pass
                 if decision is None or decision > captured or decision.year < 1990:
                     raise ValueError(f'Row {line}: invalid DECISION_DATE or later than capture date')
+                first_decision = min(first_decision, decision) if first_decision else decision
+                last_decision = max(last_decision, decision) if last_decision else decision
                 optional = [text((row.get(k) or '').strip() or 'Unknown', f'Row {line} {k}') for k in ('EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE')]
                 values = (case, employer, employer_key(employer), fiscal_year(decision), decision.isoformat(), status, *optional, source_url, captured_on, imported_at)
                 previous = self.conn.execute('SELECT * FROM h1b_lca WHERE case_number=?', (case,)).fetchone()
@@ -185,6 +203,12 @@ class H1BResearch:
                         continue
                 self.conn.execute('INSERT OR REPLACE INTO h1b_lca VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', values)
                 counts['updated' if previous else 'added'] += 1
+            if not row_count:
+                raise ValueError('The LCA disclosure file contains no data rows')
+            self.conn.execute('INSERT INTO h1b_lca_imports (source_url,captured_on,imported_at,selected_fields_sha256,first_decision,last_decision,counts_json) VALUES(?,?,?,?,?,?,?)',
+                              (source_url, captured_on, imported_at, digest.hexdigest(),
+                               first_decision.isoformat() if first_decision else None,
+                               last_decision.isoformat() if last_decision else None, json.dumps(counts)))
         return counts
 
     def import_xlsx(self, path, source_url, captured_on):
@@ -265,8 +289,10 @@ class H1BResearch:
 
     def coverage(self):
         row = self.conn.execute('SELECT COUNT(*) AS records,MIN(fiscal_year) AS first_year,MAX(fiscal_year) AS last_year,MAX(captured_on) AS latest_capture FROM h1b_lca').fetchone()
+        imports = self.conn.execute('SELECT source_url,captured_on,imported_at,selected_fields_sha256,first_decision,last_decision,counts_json FROM h1b_lca_imports ORDER BY id DESC LIMIT 10').fetchall()
+        history = [{**{k: item[k] for k in item.keys() if k != 'counts_json'}, 'counts': json.loads(item['counts_json'])} for item in imports]
         return {**dict(row), 'verification': 'user_imported_not_independently_verified',
-                'complete': False, 'source_url': DOL_URL, 'uscis_snapshots': self.uscis.coverage()}
+                'complete': False, 'source_url': DOL_URL, 'lca_imports': history, 'uscis_snapshots': self.uscis.coverage()}
 
     def company(self, name, settings=None):
         settings = settings or self.settings()

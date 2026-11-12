@@ -44,6 +44,20 @@
     get("h1b-coverage").textContent = value.records + " imported H-1B cases · fiscal years " +
       (value.first_year ?? "none") + "–" + (value.last_year ?? "none") + " · latest capture " +
       (value.latest_capture ?? "none") + ". Coverage is incomplete. User imports are not independently verified; dates do not establish current job policy.";
+    if (value.lca_imports?.length) {
+      const history = node("details");
+      history.append(node("summary", "Recent DOL import history (up to 10)"));
+      history.append(node("p", "Capture dates and URLs are supplied by you. Decision dates are the range observed in imported H-1B rows, not a verified reporting period. Fingerprints cover selected fields, not original file bytes. Older imports may not appear."));
+      for (const item of value.lca_imports) {
+        const details = node("p", "Captured " + item.captured_on + " · imported " + item.imported_at +
+          " · observed decisions " + (item.first_decision ?? "none") + "–" + (item.last_decision ?? "none") +
+          " · added " + item.counts.added + ", updated " + item.counts.updated + ", duplicates " + item.counts.duplicates +
+          ", older skipped " + item.counts.older_skipped + ", other visas skipped " + item.counts.other_visas_skipped +
+          " · selected-field SHA-256 " + item.selected_fields_sha256 + " · source: " + item.source_url);
+        history.append(details);
+      }
+      get("h1b-coverage").append(history);
+    }
     for (const snapshot of value.uscis_snapshots || []) {
       get("h1b-coverage").append(node("p", "USCIS FY " + snapshot.fiscal_year + " · user-supplied reporting date " + snapshot.data_as_of +
         " · retrieved " + snapshot.retrieved_at + " · " + snapshot.row_count + " employer groups · " + snapshot.transport.replaceAll("_", " ")));

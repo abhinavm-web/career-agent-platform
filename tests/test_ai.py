@@ -31,6 +31,28 @@ class AITests(unittest.TestCase):
                     ai.analyze(self.job, self.bank, route, consent)
             complete.assert_not_called()
 
+    def test_tailoring_suggestions_are_cited_but_never_auto_accepted(self):
+        output = {'suggestions': [{'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Fictional proposed wording.'}]}
+        with patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            with self.assertRaises(ValueError):
+                ai.tailoring_suggestions(self.job, self.bank, 'local', False)
+            complete.assert_not_called()
+            result = ai.tailoring_suggestions(self.job, self.bank, 'local', True)
+        prompt = complete.call_args.args[1]
+        self.assertNotIn(self.bank.name, prompt)
+        self.assertNotIn(self.bank.facts[0].source_note, prompt)
+        self.assertEqual(result['suggestions'][0]['original_fact'], self.bank.public_claims()['experience-01'])
+        self.assertIn('do not prove', result['notice'])
+
+    def test_tailoring_rejects_invented_citations_and_schema(self):
+        row = {'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Suggested wording'}
+        for bad in [row | {'fact_id': 'invented'}, row | {'job_quote': 'invented'},
+                    row | {'wording': ''}, row | {'approved': True}]:
+            with self.subTest(row=bad), patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [bad]})), self.assertRaises(ValueError):
+                ai.tailoring_suggestions(self.job, self.bank, 'local', True)
+        with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [row, row]})), self.assertRaises(ValueError):
+            ai.tailoring_suggestions(self.job, self.bank, 'local', True)
+
     def test_profile_chat_requires_consent_and_sends_only_supplied_facts(self):
         claims = self.bank.public_claims()
         with patch('career_agent.ai.complete', return_value='Ask about the role scope.') as complete:

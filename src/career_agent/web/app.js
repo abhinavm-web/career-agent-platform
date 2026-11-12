@@ -1570,6 +1570,7 @@
         return;
       }
       field.value = result.text;
+      resumeSuggestions = [];
       byId("resume-lines").replaceChildren();
       byId("resume-use-line").disabled = true;
       status.textContent = "Text extracted locally. Review it, then extract lines to choose a fact.";
@@ -1577,34 +1578,64 @@
     finally { control.disabled = false; }
   });
   byId("resume-text").addEventListener("input", () => {
+    resumeSuggestions = [];
     byId("resume-lines").replaceChildren();
     byId("resume-use-line").disabled = true;
-    byId("resume-status").textContent = "Extract lines again after editing the text.";
+    byId("resume-status").textContent = "Extract suggestions again after editing the text.";
   });
+  // Sections are suggestions based only on explicit headings, not inferred credentials.
+  const resumeHeadings = {
+    "experience": "experience", "work experience": "experience", "professional experience": "experience", "employment history": "experience",
+    "projects": "projects", "project experience": "projects",
+    "skills": "skills", "technical skills": "skills", "core skills": "skills",
+    "education": "education", "academic background": "education",
+    "certifications": "certifications", "certificates": "certifications", "licenses and certifications": "certifications"
+  };
+  const otherResumeHeadings = new Set(["summary", "professional summary", "profile", "contact", "contact information", "awards", "interests", "references"]);
+  let resumeSuggestions = [];
   byId("resume-extract").addEventListener("click", () => {
     const lines = byId("resume-text").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const select = byId("resume-lines");
     select.replaceChildren();
-    for (const line of lines.slice(0, 200)) {
-      const option = node("option", "", line.length > 120 ? line.slice(0, 117) + "…" : line);
-      option.value = line;
+    resumeSuggestions = [];
+    let section = null;
+    for (const line of lines) {
+      const heading = line.replace(/:$/, "").trim().toLowerCase();
+      if (Object.hasOwn(resumeHeadings, heading)) { section = resumeHeadings[heading]; continue; }
+      if (otherResumeHeadings.has(heading)) { section = null; continue; }
+      resumeSuggestions.push({statement: line, section});
+    }
+    for (const [index, suggestion] of resumeSuggestions.slice(0, 200).entries()) {
+      const prefix = suggestion.section ? `Suggested ${suggestion.section}` : "Unclassified";
+      const line = suggestion.statement;
+      const option = node("option", "", prefix + " · " + (line.length > 120 ? line.slice(0, 117) + "…" : line));
+      option.value = String(index);
       select.append(option);
     }
-    byId("resume-use-line").disabled = !lines.length;
-    byId("resume-status").textContent = lines.length > 200 ? "Showing the first 200 lines." : `${lines.length} lines found. Review each before saving.`;
+    byId("resume-use-line").disabled = !resumeSuggestions.length;
+    byId("resume-status").textContent = (resumeSuggestions.length > 200 ? "Showing the first 200 suggestions. " : `${resumeSuggestions.length} suggestions found. `) +
+      "Categories follow recognized section headings and may be wrong when headings are missed; review every statement and category. Nothing is saved or verified.";
   });
   byId("resume-use-line").addEventListener("click", () => {
-    const line = byId("resume-lines").value;
-    if (line.length < 8 || line.length > 1000) {
-      byId("resume-status").textContent = "Choose a line with 8–1,000 characters, or edit the pasted text first.";
+    const value = byId("resume-lines").value;
+    const index = Number(value);
+    const suggestion = resumeSuggestions[index];
+    if (value === "" || !suggestion || !Number.isInteger(index) || index < 0 || index >= Math.min(resumeSuggestions.length, 200)) {
+      byId("resume-status").textContent = "Choose a suggested statement first.";
       return;
     }
-    if ((state.editingFactId || byId("fact-statement").value || byId("fact-source").value) &&
+    if (suggestion.statement.length > 1000) {
+      byId("resume-status").textContent = "This line exceeds 1,000 characters. Edit the résumé text and extract suggestions again.";
+      return;
+    }
+    if ((state.editingFactId || byId("fact-statement").value || byId("fact-source").value || byId("fact-keywords").value) &&
         !window.confirm("Replace the unsaved fact editor contents with this résumé line?")) return;
     resetFactEditor();
-    byId("fact-statement").value = line;
+    if (suggestion.section) byId("fact-category").value = suggestion.section;
+    byId("fact-statement").value = suggestion.statement;
     byId("fact-statement").focus();
-    byId("resume-status").textContent = "Review the statement and add a private evidence note before saving it as an unverified fact.";
+    byId("resume-status").textContent = (suggestion.section ? `Suggested category: ${suggestion.section}. ` : "No category was inferred; choose one. ") +
+      "Review or edit the statement, add a private evidence note, and save it as an unverified fact. Statements need at least 8 characters.";
   });
   byId("career-profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();
