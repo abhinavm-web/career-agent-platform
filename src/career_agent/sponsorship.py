@@ -14,6 +14,9 @@ EXCLUSIONS = (
     r"\bwithout (?:current or future )?(?:visa )?sponsorship\b",
     r"\bsponsorship (?:is )?not available\b",
     r"\bmust be (?:legally )?authorized to work (?:in the (?:united states|us|u\.s\.))? without (?:visa )?sponsorship\b",
+    r"\bmust be (?:legally )?authorized to work (?:in the (?:united states|us))? without (?:employer|employment|employment-based|immigration)(?: visa)? sponsorship\b",
+    r"\b(?:do not|does not|cannot|can't|will not|unable to) (?:offer|provide|support) (?:employer|employment|employment-based|immigration)(?: visa)? sponsorship\b",
+    r"\bnot (?:eligible|available) for (?:employer|employment|employment-based|immigration)(?: visa)? sponsorship\b",
 )
 POSITIVES = (
     r"\bvisa sponsorship (?:is )?(?:available|provided|offered)\b",
