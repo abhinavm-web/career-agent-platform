@@ -43,8 +43,8 @@ Recreate the container after changing a key in the shell. Docker exposes contain
 environment values to users with Docker access. Local models must be running on
 the host and use the existing literal-loopback `/v1` endpoint requirement.
 Other credentials or custom `key_env` variables require an explicit Compose
-override. The image includes JobSpy, the AI providers and PDF resume extraction;
-PDF export dependencies are not included.
+override. The image includes JobSpy, the AI providers, PDF resume extraction and export,
+and encrypted backup dependencies. The bundled Chromium renderer increases image size.
 
 ## Storage and backups
 
@@ -52,6 +52,23 @@ SQLite is already the durable store; PostgreSQL is not supported by the current
 application or its SQLite-backed LangGraph checkpoints. Adding a PostgreSQL
 container without changing those integrations would not migrate the data. A future
 multi-user deployment would need a deliberate database and authentication design.
-The volume is plaintext and may contain private candidate information. Back it up
-using your normal encrypted backup process, and stop the application first so
-SQLite and workflow files are captured consistently. Do not commit backups.
+The volume is plaintext and may contain private candidate information. Stop the
+service before taking an application backup so the databases and packets are
+captured consistently. These commands create an encrypted archive **inside** the
+volume, then copy it to an existing protected host directory (choose your own
+paths and a strong passphrase):
+
+```powershell
+docker compose stop career-agent
+docker compose run --rm --no-deps -i career-agent --db .local/career_agent.sqlite3 backup .local/workspace-backup.enc --packet-dir .local/packets --offline --encrypted
+docker compose start career-agent
+docker compose cp career-agent:/app/.local/workspace-backup.enc private/workspace-backup.enc
+```
+
+The packet directory must exist, the archive must not already exist, and no other
+workspace writers may run. Keep the copied archive on protected storage, apart
+from this volume. Verify and restore following [Local workspace backup](BACKUP.md);
+remember the restored directory and temporary staging contain plaintext. The backup
+does not include AI route configuration, credentials, or other external files.
+Do not commit backups. Creating a backup inside the volume is not a replacement
+for copying it elsewhere.
