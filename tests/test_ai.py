@@ -31,6 +31,33 @@ class AITests(unittest.TestCase):
                     ai.analyze(self.job, self.bank, route, consent)
             complete.assert_not_called()
 
+    def test_resume_suggestions_require_consent_and_preserve_exact_source(self):
+        resume = 'EXPERIENCE\nBuilt a fictional Python dashboard.\nContact: demo@example.invalid'
+        output = {'suggestions': [{'quote': 'Built a fictional Python dashboard.', 'section': 'experience'}]}
+        with patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            for route, consent in [('local', False), ('missing', True)]:
+                with self.assertRaises(ValueError): ai.resume_fact_suggestions(route, resume, consent)
+            complete.assert_not_called()
+            result = ai.resume_fact_suggestions('local', resume, True)
+        self.assertEqual(json.loads(complete.call_args.args[1]), {'resume_text': resume})
+        self.assertEqual(result['suggestions'], output['suggestions'])
+        self.assertIn('does not establish truth', result['notice'])
+        self.assertNotIn('demo@example.invalid', json.dumps(result))
+        self.assertEqual(complete.call_args.kwargs['system'], ai.RESUME_SYSTEM)
+
+    def test_resume_suggestions_reject_invented_quotes_categories_and_oversize(self):
+        resume = 'Built a fictional Python dashboard.'
+        row = {'quote': resume, 'section': 'experience'}
+        for bad in [row | {'quote': 'invented claim'}, row | {'section': 'citizenship'},
+                    row | {'verified': True}, row | {'quote': 'short'}]:
+            with self.subTest(bad=bad), patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [bad]})), self.assertRaises(ValueError):
+                ai.resume_fact_suggestions('local', resume, True)
+        with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [row, row]})), self.assertRaises(ValueError):
+            ai.resume_fact_suggestions('local', resume, True)
+        with patch('career_agent.ai.complete') as complete, self.assertRaises(ValueError):
+            ai.resume_fact_suggestions('local', 'x' * 20001, True)
+        complete.assert_not_called()
+
     def test_tailoring_suggestions_are_cited_but_never_auto_accepted(self):
         output = {'suggestions': [{'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Fictional proposed wording.'}]}
         with patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
