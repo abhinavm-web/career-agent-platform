@@ -429,6 +429,11 @@
           <label>Job (up to 10,000 saved jobs)<select id="ai-job" required></select></label>
           <p id="ai-destination" role="status" aria-live="polite"></p>
           <p id="ai-route-readiness"></p>
+          <details><summary>Check local model IDs</summary>
+            <p>For an Ollama or LM Studio route, this explicitly asks its configured loopback server for model IDs. No job or profile is sent. The server may forward requests; configured local credentials are sent to it.</p>
+            <button type="button" class="button" id="ai-local-models" disabled>Check local model IDs</button>
+            <p id="ai-local-models-status" role="status" aria-live="polite"></p><ul id="ai-local-models-results"></ul>
+          </details>
           <label class="check-label"><input type="checkbox" id="ai-test-consent"> I agree to a test request to the selected provider. It sends a fixed test message, no job or profile; cloud requests may incur charges.</label>
           <button type="button" class="button" id="ai-test-route" disabled>Test model connection</button>
           <p id="ai-test-status" role="status" aria-live="polite"></p>

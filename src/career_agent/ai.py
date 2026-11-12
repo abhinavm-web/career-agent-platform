@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import importlib.util
 import json
 import os
 import re
+import time
 from contextlib import closing
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -210,6 +212,61 @@ def _key(route):
             raise _MissingCredential()
         return value
     return 'local-no-key'
+
+
+def _inventory_transport():
+    import httpx
+    return httpx.Client(timeout=httpx.Timeout(5, connect=5), trust_env=False, follow_redirects=False)
+
+
+def local_model_inventory(route_name, expected_fingerprint):
+    """Explicit bounded local metadata read; never run inference or return provider errors."""
+    import httpx
+    route = routes().get(route_name) if isinstance(route_name, str) else None
+    if route is None:
+        raise ValueError('Choose a configured AI route')
+    if not isinstance(expected_fingerprint, str) or not hmac.compare_digest(expected_fingerprint, route_fingerprint(route_name, route)):
+        raise ValueError('Model destination or configuration changed; reload routes and try again')
+    if route['provider'] not in {'ollama', 'lmstudio'}:
+        raise ValueError('Model inventory is available only for configured local Ollama or LM Studio routes')
+    endpoint = _endpoint(route.get('base_url'), route['provider']).rstrip('/') + '/models'
+    try:
+        key = _key(route)
+    except _MissingCredential:
+        raise ValueError('The local route credential is not configured in the server environment.') from None
+    limit, deadline = 512 * 1024, time.monotonic() + 15
+    try:
+        with _inventory_transport() as client:
+            with client.stream('GET', endpoint, headers={'Authorization': 'Bearer ' + key,
+                               'Accept': 'application/json', 'Accept-Encoding': 'identity'}) as response:
+                if response.status_code != 200:
+                    raise ValueError('The local server did not return a model list. Check its availability and access settings.')
+                if 'json' not in response.headers.get('content-type', '').lower() or response.headers.get('content-encoding', 'identity').lower() not in ('', 'identity'):
+                    raise ValueError('The local server returned an unsupported model-list response.')
+                raw = bytearray()
+                for chunk in response.iter_raw():
+                    if time.monotonic() > deadline or len(raw) + len(chunk) > limit:
+                        raise ValueError('The local model list exceeded its time or size limit.')
+                    raw.extend(chunk)
+        data = json.loads(raw)
+    except (httpx.HTTPError, OSError, UnicodeError, json.JSONDecodeError):
+        raise ValueError('Could not read a valid model list from the selected local server.') from None
+    if not isinstance(data, dict) or not isinstance(data.get('data'), list):
+        raise ValueError('The local server returned an invalid model list.')
+    rows = data['data']
+    models = []
+    incomplete = len(rows) > 200
+    for row in rows[:200]:
+        name = row.get('id') if isinstance(row, dict) else None
+        if not isinstance(name, str) or not name.strip() or len(name) > 250 or not name.isprintable():
+            incomplete = True
+            continue
+        if name not in models:
+            models.append(name)
+    return {'route': route_name, 'provider': route['provider'], 'model': route['model'],
+            'models': models, 'incomplete': incomplete,
+            'configured_listed': True if route['model'] in models else None if incomplete else False,
+            'notice': 'IDs are reported by the local server. A listed model may not be loaded or usable; aliases may work even if absent. No inference was run.'}
 
 
 def _transport():

@@ -397,6 +397,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
         finally:
             ai_lock.release()
 
+    @app.post('/api/ai/local-models')
+    async def ai_local_models(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm checking the selected local model server')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            return await run_in_threadpool(ai.local_model_inventory, data['route'], fingerprint)
+        finally:
+            ai_lock.release()
+
     @app.post("/api/ai/sample-analysis")
     async def ai_sample_analysis(request: Request):
         data = await request.json()

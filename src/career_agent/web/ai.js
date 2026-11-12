@@ -40,6 +40,8 @@
     el("ai-tailoring-sample-status").textContent = "";
     el("ai-tailoring-sample-results").replaceChildren();
     el("ai-test-status").textContent = "";
+    el("ai-local-models-status").textContent = "";
+    el("ai-local-models-results").replaceChildren();
     el("ai-sample-status").textContent = "";
     el("ai-sample-results").replaceChildren();
     el("ai-results").replaceChildren();
@@ -47,6 +49,7 @@
     el("ai-destination").textContent = r ? `${r.provider} · ${r.model} · ${r.destination} · output cap ${r.max_tokens} tokens · ${r.daily_request_limit == null ? "no local daily request limit" : "daily local request limit " + r.daily_request_limit + " (UTC)"} · request history ${r.record_history ? "enabled" : "off"}` : "No route configured";
     el("ai-route-readiness").textContent = r ? `Provider SDK: ${r.sdk_installed ? "installed" : "missing"} · Credential: ${r.credential_status}. These local checks do not establish connectivity or model access.` : "";
     el("ai-test-route").disabled = !r;
+    el("ai-local-models").disabled = !r || !["ollama", "lmstudio"].includes(r.provider);
     el("ai-sample-run").disabled = !r;
     el("ai-tailoring-sample-run").disabled = !r || !tailoringCasesLoaded;
   }
@@ -67,7 +70,7 @@
   });
   el("ai-load").addEventListener("click", async () => {
     if (busy) return;
-    busy = true; el("ai-load").disabled = true; el("ai-run").disabled = true; el("ai-tailor").disabled = true;
+    busy = true; el("ai-load").disabled = true; el("ai-local-models").disabled = true; el("ai-run").disabled = true; el("ai-tailor").disabled = true;
     try {
       const previousRoute = el("ai-route").value;
       const previousJob = el("ai-job").value;
@@ -89,6 +92,7 @@
         const selected = routes.find((r) => r.route === el("ai-route").value);
         el("ai-route-readiness").textContent = selected ? `Provider SDK: ${selected.sdk_installed ? "installed" : "missing"} · Credential: ${selected.credential_status}. These local checks do not establish connectivity or model access.` : "";
         el("ai-test-route").disabled = !selected;
+        el("ai-local-models").disabled = !selected || !["ollama", "lmstudio"].includes(selected.provider);
         el("ai-sample-run").disabled = !selected;
         el("ai-tailoring-sample-run").disabled = !selected || !tailoringCasesLoaded;
       }
@@ -108,7 +112,27 @@
           (jobs.truncated ? " The job picker is limited to the most recent 10,000 roles." : "");
       }
     } catch (e) { el("ai-status").textContent = e.message; }
-    finally { busy = false; el("ai-load").disabled = false; el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded; }
+    finally { busy = false; el("ai-load").disabled = false; el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded;
+      const selected = routes.find(item => item.route === el("ai-route").value);
+      el("ai-local-models").disabled = !selected || !["ollama", "lmstudio"].includes(selected.provider); }
+  });
+  el("ai-local-models").addEventListener("click", async () => {
+    const selected = routes.find(item => item.route === el("ai-route").value);
+    if (busy || !selected || !["ollama", "lmstudio"].includes(selected.provider)) return;
+    busy = true;
+    const controls = ["ai-load", "ai-route", "ai-local-models", "ai-test-route", "ai-run", "ai-tailor", "ai-sample-run", "ai-tailoring-sample-run"].map(id => el(id));
+    const states = controls.map(control => control.disabled);
+    controls.forEach(control => { control.disabled = true; });
+    el("ai-local-models-results").replaceChildren();
+    el("ai-local-models-status").textContent = "Checking the selected local server…";
+    try {
+      const result = await api('/api/ai/local-models', {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
+      if (result.route !== selected.route || !Array.isArray(result.models)) throw new Error("Invalid local model-list response.");
+      const match = result.configured_listed === true ? "Configured model ID appears in the list. " : result.configured_listed === false ? "Configured model ID was not listed; aliases may still work. " : "The list is incomplete, so the configured model could not be checked. ";
+      el("ai-local-models-status").textContent = match + result.notice + (result.incomplete ? " Some entries were omitted." : "");
+      for (const model of result.models) el("ai-local-models-results").append(text("li", model));
+    } catch (error) { el("ai-local-models-status").textContent = error.message; }
+    finally { controls.forEach((control, index) => { control.disabled = states[index]; }); busy = false; }
   });
   el("ai-test-route").addEventListener("click", async () => {
     if (busy || !el("ai-test-consent").checked || !el("ai-route").value) {
@@ -116,7 +140,7 @@
       return;
     }
     busy = true;
-    const controls = ["ai-load", "ai-route", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"]
+    const controls = ["ai-load", "ai-route", "ai-local-models", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"]
       .map((id) => el(id)).filter(Boolean);
     const states = controls.map((control) => control.disabled);
     controls.forEach((control) => { control.disabled = true; });
@@ -140,7 +164,7 @@
       return;
     }
     busy = true;
-    const controls = ["ai-load", "ai-route", "ai-run", "ai-tailor", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"]
+    const controls = ["ai-load", "ai-route", "ai-local-models", "ai-run", "ai-tailor", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"]
       .map(id => el(id)).filter(Boolean);
     const states = controls.map(control => control.disabled);
     controls.forEach(control => { control.disabled = true; });
@@ -190,7 +214,7 @@
       el("ai-tailoring-sample-status").textContent = "Review the cases, select a route, and confirm the fictional test first."; return;
     }
     busy = true;
-    const controls = ["ai-load", "ai-route", "ai-job", "ai-run", "ai-tailor", "ai-consent", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"].map(id => el(id));
+    const controls = ["ai-load", "ai-route", "ai-local-models", "ai-job", "ai-run", "ai-tailor", "ai-consent", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"].map(id => el(id));
     const states = controls.map(control => control.disabled);
     controls.forEach(control => { control.disabled = true; });
     const panel = el("ai-tailoring-sample-results"); panel.replaceChildren();
@@ -226,7 +250,7 @@
     event.preventDefault();
     if (busy || !el("ai-consent").checked) return;
     busy = true;
-    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-job", "ai-consent", "ai-sample-run", "ai-sample-consent", "ai-test-route", "ai-test-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"];
+    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-local-models", "ai-job", "ai-consent", "ai-sample-run", "ai-sample-consent", "ai-test-route", "ai-test-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"];
     ids.forEach((id) => { el(id).disabled = true; });
     el("ai-results").replaceChildren();
     el("ai-status").textContent = "Analyzing with the selected provider…";
