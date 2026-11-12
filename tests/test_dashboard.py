@@ -1077,6 +1077,38 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["packet_sha256"]
 
+    def test_job_aware_tailoring_is_scoped_and_rejects_stale_posting_or_keywords(self):
+        options = self.call('GET', f'/api/jobs/{self.job.id}/tailoring/facts').json()
+        self.assertEqual(options['job_id'], self.job.id)
+        self.assertEqual(options['description_revision'], 0)
+        self.assertEqual(options['facts'][0]['matched_keywords'], ['Python', 'AWS'])
+        self.assertNotIn('Private fictional evidence', json.dumps(options))
+        path = f'/api/jobs/{self.job.id}/tailored-draft'
+        payload = {'fact_ids': ['experience-01'], 'workspace_revision': options['workspace_revision'],
+                   'facts_sha256': options['facts_sha256'], 'job_description_revision': 0}
+        for invalid in (True, -1, '0', None):
+            with self.subTest(revision=invalid):
+                self.assertEqual(self.call('POST', path, {**payload, 'job_description_revision': invalid}).status_code, 422)
+        original = json.loads(self.facts_path.read_text())
+        changed = json.loads(self.facts_path.read_text())
+        changed['facts'][0]['keywords'] = ['Rust']
+        self.facts_path.write_text(json.dumps(changed))
+        self.assertEqual(self.call('POST', path, payload).status_code, 409)
+        self.facts_path.write_text(json.dumps(original))
+        with Store(self.db) as store:
+            store.correct_description(self.job.id, 'A revised fictional role.', 0, 'Fictional reviewed source')
+            before = store.connection.execute('SELECT COUNT(*) FROM workflow_runs').fetchone()[0]
+        response = self.call('POST', path, payload)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('Job description changed', response.json()['detail'])
+        with Store(self.db) as store:
+            self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM workflow_runs').fetchone()[0], before)
+        fresh = self.call('GET', f'/api/jobs/{self.job.id}/tailoring/facts').json()
+        self.assertEqual(fresh['description_revision'], 1)
+        self.assertEqual(fresh['facts'][0]['matched_keywords'], [])
+        self.assertEqual(self.call('POST', path, {**payload, 'facts_sha256': fresh['facts_sha256'],
+                                                   'job_description_revision': 1}).status_code, 200)
+
     def test_tailored_draft_uses_only_selected_verified_facts_and_requires_new_review(self):
         data = fake_fact_bank()
         data['facts'].append({**data['facts'][0], 'id': 'experience-02',

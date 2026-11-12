@@ -43,7 +43,7 @@ from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
-from .scoring import constraint_evidence, score_job, title_level_evidence
+from .scoring import constraint_evidence, contains_phrase, score_job, title_level_evidence
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
@@ -1010,13 +1010,34 @@ def create_app(config: DashboardConfig) -> FastAPI:
         workspace = active_workspace()
         bank = CandidateWorkspace.fact_bank(workspace) if workspace["revision"] > 0 else configured_facts()
         facts = [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement} for fact in bank.facts]
-        return {'workspace_revision': workspace['revision'], 'facts': facts, 'facts_sha256': facts_hash(facts),
+        return {'workspace_revision': workspace['revision'], 'facts': facts, 'facts_sha256': bank_facts_hash(bank),
                 'max_facts': MAX_TAILORED_FACTS}
 
     def facts_hash(facts):
         return hashlib.sha256(json.dumps(facts, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
 
-    def create_draft(job_id: str, selection=None, expected_revision=None, expected_facts=None, section_order=None):
+    def bank_facts_hash(bank):
+        return facts_hash([{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement,
+                            'keywords': list(fact.keywords)} for fact in bank.facts])
+
+    @app.get('/api/jobs/{job_id}/tailoring/facts')
+    def job_tailoring_facts(job_id: str):
+        with Store(config.db_path) as store:
+            store.connection.execute('BEGIN')
+            workspace = CandidateWorkspace(store).latest()
+            job = _get_job(store, job_id)
+            description_revision = store.description_revision(job.id)
+        bank = CandidateWorkspace.fact_bank(workspace) if workspace['revision'] > 0 else configured_facts()
+        text = f'{job.title}\n{job.description}'
+        facts = [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement,
+                  'matched_keywords': [word for word in fact.keywords if contains_phrase(text, word)]}
+                 for fact in bank.facts]
+        return {'job_id': job.id, 'description_revision': description_revision,
+                'description_missing': not bool(job.description.strip()), 'workspace_revision': workspace['revision'],
+                'facts': facts, 'facts_sha256': bank_facts_hash(bank), 'max_facts': MAX_TAILORED_FACTS}
+
+    def create_draft(job_id: str, selection=None, expected_revision=None, expected_facts=None, section_order=None,
+                     expected_job_revision=None):
         workspace = active_workspace()
         if expected_revision is not None and (type(expected_revision) is not int or expected_revision != workspace['revision']):
             raise HTTPException(status_code=409, detail='Career profile changed; reload verified facts before tailoring')
@@ -1029,14 +1050,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=412, detail="Configure a career profile before drafting applications")
             bank = configured_facts()
         if expected_facts is not None:
-            visible = [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement} for fact in bank.facts]
-            if not isinstance(expected_facts, str) or not hmac.compare_digest(expected_facts, facts_hash(visible)):
+            if not isinstance(expected_facts, str) or not hmac.compare_digest(expected_facts, bank_facts_hash(bank)):
                 raise HTTPException(status_code=409, detail='Verified facts changed; reload them before tailoring')
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             store.connection.execute('BEGIN')
             job = _get_job(store, job_id)
             job_revision = store.description_revision(job.id)
+            if expected_job_revision is not None and expected_job_revision != job_revision:
+                raise HTTPException(status_code=409, detail='Job description changed; refresh the board and reload verified facts before tailoring')
             if store.stage_of(job.id) == "submitted":
                 raise HTTPException(
                     status_code=409,
@@ -1069,7 +1091,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.post("/api/jobs/{job_id}/tailored-draft")
     async def tailored_draft(job_id: str, request: Request):
         data = await request.json()
-        if not isinstance(data, dict) or set(data) not in ({'fact_ids', 'workspace_revision', 'facts_sha256'}, {'fact_ids', 'workspace_revision', 'facts_sha256', 'section_order'}):
+        required = {'fact_ids', 'workspace_revision', 'facts_sha256'}
+        if not isinstance(data, dict) or not required <= set(data) or set(data) - (required | {'section_order', 'job_description_revision'}):
             raise ValueError('Select verified facts and include the profile revision')
         if type(data['workspace_revision']) is not int or data['workspace_revision'] < 0:
             raise ValueError('Invalid profile revision')
@@ -1077,9 +1100,11 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
         if 'section_order' in data and not isinstance(data['section_order'], list):
             raise ValueError('Choose each resume section exactly once')
+        if 'job_description_revision' in data and (type(data['job_description_revision']) is not int or data['job_description_revision'] < 0):
+            raise ValueError('Invalid job description revision')
         if not isinstance(data['facts_sha256'], str) or len(data['facts_sha256']) != 64 or any(c not in '0123456789abcdef' for c in data['facts_sha256']):
             raise ValueError('Invalid verified facts fingerprint')
-        return await run_in_threadpool(create_draft, job_id, data['fact_ids'], data['workspace_revision'], data['facts_sha256'], data.get('section_order'))
+        return await run_in_threadpool(create_draft, job_id, data['fact_ids'], data['workspace_revision'], data['facts_sha256'], data.get('section_order'), data.get('job_description_revision'))
 
     @app.get("/api/jobs/{job_id}/packet")
     def get_packet(job_id: str):
