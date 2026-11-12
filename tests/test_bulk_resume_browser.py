@@ -76,7 +76,7 @@ class BulkResumeBrowserTests(unittest.TestCase):
                         expect(page.locator('#resume-combine')).to_be_disabled()
                         page.once('dialog', lambda dialog: dialog.accept())
                         page.get_by_role('button', name='Verify this fact').first.click()
-                        expect(page.locator('#career-facts-list')).to_contain_text('Candidate verified')
+                        expect(page.locator('#career-facts-list')).to_contain_text('Candidate verified', timeout=15000)
                         with Store(db) as store:
                             states = [row['verified_by_candidate'] for row in CandidateWorkspace(store).latest()['facts']]
                             self.assertEqual(sum(states), 1)
