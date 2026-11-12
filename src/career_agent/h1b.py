@@ -120,24 +120,24 @@ def validate_dol_download_url(url):
     return url
 
 
-def _validate_lca_row(row, line, captured):
+def _validate_lca_row(row, line, captured, *, label="Row"):
     """Validate one disclosure row independently of existing workspace data."""
     required = ('CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE')
     if None in row or any(row.get(key) is None for key in required):
-        raise ValueError(f'Row {line}: malformed CSV row')
-    visa = text(row['VISA_CLASS'], f'Row {line} VISA_CLASS').upper()
+        raise ValueError(f'{label} {line}: malformed CSV row')
+    visa = text(row['VISA_CLASS'], f'{label} {line} VISA_CLASS').upper()
     if visa in ('E-3 AUSTRALIAN', 'H-1B1 CHILE', 'H-1B1 SINGAPORE'):
         return None
     if visa != 'H-1B':
-        raise ValueError(f'Row {line}: unsupported VISA_CLASS')
-    case = text(row['CASE_NUMBER'], f'Row {line} CASE_NUMBER', 80).upper()
+        raise ValueError(f'{label} {line}: unsupported VISA_CLASS')
+    case = text(row['CASE_NUMBER'], f'{label} {line} CASE_NUMBER', 80).upper()
     if not re.fullmatch(r'I-\d{3}-\d{5}-\d{6}', case):
-        raise ValueError(f'Row {line}: expected a public DOL LCA CASE_NUMBER')
-    employer = text(row['EMPLOYER_NAME'], f'Row {line} EMPLOYER_NAME')
+        raise ValueError(f'{label} {line}: expected a public DOL LCA CASE_NUMBER')
+    employer = text(row['EMPLOYER_NAME'], f'{label} {line} EMPLOYER_NAME')
     # DOL's FY2026 Q3 workbook uses "Certified - Withdrawn"; its layout omits spaces.
-    status = re.sub(r'\s*-\s*', '-', text(row['CASE_STATUS'], f'Row {line} CASE_STATUS').casefold())
+    status = re.sub(r'\s*-\s*', '-', text(row['CASE_STATUS'], f'{label} {line} CASE_STATUS').casefold())
     if status not in STATUSES:
-        raise ValueError(f'Row {line}: unsupported CASE_STATUS')
+        raise ValueError(f'{label} {line}: unsupported CASE_STATUS')
     decision = None
     for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%Y-%m-%d %H:%M:%S'):
         try:
@@ -146,8 +146,8 @@ def _validate_lca_row(row, line, captured):
         except ValueError:
             pass
     if decision is None or decision > captured or decision.year < 1990:
-        raise ValueError(f'Row {line}: invalid DECISION_DATE or later than capture date')
-    optional = [text((row.get(k) or '').strip() or 'Unknown', f'Row {line} {k}') for k in ('EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE')]
+        raise ValueError(f'{label} {line}: invalid DECISION_DATE or later than capture date')
+    optional = [text((row.get(k) or '').strip() or 'Unknown', f'{label} {line} {k}') for k in ('EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE')]
     return case, employer, employer_key(employer), fiscal_year(decision), decision.isoformat(), status, *optional
 
 
@@ -220,7 +220,7 @@ class H1BResearch:
                               (data['need'], data['min_year'], int(data['include_unknown'])))
         return self.settings()
 
-    def import_csv(self, stream, source_url, captured_on, *, progress=None, acquisition=None):
+    def import_csv(self, stream, source_url, captured_on, *, progress=None, acquisition=None, _worksheet_rows=False):
         source_url, captured = validate_lca_source(source_url, captured_on)
         reader = csv.DictReader(stream, strict=True)
         required = {'CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'}
@@ -234,9 +234,20 @@ class H1BResearch:
         row_count = 0
         with self.conn:
             self.conn.execute('BEGIN IMMEDIATE')
+            previous_worksheet_row = 1
             for line, row in enumerate(reader, 2):
+                label = 'Row'
+                if _worksheet_rows:
+                    raw_row = row.get('__career_agent_worksheet_row')
+                    if not isinstance(raw_row, str) or not raw_row.isascii() or not raw_row.isdecimal():
+                        raise ValueError('Invalid staged workbook row metadata; no records were imported')
+                    line = int(raw_row)
+                    if not previous_worksheet_row < line <= XLSX_MAX_ROW:
+                        raise ValueError('Invalid staged workbook row order; no records were imported')
+                    previous_worksheet_row = line
+                    label = 'Worksheet row'
                 if None in row or any(row.get(key) is None for key in required):
-                    raise ValueError(f'Row {line}: malformed CSV row')
+                    raise ValueError(f'{label} {line}: malformed CSV row')
                 # Hash only fields that the importer examines, in source order. This
                 # is an audit fingerprint, not a checksum of the original file.
                 selected = [row.get(key) or '' for key in fields]
@@ -244,7 +255,7 @@ class H1BResearch:
                 row_count += 1
                 if progress and row_count % 2000 == 0:
                     progress('reading', row_count)
-                validated = _validate_lca_row(row, line, captured)
+                validated = _validate_lca_row(row, line, captured, label=label)
                 if validated is None:
                     counts['other_visas_skipped'] += 1
                     continue
@@ -260,7 +271,7 @@ class H1BResearch:
                         continue
                     old_content = tuple(previous[k] for k in ('case_number', 'employer', 'employer_key', 'fiscal_year', 'decision_date', 'case_status', 'city', 'state', 'job_title'))
                     if previous['captured_on'] == captured_on and old_content != values[:9]:
-                        raise ValueError(f'Row {line}: conflicting record for the same case and capture date')
+                        raise ValueError(f'{label} {line}: conflicting record for the same case and capture date')
                     if tuple(previous)[:-1] == values[:-1]:
                         counts['duplicates'] += 1
                         continue
@@ -342,13 +353,13 @@ class H1BResearch:
                 writer = csv.writer(buffer)
                 def line(values):
                     buffer.seek(0); buffer.truncate(0); writer.writerow(values); return buffer.getvalue()
-                yield line(fields)
-                for row in sheet.iter_rows(min_row=2, max_row=max_row, max_col=max_column, values_only=True):
+                yield line((*fields, '__career_agent_worksheet_row'))
+                for worksheet_row, row in enumerate(sheet.iter_rows(min_row=2, max_row=max_row, max_col=max_column, values_only=True), 2):
                     values = [row[positions[field][0]] if positions[field] and positions[field][0] < len(row) else None for field in fields]
                     if all(value is None for value in values):
                         continue
                     yield line([value.isoformat(' ') if isinstance(value, datetime) else value.isoformat() if isinstance(value, date)
-                                else '' if value is None else str(value) for value in values])
+                                else '' if value is None else str(value) for value in values] + [worksheet_row])
             # Keep the long XLSX read and per-row validation outside the workspace
             # write transaction. Only the selected public columns are staged.
             with tempfile.TemporaryFile(mode='w+', encoding='utf-8', newline='') as staging:
@@ -357,10 +368,10 @@ class H1BResearch:
                         staging.write(item)
                         yield item
                 reader = csv.DictReader(staged_lines(), strict=True)
-                for row_number, row in enumerate(reader, 2):
-                    _validate_lca_row(row, row_number, captured)
-                    if progress and (row_number - 1) % 2000 == 0:
-                        progress('reading', row_number - 1)
+                for count, row in enumerate(reader, 1):
+                    _validate_lca_row(row, int(row['__career_agent_worksheet_row']), captured, label='Worksheet row')
+                    if progress and count % 2000 == 0:
+                        progress('reading', count)
                 staging.flush()
                 staging.seek(0)
                 if progress:
@@ -370,7 +381,7 @@ class H1BResearch:
                 # Revalidation against the current workspace preserves identical
                 # duplicate, stale and conflict semantics under concurrent writes.
                 return self.import_csv(staging, source_url, captured_on,
-                                       progress=apply_progress if progress else None, acquisition=acquisition)
+                                       progress=apply_progress if progress else None, acquisition=acquisition, _worksheet_rows=True)
         except ValueError:
             raise
         except OSError:

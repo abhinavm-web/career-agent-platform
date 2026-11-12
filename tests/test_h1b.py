@@ -391,6 +391,34 @@ class ResearchTests(unittest.TestCase):
             self.research.import_xlsx(path, DOL_URL, '2025-06-02')
         self.assertEqual(self.research.coverage()['records'], 2)
 
+    def test_sparse_workbook_errors_use_actual_worksheet_rows_and_are_atomic(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'sparse.xlsx'
+        headers = ['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE']
+        def write_book(status):
+            book = Workbook(); sheet = book.active; sheet.append(headers)
+            # Embedded newlines and empty worksheet rows must not shift diagnostics.
+            sheet.append(['I-200-25123-000001', 'Fictional\nEmployer', 'H-1B', 'Certified', '2025-04-15'])
+            for column, value in enumerate(['I-200-25123-000002', 'Example Inc.', 'H-1B', status, '2025-04-15'], 1):
+                sheet.cell(row=9, column=column, value=value)
+            book.save(path); book.close()
+        write_book('Pending')
+        with self.assertRaisesRegex(ValueError, r'Worksheet row 9: unsupported CASE_STATUS'):
+            self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+        self.assertEqual(self.research.coverage()['records'], 0)
+        self.assertEqual(self.research.coverage()['lca_imports'], [])
+        self.ingest([{'CASE_NUMBER': 'I-200-25123-000002', 'CASE_STATUS': 'Denied'}])
+        write_book('Certified')
+        with self.assertRaisesRegex(ValueError, r'Worksheet row 9: conflicting record'):
+            self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+        self.assertEqual(self.research.coverage()['records'], 1)
+        self.assertEqual(len(self.research.coverage()['lca_imports']), 1)
+        self.assertEqual(self.research.company('Fictional\nEmployer')['records'], [])
+
     def test_import_progress_counts_rows_without_committing_early(self):
         observed = []
         def progress(phase, count):
