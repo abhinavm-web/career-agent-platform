@@ -220,6 +220,7 @@
       if (job.constraint_evidence?.some((row) => row.status === "flagged")) lower.append(chip("Constraint flagged", "amber"));
       else if (job.constraint_evidence?.some((row) => row.status === "unknown")) lower.append(chip("Constraint unknown", "amber"));
       if (job.source) lower.append(chip("Source: " + job.source));
+      if (job.discovery_observations?.some((row) => row.description_comparison === "differs")) lower.append(chip("Source text differs", "amber"));
       const observation = postingObservation(job);
       lower.append(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""));
       if (job.packet_available) lower.append(chip(
@@ -341,6 +342,13 @@
       discovery.append(node("p", "muted", "These are times your searches returned this URL, not proof that the posting is open, current, or unchanged."));
       for (const row of job.discovery_observations) {
         discovery.append(node("p", "", row.source + " · first returned " + row.first_seen + " · last returned " + row.last_seen + " · " + row.observation_count + " search(es)"));
+        if (row.description_comparison === "differs") {
+          discovery.append(node("p", "", "Source text observed " + row.description_observed_at + " differs from the saved description. It may be partial or outdated; inspect the original posting before relying on the draft."));
+        } else if (row.description_comparison === "matches") {
+          discovery.append(node("p", "muted", "Source text observed " + row.description_observed_at + " matched the saved description ignoring case and whitespace; this does not verify the current posting."));
+        } else {
+          discovery.append(node("p", "muted", "Description comparison unavailable for this source or latest observation."));
+        }
       }
       detail.append(discovery);
     }

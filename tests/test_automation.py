@@ -8,7 +8,7 @@ import sys
 from types import SimpleNamespace
 from contextlib import redirect_stdout
 from io import StringIO
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,7 +72,38 @@ class AutomationTests(unittest.TestCase):
             self.assertEqual(store.get_job(original.id).description, original.description)
             rows = store.discovery_observations([original.id])[original.id]
             self.assertEqual({(r['source'], r['observation_count']) for r in rows}, {('indeed', 1), ('linkedin', 1)})
+            self.assertEqual({r['description_comparison'] for r in rows}, {'differs'})
             self.assertEqual(len(store.list_jobs()), 1)
+
+    def test_discovery_description_comparison_preserves_saved_text_and_reviews(self):
+        job = replace(fake_job(), source='indeed', description='Original Python skills.')
+        with Store(self.db) as store:
+            self.assertEqual(store.add_discovered_jobs([job]), 1)
+            store.record_review(job.id, 'a' * 64, True)
+            status = lambda: store.discovery_observations([job.id])[job.id][0]
+            self.assertEqual(status()['description_comparison'], 'matches')
+            self.assertTrue(status()['description_observed_at'].endswith('Z'))
+            self.assertEqual(store.add_discovered_jobs([replace(job, description='  ORIGINAL\nPython skills. ')]), 0)
+            self.assertEqual(status()['description_comparison'], 'matches')
+            self.assertEqual(store.add_discovered_jobs([replace(job, description='New SQL skills.')]), 0)
+            self.assertEqual(status()['description_comparison'], 'differs')
+            self.assertEqual(store.get_job(job.id).description, 'Original Python skills.')
+            self.assertEqual(store.latest_review(job.id)['decision'], 'approved_for_manual_submission')
+            store.correct_description(job.id, 'New SQL skills.', 0, 'Fictional source checked')
+            self.assertEqual(status()['description_comparison'], 'matches')
+            store.add_discovered_jobs([replace(job, description='')])
+            self.assertEqual(status()['description_comparison'], 'unknown')
+            self.assertEqual(store.get_job(job.id).description, 'New SQL skills.')
+
+    def test_legacy_observations_have_unknown_description_comparison(self):
+        job = fake_job()
+        with Store(self.db) as store, store.connection:
+            store.add_jobs([job])
+            store.connection.execute('INSERT INTO job_discovery_observations VALUES(?,?,?,?,?)',
+                                     (job.id, job.source, '2025-01-01Z', '2025-01-01Z', 1))
+            observation = store.discovery_observations([job.id])[job.id][0]
+            self.assertEqual(observation['description_comparison'], 'unknown')
+            self.assertIsNone(observation['description_observed_at'])
 
     def test_failed_discovery_import_rolls_back_jobs_and_observations(self):
         job = fake_job()

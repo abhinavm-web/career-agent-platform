@@ -329,13 +329,17 @@ test('possible duplicates show source and recorded submission without merging', 
 test('discovery history is visible without claiming a job is current', async () => {
   const job = {...fakeJob(ID_A, 'Role Alpha'), discovery_observations: [{
     source: '<fictional source>', first_seen: '2026-01-01T00:00:00Z',
-    last_seen: '2026-01-02T00:00:00Z', observation_count: 2
+    last_seen: '2026-01-02T00:00:00Z', observation_count: 2,
+    description_comparison: 'differs', description_observed_at: '2026-01-02T00:00:00Z'
   }]};
   const h = createHarness({jobsOverride: [job]}); await flush();
+  assert.match(h.get('job-list').textContent, /Source text differs/);
   h.get('job-list').children[0].click();
   assert.match(h.get('detail-panel').textContent, /<fictional source>/);
   assert.match(h.get('detail-panel').textContent, /last returned 2026-01-02/);
   assert.match(h.get('detail-panel').textContent, /not proof that the posting is open/);
+  assert.match(h.get('detail-panel').textContent, /differs from the saved description/);
+  assert.match(h.get('detail-panel').textContent, /may be partial or outdated/);
 });
 
 test('hard constraint warnings appear separately from the score', async () => {
