@@ -31,7 +31,7 @@ Select an opportunity and save a **high**, **medium**, **low** or **no priority*
 
 Record an interview date, round/topic and private notes on an opportunity. Notes are displayed newest interview date first, with the recording timestamp and candidate attribution. Notes can also capture preparation for a future interview. They do not assert submission, schedule events or advance the pipeline.
 
-Saved notes are append-only in this version: add another note for a correction. They remain in unencrypted local SQLite, like contacts and other CRM history. Note editing, deletion and data export are not yet implemented.
+Saved notes are append-only in this version: add another note for a correction. They remain in unencrypted local SQLite, like contacts and other CRM history. Note editing and deletion are not yet implemented; the tracker-history export includes the recorded notes.
 
 ## Recruiter contacts
 

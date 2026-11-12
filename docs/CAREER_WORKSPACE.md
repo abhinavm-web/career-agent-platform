@@ -71,7 +71,7 @@ Install test extras and run: `python -m pip install -e ".[graph,web,dev]"`, then
 
 ## Still out of scope
 
-At-rest encryption, tenant-level authorization, OCR, automated résumé fact classification, historical revision restoration, and managed cloud hosting need separately scoped work.
+At-rest encryption, tenant-level authorization, OCR, reliable automated résumé fact classification beyond heading-based suggestions, historical revision restoration, and managed cloud hosting need separately scoped work.
 
 ## Previously approved packets after a change
 
