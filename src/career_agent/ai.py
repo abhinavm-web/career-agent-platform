@@ -278,6 +278,7 @@ def analyze(job, bank, route_name, acknowledged=False):
 
 def tailoring_suggestions(job, bank, route_name, acknowledged=False):
     """Return non-persistent suggestions; citations do not prove semantic fidelity."""
+    from .tailoring_checks import wording_review_warnings
     if acknowledged is not True:
         raise ValueError('Explicit consent to send the posting and verified fact statements is required')
     route = _route(route_name)
@@ -331,9 +332,10 @@ def tailoring_suggestions(job, bank, route_name, acknowledged=False):
                 raise ValueError()
             seen.add(fact_id)
             row['original_fact'] = claims[fact_id]
+            row['review_warnings'] = wording_review_warnings(claims[fact_id], wording)
     except (ValueError, TypeError):
         raise ValueError('AI output failed evidence/schema validation; no result accepted') from None
     return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'],
             'observed_at': datetime.now(timezone.utc).isoformat(), 'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(),
             'suggestions': rows,
-            'notice': 'Unverified wording suggestions only. A valid fact ID and exact job quote do not prove the rewrite is accurate. Review every claim and verify it separately before using it.'}
+            'notice': 'Unverified wording suggestions only. Valid fact IDs, exact job quotes and an absence of warnings do not prove the rewrite is accurate. Review every claim and verify it separately before using it.'}
