@@ -324,6 +324,16 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .home-heading h2 {font-size:clamp(28px,3vw,38px);}
 .home-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;}
 .settings-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.inline-tailoring {margin:16px 0;padding:16px;border:1px solid var(--border);border-radius:10px;background:#142137;}
+.inline-tailoring summary {font-weight:700;cursor:pointer;}
+.inline-tailoring .block-label {margin:12px 0;}
+.inline-tailoring .check-label {margin:12px 0;}
+.inline-suggestion {margin:16px 0;padding:14px;border:1px solid var(--border);border-radius:10px;overflow-wrap:anywhere;}
+.inline-comparison {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;}
+.inline-comparison > div {padding:12px;background:#1b2a40;border-radius:8px;}
+.inline-comparison strong {font-size:12px;color:#b8f5e8;}
+.inline-comparison p {white-space:pre-wrap;}
+#profile-wizard {border-color:#32605a;background:#16303c;}
 .home-feature,.home-card,.home-followups,.profile-guide {padding:24px;}
 .home-feature {grid-column:span 2;background:linear-gradient(120deg,#17364a,#15283e);}
 .home-feature h3,.home-card h3,.home-followups h3,.profile-guide h3 {margin:10px 0;font-size:19px;letter-spacing:-.02em;}
@@ -358,5 +368,6 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 #crm-summary {order:2;margin-top:20px;}
 #crm-outcomes {order:3;}
 @media(max-width:900px) {.home-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.profile-guide {align-items:flex-start;flex-direction:column;}}
+@media(max-width:650px) {.inline-comparison {grid-template-columns:1fr;}}
 @media(max-width:1050px) {.board {display:flex;flex-direction:column;}.board > * {width:100%;}.detail-panel {position:static;max-height:none;overflow:visible;}}
 @media(max-width:780px) {.nav-group-label {display:none;}.home-grid,.settings-grid {grid-template-columns:1fr;}.home-feature {grid-column:auto;}.home-feature,.home-card,.home-followups,.profile-guide {padding:18px;}.home-followup {flex-direction:column;}.board:has(> #detail-panel > .empty-detail):not(:has(#job-description-editor)) .job-list {display:block;}}

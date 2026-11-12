@@ -298,6 +298,9 @@
       const capture = editor?.querySelector?.("#description-capture-input");
       if (editor?.open && description && (description.value !== description.defaultValue || source?.value || capture?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
+      const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
+      if (inline?.dataset.pending === "true" && !window.confirm("An AI request is still running. Switching jobs discards its displayed result; the request may still complete. Continue?")) return;
+      if (inline?.dataset.suggestions === "true" && !window.confirm("Switching jobs discards the displayed AI suggestions. Any wording already saved for review remains in your profile. Continue?")) return;
     }
     if (state.selectedId !== id) state.detailTab = "overview";
     state.selectedId = id;
@@ -351,6 +354,91 @@
     return box;
   }
 
+  function inlineTailoring(job) {
+    const panel = node("details", "inline-tailoring");
+    panel.id = "inline-tailoring"; panel.dataset.jobId = job.id;
+    panel.dataset.descriptionRevision = String(job.description_revision ?? 0);
+    panel.append(node("summary", "", "Compare AI wording with verified facts"), node("p", "muted",
+      "With your consent, the saved posting and verified career facts are sent to the chosen provider. Cloud requests may incur charges; local servers may forward requests. Suggestions are unverified and never replace a fact or draft automatically."));
+    const load = button("Load model routes", "button");
+    const label = node("label", "block-label", "Model route");
+    const select = node("select"); select.setAttribute("aria-label", "Inline model route"); label.append(select);
+    const destination = node("p", "muted", "Load routes to review the destination.");
+    const consentLabel = node("label", "check-label");
+    const consent = node("input"); consent.type = "checkbox";
+    consentLabel.append(consent, document.createTextNode(" I consent to sending this posting and my verified facts to the provider shown above."));
+    const run = button("Suggest wording", "button button-primary"); run.disabled = true;
+    const status = node("p", "muted"); status.setAttribute("role", "status");
+    const results = node("div", "inline-tailoring-results");
+    let routes = [], busy = false;
+    const current = () => panel.isConnected && state.selectedId === job.id && state.screen === "jobs";
+    const updateRoute = () => {
+      consent.checked = false;
+      const route = routes.find(item => item.route === select.value);
+      destination.textContent = route ? route.provider + " · " + route.model + " · " + route.destination : "No route configured.";
+      run.disabled = !route?.route_fingerprint;
+    };
+    select.addEventListener("change", () => { results.replaceChildren(); panel.dataset.suggestions = "false"; status.textContent = "Review the destination and confirm sharing."; updateRoute(); });
+    load.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true; load.disabled = true; run.disabled = true; consent.checked = false; results.replaceChildren(); panel.dataset.suggestions = "false";
+      status.textContent = "Loading configured routes…";
+      try {
+        const result = await api("/api/ai/routes");
+        if (!current()) return;
+        routes = result.routes; select.replaceChildren();
+        for (const route of routes) {
+          const option = node("option", "", route.route + " (" + route.provider + ")");
+          option.value = route.route; select.append(option);
+        }
+        updateRoute(); status.textContent = routes.length ? "Review the destination and confirm sharing." : "No routes configured. Open AI tools for setup.";
+      } catch (error) { if (current()) status.textContent = error.message; }
+      finally { busy = false; load.disabled = false; }
+    });
+    run.addEventListener("click", async () => {
+      const route = routes.find(item => item.route === select.value);
+      if (busy || !consent.checked || !route?.route_fingerprint) return;
+      busy = true; load.disabled = true; run.disabled = true; select.disabled = true; consent.disabled = true; panel.dataset.pending = "true";
+      results.replaceChildren(); panel.dataset.suggestions = "false"; status.textContent = "Waiting for the selected provider…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/ai-tailoring-suggestions", "POST",
+          {route: route.route, route_fingerprint: route.route_fingerprint, acknowledged: true});
+        if (!current()) return;
+        status.textContent = result.notice + modelInfo(result) + " Checked: " + result.observed_at + ".";
+        if (!result.suggestions.length) results.append(node("p", "muted", "No wording suggestions returned."));
+        panel.dataset.suggestions = String(result.suggestions.length > 0);
+        for (const suggestion of result.suggestions) {
+          const card = node("section", "inline-suggestion");
+          const comparison = node("div", "inline-comparison");
+          const source = node("div"), wording = node("div");
+          source.append(node("strong", "", "Verified fact · " + suggestion.fact_id), node("p", "", suggestion.original_fact));
+          wording.append(node("strong", "", "Unverified suggestion"), node("p", "", suggestion.wording));
+          comparison.append(source, wording); card.append(comparison, node("p", "muted", "Posting excerpt: " + suggestion.job_quote));
+          for (const warning of suggestion.review_warnings || []) card.append(node("p", "", "Review warning: " + warning));
+          const stage = button("Save unverified wording for review", "button", async () => {
+            if (stage.disabled || !current()) return;
+            stage.disabled = true;
+            try {
+              const workspace = (await api("/api/workspace")).workspace;
+              if (!current()) return;
+              if (!workspace.revision) throw new Error("Create a career profile before saving a suggestion.");
+              await api("/api/jobs/" + job.id + "/stage-ai-wording", "POST", {expected_revision: workspace.revision,
+                fact_id: suggestion.fact_id, source_statement: suggestion.original_fact,
+                job_quote: suggestion.job_quote, wording: suggestion.wording, acknowledged: true});
+              if (!current()) return;
+              stage.textContent = "Saved for review";
+              status.textContent = "Saved as an unverified fact. Review and verify it in Career profile before drafting.";
+            } catch (error) { if (current()) { status.textContent = error.message; stage.disabled = false; } }
+          });
+          card.append(stage); results.append(card);
+        }
+      } catch (error) { if (current()) status.textContent = error.message; }
+      finally { busy = false; panel.dataset.pending = "false"; load.disabled = false; select.disabled = false; consent.disabled = false; consent.checked = false; run.disabled = !routes.find(item => item.route === select.value)?.route_fingerprint; }
+    });
+    panel.append(load, label, destination, consentLabel, run, status, results);
+    return panel;
+  }
+
   function renderDetailPreservingEditor() {
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
     const keep = editor?.open && editor.dataset.jobId === state.selectedId;
@@ -358,7 +446,12 @@
     const keepPicker = picker?.open && picker.dataset.jobId === state.selectedId;
     const duplicates = byId("detail-panel").querySelector?.("#possible-duplicates");
     const keepDuplicates = duplicates?.dataset.started === "true" && duplicates.dataset.jobId === state.selectedId;
+    const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
+    const currentJob = state.jobs.find(job => job.id === state.selectedId);
+    const keepInline = inline?.open && inline.dataset.jobId === state.selectedId && currentJob &&
+      inline.dataset.descriptionRevision === String(currentJob.description_revision ?? 0);
     renderDetail();
+    if (keepInline) byId("detail-panel").querySelector?.("#inline-tailoring")?.replaceWith(inline);
     if (keepDuplicates) byId("detail-panel").querySelector?.("#possible-duplicates")?.replaceWith(duplicates);
     if (keepPicker) {
       const replacement = byId("detail-panel").querySelector?.(".tailoring-picker");
@@ -791,6 +884,7 @@
       if (state.screen === "tracker") await selectCRMJob(job.id);
     }));
     drafts.append(workflowActions);
+    drafts.append(inlineTailoring(job));
     const missingProfile = state.settings.profile_configured === false;
     const missingFacts = state.settings.facts_configured === false;
     if (job.application_stage !== "submitted" && (missingProfile || missingFacts)) {
@@ -2041,17 +2135,49 @@
     target.scrollIntoView?.({behavior: "smooth", block: "center"});
     target.focus();
   });
-  byId("profile-start-resume").addEventListener("click", () => {
-    const input = byId("resume-file");
-    const panel = input.closest("details");
-    if (panel) panel.open = true;
-    input.scrollIntoView?.({behavior: "smooth", block: "center"});
-    input.focus();
-  });
-  byId("profile-start-preferences").addEventListener("click", () => {
-    byId("career-profile-form").scrollIntoView?.({behavior: "smooth", block: "start"});
-    byId("career-name").focus();
-  });
+  let wizardStep = 0, wizardActive = false, wizardResume = null;
+  function showWizardStep(step, focusInput = false) {
+    wizardStep = step;
+    const headings = ["1 of 3 · Preferences", "2 of 3 · Import a résumé", "3 of 3 · Review and verify facts"];
+    const instructions = ["Enter your name and goals, then choose Save preferences. A saved name is required before verifying facts.",
+      "Extract text locally or paste it. Choose statements to stage for review; this step is optional.",
+      "Review each statement and its source. Save new facts as unverified, then verify only the claims you can confirm. Your name must be saved in Preferences first."];
+    byId("profile-wizard-heading").textContent = headings[step];
+    byId("profile-wizard-instructions").textContent = instructions[step];
+    byId("career-profile-form").hidden = step !== 0;
+    byId("profile-wizard-resume").hidden = step !== 1;
+    byId("career-facts-panel").hidden = step !== 2;
+    byId("profile-wizard-previous").disabled = step === 0;
+    byId("profile-wizard-next").textContent = step === 2 ? "Finish setup" : "Next step";
+    const target = focusInput ? byId(step === 1 ? "resume-file" : step === 0 ? "career-name" : "fact-statement") : byId("profile-wizard-heading");
+    target.scrollIntoView?.({behavior: "smooth", block: "center"}); target.focus();
+  }
+  function startProfileWizard(step, focusInput = false) {
+    if (!wizardActive) {
+      wizardResume = byId("resume-file").closest("details");
+      if (!wizardResume) return;
+      byId("profile-wizard-resume").append(wizardResume);
+      wizardResume.open = true; wizardActive = true;
+    }
+    byId("profile-wizard").hidden = false;
+    for (const id of ["profile-portability", "profile-assistant", "profile-revisions-panel"]) byId(id).hidden = true;
+    showWizardStep(step, focusInput);
+  }
+  function exitProfileWizard() {
+    if (!wizardActive) return;
+    byId("career-facts-panel").insertBefore(wizardResume, byId("career-fact-form"));
+    byId("profile-wizard").hidden = true; byId("profile-wizard-resume").hidden = true;
+    byId("career-profile-form").hidden = false; byId("career-facts-panel").hidden = false;
+    for (const id of ["profile-portability", "profile-assistant", "profile-revisions-panel"]) byId(id).hidden = false;
+    wizardActive = false; wizardResume = null;
+    byId("profile-start-guided").focus();
+  }
+  byId("profile-start-guided").addEventListener("click", () => startProfileWizard(0));
+  byId("profile-start-resume").addEventListener("click", () => startProfileWizard(1, true));
+  byId("profile-start-preferences").addEventListener("click", () => startProfileWizard(0, true));
+  byId("profile-wizard-previous").addEventListener("click", () => { if (wizardActive && wizardStep > 0) showWizardStep(wizardStep - 1); });
+  byId("profile-wizard-next").addEventListener("click", () => { if (wizardActive) { if (wizardStep === 2) exitProfileWizard(); else showWizardStep(wizardStep + 1); } });
+  byId("profile-wizard-exit").addEventListener("click", exitProfileWizard);
   byId("home-next").addEventListener("click", () => byId("nav-" + (byId("home-next").dataset.destination || "profile")).click());
   byId("home-jobs").addEventListener("click", () => byId("nav-jobs").click());
   byId("home-tracker").addEventListener("click", () => byId("nav-tracker").click());
@@ -2348,7 +2474,8 @@
           if ((state.editingFactId || byId("fact-statement").value || byId("fact-source").value || byId("fact-keywords").value) &&
               !window.confirm("Replace the unsaved fact editor contents with this résumé excerpt?")) return;
           resetFactEditor(); byId("fact-category").value = suggestion.section;
-          byId("fact-statement").value = suggestion.quote; byId("fact-statement").focus();
+          byId("fact-statement").value = suggestion.quote;
+          if (wizardActive) showWizardStep(2, true); else byId("fact-statement").focus();
           byId("resume-ai-status").textContent = "Review the excerpt and category, add a private evidence note, then save it unverified. Verification is a separate action.";
         }));
         byId("resume-ai-results").append(card);
@@ -2412,7 +2539,7 @@
     resetFactEditor();
     if (suggestion.section) byId("fact-category").value = suggestion.section;
     byId("fact-statement").value = suggestion.statement;
-    byId("fact-statement").focus();
+    if (wizardActive) showWizardStep(2, true); else byId("fact-statement").focus();
     byId("resume-status").textContent = (suggestion.section ? `Suggested category: ${suggestion.section}. ` : "No category was inferred; choose one. ") +
       "Review or edit the statement, add a private evidence note, and save it as an unverified fact. Statements need at least 8 characters.";
   });
@@ -2435,7 +2562,7 @@
     resetFactEditor();
     byId("fact-category").value = category;
     byId("fact-statement").value = statement;
-    byId("fact-statement").focus();
+    if (wizardActive) showWizardStep(2, true); else byId("fact-statement").focus();
     status.textContent = "Lines combined in résumé order for review. Check wording and category, add a private source note, then save and verify separately. Nothing has been saved yet.";
   });
   byId("resume-bulk-save").addEventListener("click", async () => {
