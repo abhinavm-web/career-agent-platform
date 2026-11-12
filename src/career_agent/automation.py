@@ -103,7 +103,8 @@ class Automation:
             runs = [dict(r) for r in store.connection.execute('SELECT * FROM discovery_runs ORDER BY started DESC LIMIT 50')]
         return {'schedules': schedules, 'runs': runs, 'worker': 'runs while this local server is running'}
 
-    def save(self, data):
+    @staticmethod
+    def _validated_search(data):
         if not isinstance(data, dict) or data.get('acknowledged') is not True:
             raise ValueError('Confirm recurring searches to the selected job boards')
         for key in ('query', 'location'):
@@ -116,6 +117,10 @@ class Automation:
         if type(interval) is not int or not 60 <= interval <= 10080 or type(results) is not int or not 1 <= results <= 50:
             raise ValueError('Use 60–10080 minutes and 1–50 results per source')
         settings = json.dumps({k: data[k] for k in ('query', 'location', 'sites')} | {'results': results}, sort_keys=True)
+        return settings, interval
+
+    def save(self, data):
+        settings, interval = self._validated_search(data)
         with Store(self.db) as store, store.connection:
             store.connection.execute('BEGIN IMMEDIATE')
             if store.connection.execute('SELECT count(*) FROM discovery_schedules').fetchone()[0] >= 5:
@@ -127,10 +132,42 @@ class Automation:
                                      (sid, settings, interval, time.time()))
         return {'id': sid}
 
+    @staticmethod
+    def _active_run(conn, sid):
+        # An expired or replaced lease cannot publish results even if a stale
+        # run row remains after a crash. Only a live lease blocks changes.
+        return conn.execute('''SELECT 1 FROM discovery_runs r JOIN discovery_lease l ON l.token=r.id
+            WHERE r.schedule_id=? AND r.status='running' AND l.expires>? LIMIT 1''', (sid, time.time())).fetchone() is not None
+
+    def edit(self, sid, data):
+        settings, interval = self._validated_search(data)
+        expected = data.get('expected_settings')
+        expected_interval = data.get('expected_interval_minutes')
+        if not isinstance(expected, dict) or type(expected_interval) is not int:
+            raise ValueError('Reload this saved search before editing')
+        with Store(self.db) as store, store.connection:
+            store.connection.execute('BEGIN IMMEDIATE')
+            current = store.connection.execute('SELECT settings,interval_minutes,enabled FROM discovery_schedules WHERE id=?', (sid,)).fetchone()
+            if not current:
+                raise ValueError('Unknown search')
+            if current['enabled']:
+                raise ValueError('Pause this search before editing')
+            if self._active_run(store.connection, sid):
+                raise ValueError('Wait for the paused search to finish before editing')
+            if json.loads(current['settings']) != expected or current['interval_minutes'] != expected_interval:
+                raise ValueError('Saved search changed; reload before editing')
+            if store.connection.execute('SELECT 1 FROM discovery_schedules WHERE settings=? AND id<>?', (settings, sid)).fetchone():
+                raise ValueError('This search is already saved')
+            store.connection.execute('UPDATE discovery_schedules SET settings=?,interval_minutes=?,failures=0 WHERE id=?', (settings, interval, sid))
+        return {'id': sid}
+
     def enable(self, sid, enabled):
         if type(enabled) is not bool:
             raise ValueError('enabled must be a boolean')
         with Store(self.db) as store, store.connection:
+            store.connection.execute('BEGIN IMMEDIATE')
+            if enabled and self._active_run(store.connection, sid):
+                raise ValueError('Wait for the paused search to finish before resuming')
             changed = store.connection.execute('UPDATE discovery_schedules SET enabled=? WHERE id=?', (enabled, sid))
             if changed.rowcount != 1:
                 raise ValueError('Unknown search')
@@ -174,7 +211,8 @@ class Automation:
                 message = 'Jobs imported; graph finalization failed after the committed import. ' + message
         with Store(self.db) as store, store.connection:
             store.connection.execute('BEGIN IMMEDIATE')
-            if store.connection.execute('SELECT token FROM discovery_lease WHERE id=1').fetchone()['token'] != token:
+            lease = store.connection.execute('SELECT token,expires FROM discovery_lease WHERE id=1').fetchone()
+            if lease['token'] != token or lease['expires'] <= time.time():
                 return False
             store.connection.execute('UPDATE discovery_runs SET status=?,finished=?,found=?,added=?,message=? WHERE id=?',
                                      (status, time.time(), counts['found'], counts['added'], message, token))

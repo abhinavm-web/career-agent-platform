@@ -140,6 +140,79 @@ class AutomationTests(unittest.TestCase):
             self.assertEqual(store.discovery_observations([fake_job().id]), {})
         self.assertEqual(self.auto.list()['runs'][0]['status'], 'failed')
 
+    def test_edit_paused_search_preserves_history_and_checks_revision(self):
+        sid = self.auto.save(self.search)['id']
+        with patch('career_agent.automation.fetch', return_value=[asdict(fake_job())]):
+            self.auto.tick()
+        before = self.auto.list()
+        original = before['schedules'][0]
+        updated = self.search | {'sites': ['linkedin'], 'interval_minutes': 120,
+                  'expected_settings': original['settings'], 'expected_interval_minutes': original['interval_minutes']}
+        with self.assertRaisesRegex(ValueError, 'Pause'):
+            self.auto.edit(sid, updated)
+        self.auto.enable(sid, False)
+        self.auto.edit(sid, updated)
+        after = self.auto.list()
+        self.assertEqual(after['schedules'][0]['id'], sid)
+        self.assertFalse(after['schedules'][0]['enabled'])
+        self.assertEqual(after['schedules'][0]['settings']['sites'], ['linkedin'])
+        self.assertEqual(after['schedules'][0]['interval_minutes'], 120)
+        self.assertEqual(after['runs'], before['runs'])
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.auto.edit(sid, updated)
+        self.auto.enable(sid, True)
+
+    def test_paused_inflight_run_cannot_resume_or_edit_until_lease_is_finished(self):
+        sid = self.auto.save(self.search)['id']
+        original = self.auto.list()['schedules'][0]
+        update = self.search | {'sites': ['linkedin'], 'expected_settings': original['settings'],
+                                'expected_interval_minutes': original['interval_minutes']}
+        def fetch(settings, stop):
+            self.auto.enable(sid, False)
+            with self.assertRaisesRegex(ValueError, 'finish'):
+                self.auto.enable(sid, True)
+            with self.assertRaisesRegex(ValueError, 'finish'):
+                self.auto.edit(sid, update)
+            return [asdict(fake_job())]
+        with patch('career_agent.automation.fetch', side_effect=fetch):
+            self.auto.tick()
+        with Store(self.db) as store:
+            self.assertEqual(store.list_jobs(), [])
+        self.auto.edit(sid, update)
+        self.auto.enable(sid, True)
+
+    def test_expired_lease_does_not_permanently_block_paused_edit(self):
+        sid = self.auto.save(self.search)['id']
+        original = self.auto.list()['schedules'][0]
+        self.auto.enable(sid, False)
+        with Store(self.db) as store, store.connection:
+            store.connection.execute("INSERT INTO discovery_runs(id,schedule_id,status,started) VALUES('expired',?,'running',?)", (sid, time.time() - 600))
+            store.connection.execute("UPDATE discovery_lease SET token='expired',expires=? WHERE id=1", (time.time() - 1,))
+        update = self.search | {'sites': ['linkedin'], 'expected_settings': original['settings'],
+                                'expected_interval_minutes': original['interval_minutes']}
+        self.auto.edit(sid, update)
+        self.auto.enable(sid, True)
+
+    def test_expired_worker_cannot_change_edited_schedule_or_import(self):
+        sid = self.auto.save(self.search)['id']
+        original = self.auto.list()['schedules'][0]
+        updated = self.search | {'sites': ['linkedin'], 'interval_minutes': 120,
+                  'expected_settings': original['settings'], 'expected_interval_minutes': original['interval_minutes']}
+        def fetch(settings, stop):
+            self.auto.enable(sid, False)
+            with Store(self.db) as store, store.connection:
+                store.connection.execute('UPDATE discovery_lease SET expires=? WHERE id=1', (time.time() - 1,))
+            self.auto.edit(sid, updated)
+            self.auto.enable(sid, True)
+            return [asdict(fake_job())]
+        with patch('career_agent.automation.fetch', side_effect=fetch):
+            self.assertFalse(self.auto.tick())
+        row = self.auto.list()['schedules'][0]
+        self.assertEqual(row['interval_minutes'], 120)
+        self.assertEqual(row['failures'], 0)
+        with Store(self.db) as store:
+            self.assertEqual(store.list_jobs(), [])
+
     def test_empty_and_failed_sources_are_not_zero_vacancy_claims(self):
         self.auto.save(self.search)
         with patch('career_agent.automation.fetch', return_value=[]):

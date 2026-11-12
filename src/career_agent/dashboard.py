@@ -296,6 +296,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
             automation.enable(sid, data.get('enabled'))
         return {'saved': True}
 
+    @app.put('/api/automation/searches/{sid}')
+    async def automation_edit(sid: str, request: Request):
+        return automation.edit(sid, await request.json())
+
     def current_workflow_inputs(job_id, store=None):
         if store is None:
             with Store(config.db_path) as snapshot:
