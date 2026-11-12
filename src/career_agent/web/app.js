@@ -1941,7 +1941,7 @@
       resumeSuggestions = [];
       byId("resume-lines").replaceChildren();
       byId("resume-use-line").disabled = true;
-      byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true;
+      byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true; byId("resume-combine").disabled = true;
       status.textContent = "Text extracted locally. Review it, then extract lines to choose a fact.";
     } catch (error) { status.textContent = error.message; }
     finally { control.disabled = false; }
@@ -1950,7 +1950,7 @@
     resumeSuggestions = [];
     byId("resume-lines").replaceChildren();
     byId("resume-use-line").disabled = true;
-    byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true;
+    byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true; byId("resume-combine").disabled = true;
     byId("resume-bulk-status").textContent = "Find suggestions again after editing the résumé text.";
     byId("resume-status").textContent = "Extract suggestions again after editing the text.";
     byId("resume-ai-consent").checked = false;
@@ -2052,6 +2052,7 @@
     }
     byId("resume-use-line").disabled = !resumeSuggestions.length;
     byId("resume-bulk-save").disabled = !resumeSuggestions.length;
+    byId("resume-combine").disabled = !resumeSuggestions.length;
     byId("resume-bulk-status").textContent = "Select the statements you want to stage; nothing is saved yet.";
     byId("resume-status").textContent = (resumeSuggestions.length > 200 ? "Showing the first 200 suggestions. " : `${resumeSuggestions.length} suggestions found. `) +
       "Categories follow recognized section headings and may be wrong when headings are missed; review every statement and category. Nothing is saved or verified.";
@@ -2076,6 +2077,28 @@
     byId("fact-statement").focus();
     byId("resume-status").textContent = (suggestion.section ? `Suggested category: ${suggestion.section}. ` : "No category was inferred; choose one. ") +
       "Review or edit the statement, add a private evidence note, and save it as an unverified fact. Statements need at least 8 characters.";
+  });
+  byId("resume-combine").addEventListener("click", () => {
+    const status = byId("resume-bulk-status");
+    const indices = Array.from(byId("resume-bulk-lines").selectedOptions, option => Number(option.value));
+    if (indices.length < 2 || indices.length > 30 || indices.some(i => !Number.isInteger(i) || i < 0 || i >= 200 || !resumeSuggestions[i])) {
+      status.textContent = "Select between 2 and 30 suggested lines to combine."; return;
+    }
+    const selected = indices.map(i => resumeSuggestions[i]);
+    const statement = selected.map(item => item.statement).join(" ");
+    if (statement.length < 8 || statement.length > 1000) {
+      status.textContent = "The combined statement must contain 8–1,000 characters. Choose fewer lines or edit the résumé text."; return;
+    }
+    const sections = new Set(selected.map(item => item.section));
+    const category = sections.size === 1 && selected[0].section ? selected[0].section : byId("resume-bulk-category").value;
+    if (!category) { status.textContent = "Choose a category for the combined unclassified or mixed lines."; return; }
+    if ((state.editingFactId || byId("fact-statement").value || byId("fact-source").value || byId("fact-keywords").value) &&
+        !window.confirm("Replace the unsaved fact editor contents with the selected résumé lines?")) return;
+    resetFactEditor();
+    byId("fact-category").value = category;
+    byId("fact-statement").value = statement;
+    byId("fact-statement").focus();
+    status.textContent = "Lines combined in résumé order for review. Check wording and category, add a private source note, then save and verify separately. Nothing has been saved yet.";
   });
   byId("resume-bulk-save").addEventListener("click", async () => {
     if (!state.workspace || workspaceMutationBusy) return;
