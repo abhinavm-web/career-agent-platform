@@ -10,8 +10,9 @@ from .models import Job, merge_discovery_rows
 
 
 def _description_digest(description: str) -> str | None:
-    normalized = ' '.join(description.casefold().split())
-    return hashlib.sha256(normalized.encode('utf-8')).hexdigest() if normalized else None
+    # Version the digest because older observations discarded case and layout;
+    # those cannot establish an exact match without seeing the source again.
+    return 'v2:' + hashlib.sha256(description.encode('utf-8')).hexdigest() if description.strip() else None
 
 
 class DescriptionConflict(ValueError):
@@ -148,8 +149,9 @@ class Store:
         result: dict[str, list[dict]] = {}
         for row in rows:
             item = {k: row[k] for k in ('source','first_seen','last_seen','observation_count')}
-            item['description_comparison'] = ('unknown' if row['description_sha256'] is None else
-                'matches' if row['description_sha256'] == _description_digest(row['description']) else 'differs')
+            digest = row['description_sha256']
+            item['description_comparison'] = ('unknown' if digest is None or not digest.startswith('v2:') else
+                'matches' if digest == _description_digest(row['description']) else 'differs')
             item['description_observed_at'] = row['observed_at']
             item['reported_posted_date'] = row['reported_date']
             item['posted_date_status'] = row['posted_date_status'] or 'unknown'
