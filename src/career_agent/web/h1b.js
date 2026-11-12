@@ -321,9 +321,24 @@
     }
     control.disabled = true;
     status("Importing local H-1B records…");
+    let progressActive = workbook, progressTimer = null, progressPending = false;
+    const pollProgress = async () => {
+      if (!progressActive || progressPending) return;
+      progressPending = true;
+      try {
+        const progress = await api("/api/h1b/import-progress");
+        if (!progressActive) return;
+        if (progress.phase === "uploading") status("Uploading locally: " + (progress.amount / 1048576).toFixed(1) + " MB received…");
+        if (progress.phase === "opening") status("Opening workbook locally; large files can take several minutes…");
+        if (progress.phase === "scanning") status("Checking workbook structure: " + progress.amount.toLocaleString() + " rows scanned in the current sheet…");
+        if (progress.phase === "reading") status("Reading " + progress.amount.toLocaleString() + " rows. Records are saved only after the entire import succeeds…");
+      } catch (_) { /* The import request reports its own errors. */ }
+      finally { progressPending = false; }
+    };
     try {
       let result;
       if (workbook) {
+        progressTimer = setInterval(pollProgress, 2000);
         const params = new URLSearchParams({source_url: get("h1b-source").value, captured_on: get("h1b-captured").value});
         const response = await fetch("/api/h1b/import-workbook?" + params.toString(), {method: "POST", body: file,
           headers: {"X-Session-Token": token, "Content-Type": "application/octet-stream", "X-LCA-Acknowledged": "true"},
@@ -342,7 +357,7 @@
       get("h1b-search-submit").disabled = false;
       status(result.added + " added · " + result.updated + " updated · " + result.duplicates + " duplicates · " + result.older_skipped + " older records skipped · " + result.other_visas_skipped + " other visa records skipped. Search again to update results.");
     } catch (error) { status(error.message); }
-    finally { control.disabled = false; }
+    finally { progressActive = false; if (progressTimer !== null) clearInterval(progressTimer); control.disabled = false; }
   });
   async function updateUSCIS(action) {
     if (get("uscis-refresh").disabled) return;

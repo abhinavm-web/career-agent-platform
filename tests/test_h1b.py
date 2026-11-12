@@ -150,8 +150,11 @@ class ResearchTests(unittest.TestCase):
         sheet.append(['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', date(2025, 4, 15), 'Engineer'])
         sheet.append(['I-200-25123-000002', 'Fictional Employer', 'H-1B', 'Denied', date(2025, 4, 16), 'Analyst'])
         book.save(path); book.close()
-        result = self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+        progress = []
+        result = self.research.import_xlsx(path, DOL_URL, '2025-06-01', progress=lambda phase, amount: progress.append((phase, amount)))
         self.assertEqual(result['added'], 2)
+        self.assertIn(('scanning', 0), progress)
+        self.assertIn(('reading', 0), progress)
         self.assertEqual(self.research.company('Fictional Employer')['recent_certified_cases'], 1)
         book = Workbook(); sheet = book.active
         sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
@@ -161,6 +164,17 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.research.import_xlsx(path, DOL_URL, '2025-06-02')
         self.assertEqual(self.research.coverage()['records'], 2)
+
+    def test_import_progress_counts_rows_without_committing_early(self):
+        observed = []
+        def progress(phase, count):
+            observed.append((phase, count))
+            with Store(Path(self.tmp.name) / 'test.sqlite3') as other:
+                self.assertEqual(other.connection.execute('SELECT count(*) FROM h1b_lca').fetchone()[0], 0)
+        rows = [{} for _ in range(2000)]
+        self.research.import_csv(io.StringIO(lca_csv(rows)), DOL_URL, '2025-06-01', progress=progress)
+        self.assertEqual(observed, [('reading', 2000)])
+        self.assertEqual(self.research.coverage()['records'], 2000)
 
     def test_workbook_requires_one_unambiguous_disclosure_sheet(self):
         try:
