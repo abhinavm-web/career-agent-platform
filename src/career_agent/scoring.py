@@ -78,16 +78,36 @@ def title_level_evidence(job: Job, profile: dict) -> dict | None:
             "notice": "Literal title-phrase comparison only; titles and levels vary. No match does not establish seniority or suitability."}
 
 
+def _remote_constraint(job: Job) -> dict[str, str]:
+    """Compare only explicit, simple arrangement labels; other prose is unknown."""
+    labels = [line.strip() for line in job.description.splitlines() if re.match(
+        r"^(?:work arrangement|workplace type|work location type)\s*:", line.strip(), re.IGNORECASE)]
+    prefix = {"constraint": "Fully remote required"}
+    if labels:
+        match = re.fullmatch(r"(?:work arrangement|workplace type|work location type)\s*:\s*(remote|hybrid|on[- ]site)\s*\.?",
+                             labels[0], re.IGNORECASE) if len(labels) == 1 else None
+        if not match:
+            return {**prefix, "status": "unknown", "detail":
+                    "The saved posting has ambiguous or multiple work-arrangement labels. "
+                    "Review the original posting and confirm the location and arrangement with the employer."}
+        arrangement = match.group(1).casefold()
+        quote = labels[0][:200]
+        if arrangement == "remote":
+            return {**prefix, "status": "source_marked", "detail":
+                    f"Saved posting: {quote}. This is a source label, not confirmation of geographic eligibility; verify with the employer."}
+        conflict = " The source also marks this role remote, so the signals conflict." if job.remote else ""
+        return {**prefix, "status": "flagged", "detail":
+                f"Saved posting: {quote}.{conflict} This may not meet your fully remote preference; verify the current arrangement with the employer."}
+    return {**prefix, "status": "source_marked" if job.remote else "unknown", "detail":
+            ("The saved source marks this job remote. Confirm remote scope and geographic eligibility with the employer."
+             if job.remote else "The saved source does not confirm remote work. This is not proof the role is on-site.")}
+
+
 def constraint_evidence(job: Job, profile: dict) -> list[dict[str, str]]:
     """Show explicit candidate constraints without inferring a rejection from absent data."""
     results = []
     if profile.get("require_remote", False):
-        results.append({
-            "constraint": "Fully remote required",
-            "status": "source_marked" if job.remote else "unknown",
-            "detail": ("The saved source marks this job remote. Confirm remote scope and geographic eligibility with the employer."
-                       if job.remote else "The saved source does not confirm remote work. This is not proof the role is on-site."),
-        })
+        results.append(_remote_constraint(job))
     exclusions = profile.get("excluded_companies", [])
     if exclusions:
         normalize = lambda value: " ".join(value.casefold().split())

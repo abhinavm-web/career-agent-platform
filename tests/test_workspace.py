@@ -294,6 +294,18 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertEqual([item["status"] for item in row["constraint_evidence"]], ["unknown", "flagged"])
         self.assertTrue(row["fit_reasons"])
 
+    def test_board_surfaces_conflicting_remote_and_saved_arrangement(self):
+        with Store(self.db) as store:
+            with store.connection:
+                store.connection.execute('UPDATE jobs SET remote=1, description=? WHERE job_id=?',
+                                         ('Work arrangement: Hybrid', self.job.id))
+        profile = {**preferences(), 'require_remote': True}
+        self.assertEqual(self.api('PUT', '/api/workspace', {'expected_revision': 0, 'profile': profile, 'facts': []}).status_code, 200)
+        row = self.api('GET', '/api/jobs').json()['jobs'][0]
+        self.assertEqual(row['constraint_evidence'][0]['status'], 'flagged')
+        self.assertIn('Work arrangement: Hybrid', row['constraint_evidence'][0]['detail'])
+        self.assertIn('signals conflict', row['constraint_evidence'][0]['detail'])
+
     def test_board_compares_current_saved_description_with_minimum(self):
         profile = {**preferences(), 'minimum_annual_base_usd': 150000}
         result = self.api('PUT', '/api/workspace', {'expected_revision': 0, 'profile': profile, 'facts': []})
