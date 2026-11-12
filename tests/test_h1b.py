@@ -520,6 +520,30 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(self.research.search("%' OR 1=1 --")['company_total'], 0)
         self.assertFalse(self.research.coverage()['complete'])
 
+    def test_punctuation_search_suggests_names_without_merging_entities(self):
+        self.ingest([{'EMPLOYER_NAME': 'Example, Inc.'}, {'EMPLOYER_NAME': 'Example Inc'}])
+        literal = self.research.search('Example Inc')
+        self.assertEqual([c['employer'] for c in literal['companies']], ['Example Inc'])
+        broad = self.research.search('Example Inc', name_mode='punctuation')
+        self.assertEqual({c['employer'] for c in broad['companies']}, {'Example, Inc.', 'Example Inc'})
+        self.assertEqual(broad['company_total'], 2)
+        self.assertTrue(all(c['recent_certified_cases'] == 1 for c in broad['companies']))
+        self.assertEqual(self.research.company('Example Inc')['recent_certified_cases'], 1)
+        self.assertEqual(self.research.company('Example, Inc.')['recent_certified_cases'], 1)
+        for query in ('--', ' a '):
+            with self.subTest(query=query), self.assertRaises(ValueError):
+                self.research.search(query, name_mode='punctuation')
+        with self.assertRaises(ValueError):
+            self.research.search('Example', name_mode='unknown')
+
+    def test_punctuation_search_paginates_distinct_legal_names(self):
+        self.ingest([{'EMPLOYER_NAME': f'Example-{i:02d} LLC'} for i in range(27)])
+        first = self.research.search('Ex.ample', name_mode='punctuation')
+        second = self.research.search('Ex.ample', 25, name_mode='punctuation')
+        self.assertEqual((first['company_total'], first['next_offset'], len(first['companies'])), (27, 25, 25))
+        self.assertEqual((second['company_total'], second['next_offset'], len(second['companies'])), (27, None, 2))
+        self.assertFalse({c['employer'] for c in first['companies']} & {c['employer'] for c in second['companies']})
+
     def test_dol_certified_withdrawn_spelling_with_spaces_is_supported(self):
         self.ingest([{'CASE_STATUS': 'Certified - Withdrawn'}])
         company = self.research.company('Example Inc.')
