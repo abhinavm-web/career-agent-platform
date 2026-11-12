@@ -298,7 +298,8 @@ class H1BBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         expect(page.locator('#profile-prompt')).to_be_visible()
-                        expect(page.locator('#sort-label')).to_have_text('Recently added')
+                        page.get_by_label('Sort opportunities', exact=True).select_option('recent')
+                        expect(page.locator('#board-sort')).to_have_value('recent')
                         page.locator('#search').fill('no fictional match')
                         expect(page.locator('#job-list')).to_contain_text('No opportunities match these filters')
                         page.get_by_role('button', name='Clear filters', exact=True).click()

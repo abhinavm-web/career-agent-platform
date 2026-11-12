@@ -9,7 +9,7 @@ The Career Agent application tracker keeps opportunities, recruiter contacts, in
 
 Open http://127.0.0.1:8765/ on the same computer, then choose **Application tracker**. Add job postings on the Opportunity board before tracking them.
 
-The tracker lists all stored opportunities independently of the board's newest-500-job window. Older opportunities and their follow-ups remain accessible for stage changes, contact management and task completion.
+The tracker lists stored opportunities independently of the board's browser loading limits. Older opportunities and their follow-ups remain accessible for stage changes, contact management and task completion.
 
 ## Pipeline stages versus application submissions
 

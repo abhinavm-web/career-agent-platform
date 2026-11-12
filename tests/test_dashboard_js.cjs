@@ -607,6 +607,24 @@ test("board loads older pages before applying filters", async () => {
   assert.doesNotMatch(h.get("job-list").textContent, /Recent role/);
 });
 
+test("board can sort newest first and identifies incomplete scores", async () => {
+  const recent = {...fakeJob(ID_A, "Recent role"), description: "", fit_score: 20};
+  const older = {...fakeJob(ID_B, "Older role"), fit_score: 90};
+  const h = createHarness({jobsOverride: [recent, older]});
+  await flush();
+  assert.match(h.get("job-list").children[0].textContent, /Older role/);
+  assert.match(h.get("job-list").children[1].textContent, /Incomplete 20\/100/);
+  assert.match(h.get("job-list").children[1].attributes["aria-label"], /score incomplete, description missing/);
+  h.get("board-sort").value = "recent";
+  h.get("board-sort").handlers.change({target: h.get("board-sort")});
+  assert.match(h.get("job-list").children[0].textContent, /Recent role/);
+  h.get("job-list").children[0].click();
+  assert.match(h.get("detail-panel").textContent, /keyword score is incomplete/);
+  h.get("board-sort").value = "score";
+  h.get("board-sort").handlers.change({target: h.get("board-sort")});
+  assert.match(h.get("job-list").children[0].textContent, /Older role/);
+});
+
 test("older board refresh cannot overwrite a newer refresh", async () => {
   let firstResolve, calls = 0;
   const h = createHarness({jobsPage: () => {
