@@ -301,6 +301,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
     async def automation_edit(sid: str, request: Request):
         return automation.edit(sid, await request.json())
 
+    @app.post('/api/automation/searches/{sid}/split-sources')
+    async def automation_split_sources(sid: str, request: Request):
+        return automation.split_sources(sid, await request.json())
+
     def current_workflow_inputs(job_id, store=None):
         if store is None:
             with Store(config.db_path) as snapshot:

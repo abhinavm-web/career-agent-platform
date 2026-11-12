@@ -172,6 +172,40 @@ class Automation:
             if changed.rowcount != 1:
                 raise ValueError('Unknown search')
 
+    def split_sources(self, sid, data):
+        """Create paused per-source copies atomically, retaining existing backoff."""
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm creating separate paused searches')
+        expected, interval = data.get('expected_settings'), data.get('expected_interval_minutes')
+        if not isinstance(expected, dict) or type(interval) is not int:
+            raise ValueError('Reload this saved search before splitting')
+        with Store(self.db) as store, store.connection:
+            conn = store.connection
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT * FROM discovery_schedules WHERE id=?', (sid,)).fetchone()
+            if not row:
+                raise ValueError('Unknown search')
+            if row['enabled'] or self._active_run(conn, sid):
+                raise ValueError('Pause the search and wait for any active run before splitting')
+            settings = json.loads(row['settings'])
+            if settings != expected or row['interval_minutes'] != interval:
+                raise ValueError('Saved search changed; reload before splitting')
+            sites = settings.get('sites', [])
+            if len(sites) < 2:
+                raise ValueError('Choose a search with at least two sources')
+            if conn.execute('SELECT count(*) FROM discovery_schedules').fetchone()[0] + len(sites) > 5:
+                raise ValueError('Not enough room: at most five saved searches are supported')
+            copies = [json.dumps({**settings, 'sites': [site]}, sort_keys=True) for site in sites]
+            if any(conn.execute('SELECT 1 FROM discovery_schedules WHERE settings=?', (copy,)).fetchone() for copy in copies):
+                raise ValueError('A matching single-source search already exists; no searches were created')
+            ids = []
+            for copy in copies:
+                new_id = uuid.uuid4().hex
+                conn.execute('INSERT INTO discovery_schedules(id,settings,enabled,interval_minutes,next_run,failures) VALUES(?,?,0,?,?,?)',
+                             (new_id, copy, interval, row['next_run'], row['failures']))
+                ids.append(new_id)
+        return {'ids': ids}
+
     def remove(self, sid):
         with Store(self.db) as store, store.connection:
             if store.connection.execute('DELETE FROM discovery_schedules WHERE id=? AND enabled=0', (sid,)).rowcount != 1:
