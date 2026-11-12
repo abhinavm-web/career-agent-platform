@@ -357,6 +357,17 @@ test('discovery history is visible without claiming a job is current', async () 
   assert.match(h.get('detail-panel').textContent, /reported date is in the future/);
 });
 
+test('remote conflicts are visible without a remote constraint', async () => {
+  const job = {...fakeJob(ID_A, 'Role Alpha'), remote_evidence: {
+    status: 'conflicting', detail: 'Source marked remote; <hybrid> label needs review.'
+  }};
+  const h = createHarness({jobsOverride: [job]}); await flush();
+  assert.match(h.get('job-list').textContent, /Remote details need review/);
+  h.get('job-list').children[0].click();
+  assert.match(h.get('detail-panel').textContent, /Conflicting remote signals/);
+  assert.match(h.get('detail-panel').textContent, /<hybrid> label needs review/);
+});
+
 test('hard constraint warnings appear separately from the score', async () => {
   const job = {...fakeJob(ID_A, 'Role Alpha'), constraint_evidence: [
     {constraint: 'Excluded employer names', status: 'flagged', detail: 'Exact name match'},
