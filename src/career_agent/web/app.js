@@ -1687,6 +1687,9 @@
       state.boardTruncated = results[0].truncated;
       state.overview = results[1];
       state.settings = results[2];
+      // Settings may arrive after profile navigation. Update this control
+      // without rerendering the editor or replacing any in-progress inputs.
+      if (state.workspace) byId("legacy-import").hidden = state.workspace.revision !== 0 || !state.settings.legacy_import_available;
       state.reviews = results[3].reviews;
       const previous = keepSelected || state.selectedId;
       const oldEditor = byId("detail-panel").querySelector?.("#job-description-editor");

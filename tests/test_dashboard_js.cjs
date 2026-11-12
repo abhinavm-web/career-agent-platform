@@ -103,7 +103,7 @@ function missing() {
   return {ok: false, status: 404, json: async () => ({detail: "No packet"})};
 }
 
-function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage = null, workspaceRead = null, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
+function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage = null, workspaceRead = null, legacyImportAvailable = false, totalJobs = 2, exportError = false, pdfError = false, discovery = () => Promise.resolve(ok({found: 3, new: 2, duplicates: 1})), outcomes = {
   submitted: 0, interviewed: 0, offered: 0, accepted: 0, interview_rate: null, offer_rate: null
 }} = {}) {
   const elements = new Map();
@@ -279,7 +279,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       total_jobs: totalJobs, submitted_recorded: 0, staged: 0, review_events_recent: 0,
     }));
     if (url === "/api/settings") return Promise.resolve(ok({
-      profile_configured: true, facts_configured: true,
+      profile_configured: true, facts_configured: true, legacy_import_available: legacyImportAvailable,
     }));
     if (url === "/api/reviews") return Promise.resolve(ok({reviews: []}));
     if (url.endsWith("/packet")) {
@@ -514,6 +514,23 @@ test("a board refresh started before profile navigation does not start a competi
   assert.equal(h.get("profile-screen").inert, false);
   h.get("career-resume-contact").value = "fictional@example.invalid";
   await flush();
+  assert.equal(h.get("career-resume-contact").value, "fictional@example.invalid");
+});
+
+test("late settings reveal legacy import without replacing profile edits", async () => {
+  let finishBoard, profileReads = 0;
+  const h = createHarness({
+    legacyImportAvailable: true,
+    jobsPage: () => new Promise(resolve => { finishBoard = resolve; }),
+    workspaceRead: workspace => { profileReads++; return Promise.resolve(ok({workspace: {...workspace, revision: 0}})); },
+  });
+  await flush(); await h.get("nav-profile").click();
+  h.get("career-resume-contact").value = "fictional@example.invalid";
+  assert.equal(h.get("legacy-import").hidden, true);
+  finishBoard(ok({jobs: [fakeJob(ID_A, "Role")], next_before: null}));
+  await flush(); await flush();
+  assert.equal(h.get("legacy-import").hidden, false);
+  assert.equal(profileReads, 1);
   assert.equal(h.get("career-resume-contact").value, "fictional@example.invalid");
 });
 
