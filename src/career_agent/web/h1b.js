@@ -16,6 +16,15 @@
     container.replaceChildren();
   }
   const status = (message) => { get("h1b-status").textContent = message; };
+  // Keep progress visible beside its action without announcing every row-count update.
+  const operationPhases = new Map();
+  function operationStatus(id, message, phase) {
+    get(id + "-status").textContent = message;
+    if (operationPhases.get(id) !== phase || ["start", "complete", "error"].includes(phase)) {
+      operationPhases.set(id, phase);
+      get(id + "-announcement").textContent = message;
+    }
+  }
   const node = (tag, content) => {
     const el = document.createElement(tag);
     if (content !== undefined) el.textContent = content;
@@ -313,8 +322,10 @@
     event.preventDefault();
     const control = get("h1b-refresh-submit");
     if (control.disabled || !get("h1b-refresh-consent").checked) return;
+    const hadFocus = document.activeElement === control;
     control.disabled = true;
-    status("Downloading the selected DOL workbook. Existing records remain unchanged until import succeeds…");
+    operationStatus("h1b-refresh", "Downloading the selected DOL workbook. Existing records remain unchanged until import succeeds…", "start");
+    if (hadFocus) get("h1b-refresh-status").focus();
     let active = true, pending = false;
     const timer = setInterval(async () => {
       if (!active || pending) return;
@@ -322,11 +333,11 @@
       try {
         const p = await api('/api/h1b/import-progress');
         if (!active) return;
-        if (p.phase === 'downloading') status('Downloading from DOL: ' + (p.amount / 1048576).toFixed(1) + ' MB received…');
-        if (p.phase === 'opening') status('Opening workbook; large files can take several minutes…');
-        if (p.phase === 'scanning') status('Checking workbook structure through worksheet row ' + p.amount.toLocaleString() + '…');
-        if (p.phase === 'reading') status('Validating ' + p.amount.toLocaleString() + ' rows; no records committed yet…');
-        if (p.phase === 'applying') status('Applying ' + p.amount.toLocaleString() + ' validated rows atomically…');
+        if (p.phase === 'downloading') operationStatus('h1b-refresh', 'Downloading from DOL: ' + (p.amount / 1048576).toFixed(1) + ' MB received…', p.phase);
+        if (p.phase === 'opening') operationStatus('h1b-refresh', 'Opening workbook; large files can take several minutes…', p.phase);
+        if (p.phase === 'scanning') operationStatus('h1b-refresh', 'Checking workbook structure through worksheet row ' + p.amount.toLocaleString() + '…', p.phase);
+        if (p.phase === 'reading') operationStatus('h1b-refresh', 'Validating ' + p.amount.toLocaleString() + ' rows; no records committed yet…', p.phase);
+        if (p.phase === 'applying') operationStatus('h1b-refresh', 'Applying ' + p.amount.toLocaleString() + ' validated rows atomically…', p.phase);
       } catch (_) { /* The refresh request reports its own errors. */ }
       finally { pending = false; }
     }, 2000);
@@ -337,8 +348,8 @@
       sequence++;
       clearResults('h1b-results');
       get('h1b-next').hidden = true;
-      status(result.added + ' added · ' + result.updated + ' updated · ' + result.duplicates + ' duplicates · ' + result.older_skipped + ' older records skipped · ' + result.other_visas_skipped + ' other visa records skipped. Search again to update results.');
-    } catch (error) { status(error.message); }
+      operationStatus('h1b-refresh', result.added + ' added · ' + result.updated + ' updated · ' + result.duplicates + ' duplicates · ' + result.older_skipped + ' older records skipped · ' + result.other_visas_skipped + ' other visa records skipped. Search again to update results.', 'complete');
+    } catch (error) { operationStatus('h1b-refresh', error.message, 'error'); }
     finally { active = false; clearInterval(timer); control.disabled = false; }
   });
   get("h1b-import").addEventListener("submit", async (event) => {
@@ -346,14 +357,16 @@
     const control = get("h1b-import-submit");
     if (control.disabled) return;
     const file = get("h1b-file").files[0];
-    if (!get("h1b-consent").checked || !file) { status("Choose a public LCA file and confirm its provenance."); return; }
+    if (!get("h1b-consent").checked || !file) { operationStatus("h1b-import", "Choose a public LCA file and confirm its provenance.", "error"); return; }
     const workbook = file.name.toLowerCase().endsWith(".xlsx");
-    if (!workbook && !file.name.toLowerCase().endsWith(".csv")) { status("Choose a CSV or XLSX file."); return; }
+    if (!workbook && !file.name.toLowerCase().endsWith(".csv")) { operationStatus("h1b-import", "Choose a CSV or XLSX file.", "error"); return; }
     if (!file.size || file.size > (workbook ? 512 : 8) * 1024 * 1024) {
-      status(workbook ? "Choose a nonempty XLSX workbook no larger than 512 MB." : "Choose a nonempty CSV up to 8 MB, or use the CLI for a larger CSV."); return;
+      operationStatus("h1b-import", workbook ? "Choose a nonempty XLSX workbook no larger than 512 MB." : "Choose a nonempty CSV up to 8 MB, or use the CLI for a larger CSV.", "error"); return;
     }
+    const hadFocus = document.activeElement === control;
     control.disabled = true;
-    status("Importing local H-1B records…");
+    operationStatus("h1b-import", "Importing local H-1B records…", "start");
+    if (hadFocus) get("h1b-import-status").focus();
     let progressActive = workbook, progressTimer = null, progressPending = false;
     const pollProgress = async () => {
       if (!progressActive || progressPending) return;
@@ -361,11 +374,11 @@
       try {
         const progress = await api("/api/h1b/import-progress");
         if (!progressActive) return;
-        if (progress.phase === "uploading") status("Uploading locally: " + (progress.amount / 1048576).toFixed(1) + " MB received…");
-        if (progress.phase === "opening") status("Opening workbook locally; large files can take several minutes…");
-        if (progress.phase === "scanning") status("Checking workbook structure: through worksheet row " + progress.amount.toLocaleString() + " in the current sheet…");
-        if (progress.phase === "reading") status("Reading " + progress.amount.toLocaleString() + " rows. Records are saved only after the entire import succeeds…");
-        if (progress.phase === "applying") status("Applying " + progress.amount.toLocaleString() + " validated rows atomically. Existing records remain unchanged until the import succeeds…");
+        if (progress.phase === "uploading") operationStatus("h1b-import", "Uploading locally: " + (progress.amount / 1048576).toFixed(1) + " MB received…", progress.phase);
+        if (progress.phase === "opening") operationStatus("h1b-import", "Opening workbook locally; large files can take several minutes…", progress.phase);
+        if (progress.phase === "scanning") operationStatus("h1b-import", "Checking workbook structure: through worksheet row " + progress.amount.toLocaleString() + " in the current sheet…", progress.phase);
+        if (progress.phase === "reading") operationStatus("h1b-import", "Reading " + progress.amount.toLocaleString() + " rows. Records are saved only after the entire import succeeds…", progress.phase);
+        if (progress.phase === "applying") operationStatus("h1b-import", "Applying " + progress.amount.toLocaleString() + " validated rows atomically. Existing records remain unchanged until the import succeeds…", progress.phase);
       } catch (_) { /* The import request reports its own errors. */ }
       finally { progressPending = false; }
     };
@@ -389,22 +402,24 @@
       clearResults("h1b-results");
       get("h1b-next").hidden = true;
       get("h1b-search-submit").disabled = false;
-      status(result.added + " added · " + result.updated + " updated · " + result.duplicates + " duplicates · " + result.older_skipped + " older records skipped · " + result.other_visas_skipped + " other visa records skipped. Search again to update results.");
-    } catch (error) { status(error.message); }
+      operationStatus("h1b-import", result.added + " added · " + result.updated + " updated · " + result.duplicates + " duplicates · " + result.older_skipped + " older records skipped · " + result.other_visas_skipped + " other visa records skipped. Search again to update results.", "complete");
+    } catch (error) { operationStatus("h1b-import", error.message, "error"); }
     finally { progressActive = false; if (progressTimer !== null) clearInterval(progressTimer); control.disabled = false; }
   });
   async function updateUSCIS(action) {
     if (get("uscis-refresh").disabled) return;
-    if (!get("uscis-consent").checked) { status("Confirm the USCIS source and reporting date."); return; }
+    if (!get("uscis-consent").checked) { operationStatus("uscis", "Confirm the USCIS source and reporting date.", "error"); return; }
     const data = {source_url: get("uscis-source").value, fiscal_year: Number(get("uscis-year").value),
       data_as_of: get("uscis-as-of").value, acknowledged: true};
     if (action === "import") {
       const file = get("uscis-file").files[0];
-      if (!file || file.size > 8 * 1024 * 1024) { status("Choose a USCIS CSV up to 8 MB, or use the CLI for a larger file."); return; }
+      if (!file || file.size > 8 * 1024 * 1024) { operationStatus("uscis", "Choose a USCIS CSV up to 8 MB, or use the CLI for a larger file.", "error"); return; }
       data.csv = await file.text();
     }
+    const hadFocus = document.activeElement === get("uscis-refresh") || document.activeElement === get("uscis-import");
     get("uscis-refresh").disabled = get("uscis-import").disabled = true;
-    status("Updating USCIS history… Existing data stays available if the update fails.");
+    operationStatus("uscis", "Updating USCIS history… Existing data stays available if the update fails.", "start");
+    if (hadFocus) get("uscis-status").focus();
     try {
       const result = await api("/api/h1b/uscis/" + action, "POST", data);
       coverage((await api("/api/h1b")).coverage);
@@ -413,8 +428,8 @@
       get("h1b-next").hidden = true;
       get("h1b-search-submit").disabled = false;
       get("uscis-consent").checked = false;
-      status("USCIS FY " + result.fiscal_year + ": " + result.rows + " employer groups · " + (result.unchanged ? "unchanged" : "snapshot replaced") + ". Search again to see results.");
-    } catch (error) { status(error.message); }
+      operationStatus("uscis", "USCIS FY " + result.fiscal_year + ": " + result.rows + " employer groups · " + (result.unchanged ? "unchanged" : "snapshot replaced") + ". Search again to see results.", "complete");
+    } catch (error) { operationStatus("uscis", error.message, "error"); }
     finally { get("uscis-refresh").disabled = get("uscis-import").disabled = false; }
   }
   get("uscis-form").addEventListener("submit", (event) => { event.preventDefault(); updateUSCIS("refresh"); });
