@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import logging
 from pathlib import Path
+from threading import Lock
 
 from .models import Job
 
@@ -17,6 +19,20 @@ class DiscoveryResults(list):
     def __init__(self, rows, source_status=None):
         super().__init__(rows)
         self.source_status = source_status or {}
+
+
+_jobspy_lock = Lock()
+
+
+class _SkippedZipRecords(logging.Handler):
+    """Record only that JobSpy skipped a ZipRecruiter row; never retain its message."""
+    def __init__(self):
+        super().__init__(logging.WARNING)
+        self.skipped = False
+
+    def emit(self, record):
+        if isinstance(record.msg, str) and record.msg.startswith('skipping job:'):
+            self.skipped = True
 
 
 def read_csv_jobs(path: str | Path) -> list[Job]:
@@ -33,13 +49,23 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
     except ImportError as error:
         raise DiscoveryUnavailable('Install JobSpy: pip install -e ".[jobspy]"') from error
     selected = sites or ["indeed", "linkedin", "zip_recruiter"]
-    frame = scrape_jobs(
-        site_name=selected,
-        search_term=query,
-        location=location,
-        results_wanted=results,
-        country_indeed="USA",
-    )
+    # JobSpy 1.4 can log skipped ZipRecruiter rows without putting them in
+    # DataFrame.attrs['warnings']. Keep only the signal, never provider text.
+    # Discovery normally runs in its own process; serialize direct calls too.
+    with _jobspy_lock:
+        zip_logger = logging.getLogger('jobspy.ziprecruiter')
+        skipped = _SkippedZipRecords()
+        zip_logger.addHandler(skipped)
+        try:
+            frame = scrape_jobs(
+                site_name=selected,
+                search_term=query,
+                location=location,
+                results_wanted=results,
+                country_indeed="USA",
+            )
+        finally:
+            zip_logger.removeHandler(skipped)
     jobs = []
     for raw in frame.to_dict(orient="records"):
         try:
@@ -55,7 +81,7 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
     status = {}
     for site in selected:
         count = sum(job.source == site for job in jobs)
-        state = ('reported_error' if site in errors else 'reported_warning' if site in warnings
+        state = ('reported_error' if site in errors else 'reported_warning' if site in warnings or (site == 'zip_recruiter' and skipped.skipped)
                  else 'returned' if count else 'inconclusive')
         status[site] = {'state': state, 'returned': count}
     return DiscoveryResults(jobs, status)
