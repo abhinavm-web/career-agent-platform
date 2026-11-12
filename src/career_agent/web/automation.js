@@ -76,8 +76,29 @@
       for (const id of ["automation-searches", "automation-runs", "workflow-runs"]) el(id).replaceChildren();
       for (const s of data.schedules) {
         const card = node("section", `${s.settings.query} · ${s.settings.location} · ${s.settings.sites.join(", ")} · every ${s.interval_minutes / 60}h · ${s.enabled ? "enabled" : "paused"} · next due ${new Date(s.next_run * 1000).toLocaleString()}`);
+        if (s.enabled && s.failures > 0 && s.settings.sites.length > 1) card.append(node("p", `The last ${s.failures} run(s) were incomplete or failed, so backoff affects every source. Pause to create separate source searches with independent future backoff.`));
         card.append(action(s.enabled ? "Pause" : "Resume", `/api/automation/searches/${s.id}`, {enabled: !s.enabled, acknowledged: true}));
-        if (!s.enabled) card.append(editor(s), action("Remove saved search", `/api/automation/searches/${s.id}`, {remove: true, acknowledged: true}));
+        if (!s.enabled) {
+          card.append(editor(s));
+          if (s.settings.sites.length > 1) {
+            card.append(node("p", "Create one paused search per source to let each source back off independently. The original stays paused; copies retain its next due time and backoff. Resume each explicitly. A maximum of five searches is supported."));
+            const split = node("button", "Create separate paused source searches"); split.type = "button"; split.className = "button";
+            split.addEventListener("click", async () => {
+              if (openEditors.size || el("automation-searches").querySelector("details[open]")) {
+                el("automation-status").textContent = "Close the search editor before creating source searches."; return;
+              }
+              split.disabled = true;
+              try {
+                await api(`/api/automation/searches/${s.id}/split-sources`, {acknowledged: true, expected_settings: s.settings, expected_interval_minutes: s.interval_minutes});
+                await load();
+                el("automation-status").textContent = "Separate searches created paused. Resume each one when ready; the original is still paused.";
+              } catch (e) { el("automation-status").textContent = e.message; }
+              finally { split.disabled = false; }
+            });
+            card.append(split);
+          }
+          card.append(action("Remove saved search", `/api/automation/searches/${s.id}`, {remove: true, acknowledged: true}));
+        }
         el("automation-searches").append(card);
       }
       for (const r of data.runs) el("automation-runs").append(node("p", `${new Date(r.started * 1000).toLocaleString()} · ${r.status} · ${r.found ?? "—"} returned / ${r.added ?? "—"} added · ${r.message || "In progress"}`));

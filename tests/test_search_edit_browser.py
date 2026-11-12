@@ -11,6 +11,42 @@ from unittest.mock import patch
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class SearchEditBrowserTests(unittest.TestCase):
+    def test_split_paused_search_creates_paused_source_copies(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.automation import Automation
+        from career_agent.dashboard import DashboardConfig, create_app
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'fictional.sqlite3'
+            auto = Automation(db)
+            sid = auto.save({'query': 'Fictional engineer', 'location': 'Remote', 'sites': ['indeed', 'linkedin'],
+                             'interval_minutes': 360, 'results': 10, 'acknowledged': True})['id']
+            auto.enable(sid, False)
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                with patch('career_agent.automation.fetch') as fetch, sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-automation').click()
+                        page.get_by_role('button', name='Create separate paused source searches').click()
+                        expect(page.locator('#automation-status')).to_contain_text('Separate searches created paused')
+                        expect(page.locator('#automation-searches section')).to_have_count(3)
+                        page.reload(); page.locator('#nav-automation').click()
+                        expect(page.locator('#automation-searches section')).to_have_count(3)
+                        self.assertTrue(all(not row['enabled'] for row in auto.list()['schedules']))
+                        fetch.assert_not_called()
+                    finally: browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_paused_search_edit_is_preserved_and_does_not_start_discovery(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect

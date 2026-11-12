@@ -538,6 +538,20 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('POST', path, {'remove': True, 'acknowledged': True}).status_code, 200)
         self.assertEqual(self.call('GET', '/api/automation').json()['schedules'], [])
 
+    def test_split_schedule_api_requires_session_consent_and_pause(self):
+        data = {'query': 'Fictional role', 'location': 'USA', 'sites': ['indeed', 'linkedin'],
+                'interval_minutes': 360, 'results': 5, 'acknowledged': True}
+        saved = self.call('POST', '/api/automation/searches', data).json()
+        path = '/api/automation/searches/' + saved['id']
+        schedule = self.call('GET', '/api/automation').json()['schedules'][0]
+        payload = {'acknowledged': True, 'expected_settings': schedule['settings'], 'expected_interval_minutes': 360}
+        self.assertEqual(self.call('POST', path + '/split-sources', payload, token='bad').status_code, 403)
+        self.assertEqual(self.call('POST', path + '/split-sources', {**payload, 'acknowledged': False}).status_code, 422)
+        self.assertEqual(self.call('POST', path + '/split-sources', payload).status_code, 422)
+        self.assertEqual(self.call('POST', path, {'enabled': False, 'acknowledged': True}).status_code, 200)
+        self.assertEqual(self.call('POST', path + '/split-sources', payload).status_code, 200)
+        self.assertTrue(all(not row['enabled'] for row in self.call('GET', '/api/automation').json()['schedules']))
+
     def test_legacy_profile_change_invalidates_durable_packet_and_review(self):
         fingerprint = self._draft()
         data = fake_fact_bank()

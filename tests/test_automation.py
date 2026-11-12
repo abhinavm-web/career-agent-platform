@@ -39,6 +39,65 @@ class AutomationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.auto.save(self.search)
 
+    def test_split_sources_creates_paused_independent_searches_without_network(self):
+        sid = self.auto.save(self.search | {'sites': ['indeed', 'linkedin', 'zip_recruiter']})['id']
+        original = self.auto.list()['schedules'][0]
+        request = {'acknowledged': True, 'expected_settings': original['settings'],
+                   'expected_interval_minutes': original['interval_minutes']}
+        with self.assertRaisesRegex(ValueError, 'Pause'):
+            self.auto.split_sources(sid, request)
+        self.auto.enable(sid, False)
+        with Store(self.db) as store, store.connection:
+            store.connection.execute('UPDATE discovery_schedules SET failures=3,next_run=? WHERE id=?', (time.time() + 5000, sid))
+        with patch('career_agent.automation.fetch') as fetch:
+            ids = self.auto.split_sources(sid, request)['ids']
+            self.assertEqual(len(ids), 3)
+            self.assertFalse(self.auto.tick())
+            fetch.assert_not_called()
+        rows = self.auto.list()['schedules']
+        self.assertEqual(len(rows), 4)
+        self.assertTrue(all(not row['enabled'] and row['failures'] == 3 for row in rows))
+        self.assertEqual(len({row['next_run'] for row in rows}), 1)
+        self.assertEqual({tuple(row['settings']['sites']) for row in rows[1:]}, {('indeed',), ('linkedin',), ('zip_recruiter',)})
+        with self.assertRaisesRegex(ValueError, 'at most five'):
+            self.auto.split_sources(sid, request)
+        self.assertEqual(len(self.auto.list()['schedules']), 4)
+
+    def test_split_sources_rejects_stale_or_duplicate_searches_atomically(self):
+        sid = self.auto.save(self.search | {'sites': ['indeed', 'linkedin']})['id']
+        original = self.auto.list()['schedules'][0]
+        self.auto.enable(sid, False)
+        request = {'acknowledged': True, 'expected_settings': original['settings'], 'expected_interval_minutes': 60}
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.auto.split_sources(sid, {**request, 'expected_interval_minutes': 120})
+        self.auto.save(self.search)
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            self.auto.split_sources(sid, request)
+        self.assertEqual(len(self.auto.list()['schedules']), 2)
+
+    def test_split_source_failures_back_off_independently(self):
+        sid = self.auto.save(self.search | {'sites': ['indeed', 'linkedin']})['id']
+        original = self.auto.list()['schedules'][0]
+        self.auto.enable(sid, False)
+        ids = self.auto.split_sources(sid, {'acknowledged': True, 'expected_settings': original['settings'],
+                                           'expected_interval_minutes': 60})['ids']
+        for new_id in ids:
+            self.auto.enable(new_id, True)
+        def fetch(settings, _stop):
+            site = settings['sites'][0]
+            state = 'returned' if site == 'indeed' else 'reported_error'
+            rows = [asdict(fake_job())] if site == 'indeed' else []
+            return DiscoveryResults(rows, {site: {'state': state, 'returned': len(rows)}})
+        with patch('career_agent.automation.fetch', side_effect=fetch):
+            self.assertTrue(self.auto.tick())
+            with Store(self.db) as store, store.connection:
+                store.connection.execute('UPDATE discovery_lease SET expires=0 WHERE id=1')
+            self.assertTrue(self.auto.tick())
+        by_site = {tuple(row['settings']['sites']): row for row in self.auto.list()['schedules']}
+        self.assertEqual(by_site[('indeed',)]['failures'], 0)
+        self.assertEqual(by_site[('linkedin',)]['failures'], 1)
+        self.assertGreater(by_site[('linkedin',)]['next_run'], by_site[('indeed',)]['next_run'])
+
     def test_scheduled_import_deduplicates_and_survives_restart(self):
         self.auto.save(self.search)
         job = asdict(fake_job())
