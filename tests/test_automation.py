@@ -303,6 +303,34 @@ class DurableWorkflowTests(unittest.TestCase):
         self.assertEqual(self.manager.list(), [])
         self.assertFalse(self.packets.exists())
 
+    def test_historical_packets_are_exact_and_read_only(self):
+        import copy
+        first = self.manager.start(self.state)
+        updated = copy.deepcopy(self.state)
+        updated['fact_bank']['facts'][0]['statement'] = 'A different fictional verified career statement.'
+        second = self.manager.start(updated)
+        before = self.manager.list()
+        versions = self.manager.versions(self.job.id)
+        self.assertEqual([v['run_id'] for v in versions], [second['run_id'], first['run_id']])
+        old = self.manager.historical_packet(self.job.id, first['run_id'])
+        self.assertEqual(old['packet_sha256'], first['packet']['packet_sha256'])
+        self.assertEqual(old['resume_markdown'], first['packet']['resume_markdown'])
+        self.assertNotIn('A different fictional verified career statement.', old['resume_markdown'])
+        self.assertNotIn('Private fictional evidence', json.dumps(old))
+        self.assertEqual(self.manager.list(), before)
+        with self.assertRaisesRegex(ValueError, 'unavailable'):
+            self.manager.historical_packet('different-job', first['run_id'])
+        with self.assertRaises(ValueError):
+            self.manager.historical_packet(self.job.id, '../invalid')
+        with Store(self.db) as store, store.connection:
+            store.connection.execute('UPDATE workflow_runs SET packet_sha256=? WHERE run_id=?', ('0' * 64, first['run_id']))
+        with self.assertRaisesRegex(ValueError, 'unavailable or invalid'):
+            self.manager.historical_packet(self.job.id, first['run_id'])
+        Path(self.manager.checkpoints).unlink()
+        with self.assertRaisesRegex(ValueError, 'checkpoint is unavailable'):
+            self.manager.historical_packet(self.job.id, first['run_id'])
+        self.assertFalse(Path(self.manager.checkpoints).exists())
+
     def test_failure_resumes_from_checkpoint(self):
         with patch('career_agent.graph_review.build_packet', side_effect=ValueError('injected failure')), self.assertRaises(ValueError):
             self.manager.start(self.state)

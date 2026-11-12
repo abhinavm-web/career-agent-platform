@@ -684,6 +684,52 @@
     const letter = node("details");
     letter.append(node("summary", "", "Cover-note draft"), node("pre", "", packet.cover_note));
     card.append(resume, letter);
+    const versions = node("details", "resume-comparison");
+    versions.append(node("summary", "", "Compare previous draft versions"), node("p", "muted",
+      "Read-only comparison with stored workflow drafts for this job. Earlier drafts may contain facts since changed or revoked. Prior approval does not apply to the current version. Legacy drafts or missing checkpoints may not be available."));
+    const versionStatus = node("p", "muted"); versionStatus.setAttribute("role", "status");
+    const versionLabel = node("label", "field", "Previous workflow draft");
+    const versionSelect = node("select"); versionLabel.append(versionSelect); versionLabel.hidden = true;
+    const comparisonOutput = node("div", "resume-comparison-grid");
+    let versionRequest = 0;
+    versionSelect.addEventListener("change", () => { versionRequest++; comparisonOutput.replaceChildren(); versionStatus.textContent = "Select Compare to load this draft."; });
+    const compareVersion = button("Compare with current draft", "button", async () => {
+      if (compareVersion.disabled || !versionSelect.value) return;
+      const selected = versionSelect.value, request = ++versionRequest;
+      compareVersion.disabled = true; comparisonOutput.replaceChildren(); versionStatus.textContent = "Loading stored draft…";
+      try {
+        const previous = await api("/api/jobs/" + job.id + "/packet/versions/" + encodeURIComponent(selected));
+        if (!card.isConnected || request !== versionRequest || versionSelect.value !== selected) return;
+        const old = node("section"); old.append(node("h5", "", "Selected stored draft"), node("h6", "", "Résumé"), node("pre", "", previous.resume_markdown), node("h6", "", "Cover note"), node("pre", "", previous.cover_note));
+        const current = node("section"); current.append(node("h5", "", "Current displayed draft"), node("h6", "", "Résumé"), node("pre", "", packet.resume_markdown), node("h6", "", "Cover note"), node("pre", "", packet.cover_note));
+        comparisonOutput.append(old, current);
+        versionStatus.textContent = "Read-only comparison. Review the current draft separately before approval.";
+      } catch (error) { if (request === versionRequest) versionStatus.textContent = error.message; }
+      finally { compareVersion.disabled = false; }
+    });
+    compareVersion.hidden = true;
+    const loadVersions = button("Load draft versions", "button", async () => {
+      if (loadVersions.disabled) return;
+      const request = ++versionRequest;
+      loadVersions.disabled = true; compareVersion.hidden = true; versionLabel.hidden = true;
+      comparisonOutput.replaceChildren(); versionStatus.textContent = "Loading version history…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/packet/versions");
+        if (!card.isConnected || request !== versionRequest) return;
+        versionSelect.replaceChildren();
+        for (const version of result.versions) {
+          const option = node("option", "", version.created_at + " · " + version.status.replaceAll("_", " ") + " · " + version.packet_sha256.slice(0, 12));
+          option.value = version.run_id; versionSelect.append(option);
+        }
+        if (!result.versions.length) { versionStatus.textContent = "No stored workflow drafts were found for this job."; return; }
+        const older = result.versions.find((version) => version.packet_sha256 !== packet.packet_sha256);
+        if (older) versionSelect.value = older.run_id;
+        versionLabel.hidden = false; compareVersion.hidden = false;
+        versionStatus.textContent = "Up to 20 published workflow drafts are listed; checkpoints may be unavailable.";
+      } catch (error) { if (request === versionRequest) versionStatus.textContent = error.message; }
+      finally { loadVersions.disabled = false; }
+    });
+    versions.append(loadVersions, versionLabel, compareVersion, versionStatus, comparisonOutput); card.append(versions);
 
     if (Array.isArray(packet.fact_evidence) && Array.isArray(packet.omitted_fact_ids) &&
         packet.fact_evidence.every((fact) => fact && typeof fact.id === "string" && typeof fact.section === "string" &&

@@ -947,6 +947,18 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "submission_sent_by_application": False,
         }
 
+    @app.get("/api/jobs/{job_id}/packet/versions")
+    def packet_versions(job_id: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+        return {"versions": workflows.versions(job_id)}
+
+    @app.get("/api/jobs/{job_id}/packet/versions/{run_id}")
+    def packet_version(job_id: str, run_id: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+        return workflows.historical_packet(job_id, run_id)
+
     @app.post("/api/jobs/{job_id}/decision")
     async def record_decision(job_id: str, request: Request):
         data = await request.json()
