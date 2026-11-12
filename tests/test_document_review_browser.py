@@ -41,6 +41,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-profile').click()
+                        expect(page.locator('#profile-screen')).to_have_attribute('aria-busy', 'false')
                         contact = 'fictional@example.invalid · +1 555 0100'
                         page.get_by_label('Résumé contact line (optional)').fill(contact)
                         page.get_by_role('button', name='Save preferences').click()
