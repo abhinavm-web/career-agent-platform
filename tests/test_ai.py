@@ -31,6 +31,16 @@ class AITests(unittest.TestCase):
                     ai.analyze(self.job, self.bank, route, consent)
             complete.assert_not_called()
 
+    def test_optional_resume_contact_is_not_sent_in_analysis_or_tailoring(self):
+        raw = fake_fact_bank(); raw['resume_contact'] = 'fictional-contact@example.invalid'
+        bank = FactBank.parse(raw)
+        with patch('career_agent.ai.complete', return_value=json.dumps(self.output)) as complete:
+            ai.analyze(self.job, bank, 'local', True)
+            self.assertNotIn(raw['resume_contact'], complete.call_args.args[1])
+        with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': []})) as complete:
+            ai.tailoring_suggestions(self.job, bank, 'local', True)
+            self.assertNotIn(raw['resume_contact'], complete.call_args.args[1])
+
     def test_resume_suggestions_require_consent_and_preserve_exact_source(self):
         resume = 'EXPERIENCE\nBuilt a fictional Python dashboard.\nContact: demo@example.invalid'
         output = {'suggestions': [{'quote': 'Built a fictional Python dashboard.', 'section': 'experience'}]}

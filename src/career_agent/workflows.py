@@ -20,6 +20,9 @@ def inputs(job, profile, bank, records, revision=None, job_description_revision=
                  'keywords': list(f.keywords), 'source_note': f.source_note,
                  'verified_by_candidate': True} for f in bank.facts]},
             'filing_records': [asdict(r) for r in records], 'workspace_revision': revision}
+    # Keep signatures of existing runs unchanged when no contact line was supplied.
+    if bank.resume_contact:
+        state['fact_bank']['resume_contact'] = bank.resume_contact
     if job_description_revision:
         state['job_description_revision'] = job_description_revision
     if tailored_fact_ids is not None:

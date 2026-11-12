@@ -11,6 +11,13 @@ SECTIONS = ("experience", "projects", "skills", "education", "certifications")
 ID_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$")
 
 
+def resume_contact(value: Any) -> str:
+    """One optional, candidate-entered line rendered in application résumés."""
+    if not isinstance(value, str) or len(value) > 500 or not all(c.isprintable() for c in value):
+        raise ValueError('Résumé contact line must be printable single-line text of at most 500 characters')
+    return value.strip()
+
+
 @dataclass(frozen=True)
 class VerifiedFact:
     """A statement explicitly confirmed by its owner, with private provenance."""
@@ -58,6 +65,7 @@ class FactBank:
     name: str
     headline: str
     facts: tuple[VerifiedFact, ...]
+    resume_contact: str = ""
 
     @classmethod
     def parse(cls, data: Any) -> "FactBank":
@@ -75,7 +83,8 @@ class FactBank:
         ids = [fact.fact_id for fact in facts]
         if len(ids) != len(set(ids)):
             raise ValueError("Candidate fact IDs must be unique")
-        return cls(name=name.strip(), headline=headline.strip(), facts=facts)
+        return cls(name=name.strip(), headline=headline.strip(), facts=facts,
+                   resume_contact=resume_contact(data.get('resume_contact', '')))
 
     @classmethod
     def load(cls, path: str | Path) -> "FactBank":

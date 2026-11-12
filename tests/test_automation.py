@@ -295,6 +295,17 @@ class DurableWorkflowTests(unittest.TestCase):
             self.assertEqual(len(store.review_history()), 1)
             self.assertEqual(store.stage_of(self.job.id), 'discovered')
 
+    def test_contact_changes_workflow_input_and_requires_a_new_review(self):
+        self.assertNotIn('resume_contact', self.state['fact_bank'])
+        run = self.manager.start(self.state)
+        changed = dict(self.state, fact_bank={**self.state['fact_bank'], 'resume_contact': 'fictional@example.invalid'})
+        with self.assertRaises(ValueError):
+            self.manager.advance(run['run_id'], signature(changed),
+                {'approved': True, 'reviewed': True, 'packet_sha256': run['packet']['packet_sha256']})
+        updated = self.manager.start(changed)
+        self.assertIn('fictional@example.invalid', updated['packet']['resume_markdown'])
+        self.assertNotEqual(updated['packet']['packet_sha256'], run['packet']['packet_sha256'])
+
     def test_start_does_not_insert_a_run_after_submission(self):
         with Store(self.db) as store, store.connection:
             store.connection.execute("INSERT INTO applications(job_id,stage,receipt) VALUES(?,'submitted','fictional')", (self.job.id,))

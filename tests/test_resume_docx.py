@@ -24,6 +24,13 @@ class ResumeDOCXTests(unittest.TestCase):
         self.assertFalse(any(rel.is_external for rel in document.part.rels.values()))
         self.assertEqual(document.core_properties.author, '')
 
+    def test_contact_line_is_in_exported_word_document(self):
+        from docx import Document
+        data = fake_fact_bank(); data['resume_contact'] = 'fictional@example.invalid · +1 555 0100'
+        packet = build_packet(fake_job(), CandidateProfile((), (), ()), FactBank.parse(data))
+        document = Document(io.BytesIO(resume_docx(packet)))
+        self.assertIn(data['resume_contact'], '\n'.join(p.text for p in document.paragraphs))
+
     def test_word_export_rejects_tampered_packet(self):
         self.packet['resume_markdown'] += '\nInvented qualification'
         with self.assertRaises(ValueError):

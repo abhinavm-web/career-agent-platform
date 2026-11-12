@@ -46,6 +46,8 @@ def select_facts(job: Job, bank: FactBank, limit: int = 12) -> tuple[VerifiedFac
 
 def resume_markdown(bank: FactBank, facts: tuple[VerifiedFact, ...], section_order: tuple[str, ...] = SECTIONS) -> str:
     parts = [f"# {bank.name}"]
+    if bank.resume_contact:
+        parts.append(bank.resume_contact)
     if bank.headline:
         parts.append(bank.headline)
     for section in section_order:
