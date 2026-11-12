@@ -31,6 +31,31 @@ class ResumeDOCXTests(unittest.TestCase):
         document = Document(io.BytesIO(resume_docx(packet)))
         self.assertIn(data['resume_contact'], '\n'.join(p.text for p in document.paragraphs))
 
+    def test_multiline_candidate_text_stays_one_literal_fact(self):
+        from docx import Document
+        data = fake_fact_bank()
+        data['facts'][0]['statement'] = 'Built a fictional system.\n## Not a section\n- Still the same fact'
+        packet = build_packet(fake_job(), CandidateProfile((), (), ()), FactBank.parse(data))
+        document = Document(io.BytesIO(resume_docx(packet)))
+        matches = [p for p in document.paragraphs if p.text == data['facts'][0]['statement']]
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].style.name, 'List Bullet')
+        self.assertFalse(any(p.text == 'Not a section' for p in document.paragraphs))
+        self.assertFalse(any(p.text == 'Still the same fact' for p in document.paragraphs))
+
+    def test_block_mismatch_rejected_even_if_packet_is_rehashed(self):
+        self.packet['resume_blocks'][-1]['text'] = 'Changed fictional claim.'
+        self.packet['packet_sha256'] = packet_fingerprint(self.packet)
+        with self.assertRaisesRegex(ValueError, 'does not match the reviewed text'):
+            resume_docx(self.packet)
+
+    def test_legacy_packet_without_blocks_uses_existing_rendering(self):
+        from docx import Document
+        self.packet.pop('resume_blocks')
+        self.packet['packet_sha256'] = packet_fingerprint(self.packet)
+        doc = Document(io.BytesIO(resume_docx(self.packet)))
+        self.assertIn('Delivered a fictional AI program involving Python and AWS.', [p.text for p in doc.paragraphs])
+
     def test_word_export_rejects_tampered_packet(self):
         self.packet['resume_markdown'] += '\nInvented qualification'
         with self.assertRaises(ValueError):

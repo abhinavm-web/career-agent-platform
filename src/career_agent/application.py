@@ -44,18 +44,52 @@ def select_facts(job: Job, bank: FactBank, limit: int = 12) -> tuple[VerifiedFac
     return tuple(sorted(selected, key=lambda fact: (SECTIONS.index(fact.section), -relevance(job, fact))))
 
 
-def resume_markdown(bank: FactBank, facts: tuple[VerifiedFact, ...], section_order: tuple[str, ...] = SECTIONS) -> str:
-    parts = [f"# {bank.name}"]
+def resume_blocks(bank: FactBank, facts: tuple[VerifiedFact, ...], section_order: tuple[str, ...] = SECTIONS) -> list[dict[str, str]]:
+    """Separate trusted document structure from literal candidate-entered text."""
+    blocks = [{"kind": "name", "text": bank.name}]
     if bank.resume_contact:
-        parts.append(bank.resume_contact)
+        blocks.append({"kind": "contact", "text": bank.resume_contact})
     if bank.headline:
-        parts.append(bank.headline)
+        blocks.append({"kind": "headline", "text": bank.headline})
     for section in section_order:
         statements = [fact.statement for fact in facts if fact.section == section]
         if statements:
-            parts.append(f"\n## {HEADINGS[section]}")
-            parts.extend(f"- {statement}" for statement in statements)
-    return "\n".join(parts).rstrip() + "\n"
+            blocks.append({"kind": "section", "text": HEADINGS[section]})
+            blocks.extend({"kind": "fact", "text": statement} for statement in statements)
+    return blocks
+
+
+def _blocks_markdown(blocks: list[dict[str, str]]) -> str:
+    parts = []
+    for block in blocks:
+        kind, value = block['kind'], block['text']
+        parts.append(('# ' if kind == 'name' else '\n## ' if kind == 'section' else '- ' if kind == 'fact' else '') + value)
+    return '\n'.join(parts).rstrip() + '\n'
+
+
+def resume_markdown(bank: FactBank, facts: tuple[VerifiedFact, ...], section_order: tuple[str, ...] = SECTIONS) -> str:
+    return _blocks_markdown(resume_blocks(bank, facts, section_order))
+
+
+def export_resume_blocks(packet: dict) -> list[dict[str, str]] | None:
+    """Use structured blocks only when they exactly reproduce the reviewed text.
+
+    Legacy packets lack blocks and retain their original line-based rendering.
+    """
+    if 'resume_blocks' not in packet:
+        return None
+    blocks = packet['resume_blocks']
+    if (not isinstance(blocks, list) or not 1 <= len(blocks) <= 48
+            or not all(isinstance(block, dict) and set(block) == {'kind', 'text'}
+                       and isinstance(block['kind'], str)
+                       and block['kind'] in {'name', 'contact', 'headline', 'section', 'fact'}
+                       and isinstance(block['text'], str) and block['text']
+                       for block in blocks)
+            or blocks[0]['kind'] != 'name'
+            or any(block['kind'] == 'section' and block['text'] not in HEADINGS.values() for block in blocks)
+            or _blocks_markdown(blocks) != packet['resume_markdown']):
+        raise ValueError('Structured resume does not match the reviewed text; regenerate and review the draft')
+    return blocks
 
 
 def cover_note(job: Job, bank: FactBank, facts: tuple[VerifiedFact, ...]) -> str:
@@ -150,6 +184,7 @@ def build_packet(
         } for fact in selected],
         "omitted_fact_ids": [fact.fact_id for fact in bank.facts if fact.fact_id not in selected_ids],
         "resume_markdown": resume_markdown(bank, selected, section_order),
+        "resume_blocks": resume_blocks(bank, selected, section_order),
         "cover_note": cover_note(job, bank, selected),
         "sponsorship": sponsorship_report(job, filing_records),
         "review_questions": [

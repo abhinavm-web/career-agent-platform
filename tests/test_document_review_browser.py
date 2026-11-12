@@ -217,7 +217,9 @@ class DocumentReviewBrowserTests(unittest.TestCase):
             root = Path(directory)
             db, packet_dir = root / 'workspace.sqlite3', root / 'packets'
             facts, profile = root / 'facts.json', root / 'profile.json'
-            facts.write_text(json.dumps(fake_fact_bank()))
+            data = fake_fact_bank()
+            data['facts'][0]['statement'] += '\n## Literal heading\n- Literal continuation'
+            facts.write_text(json.dumps(data))
             profile.write_text(json.dumps(asdict(CandidateProfile(target_titles=('AI Program Lead',),
                 skills=('Python',), preferred_locations=(), allow_remote=True))))
             with Store(db) as store:
@@ -243,6 +245,8 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                         expect(evidence).to_contain_text('experience-01')
                         expect(evidence).to_contain_text('Delivered a fictional AI program')
                         expect(evidence).not_to_contain_text('Private fictional evidence')
+                        page.get_by_text('Resume draft', exact=True).click()
+                        expect(page.locator('.resume-block-fact')).to_have_text(data['facts'][0]['statement'])
                         page.get_by_text('I have personally reviewed this draft and its claims.').click()
                         page.get_by_role('button', name='Approve for manual submission').click()
                         expect(page.locator('.review-card')).to_contain_text('approved for manual submission')
@@ -252,6 +256,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                         downloaded = Document(received.value.path())
                         content = '\n'.join(item.text for item in downloaded.paragraphs)
                         self.assertIn('Delivered a fictional AI program', content)
+                        self.assertTrue(any(p.text == data['facts'][0]['statement'] and p.style.name == 'List Bullet' for p in downloaded.paragraphs))
                         self.assertNotIn('Private fictional evidence', content)
                         expect(page.locator('#notice')).to_contain_text('not tracked')
                         expect(page.locator('#detail-panel')).not_to_contain_text('Submission recorded')

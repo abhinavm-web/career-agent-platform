@@ -24,6 +24,31 @@ class ResumeHTMLTests(unittest.TestCase):
         self.assertNotIn("url(", html)
         self.assertIn("font-variant-ligatures: none", html)
 
+    def test_structured_fact_preserves_literal_line_breaks_and_markup(self):
+        from career_agent.application import build_packet
+        from career_agent.candidate import FactBank
+        from career_agent.models import CandidateProfile
+        from test_dashboard import fake_fact_bank, fake_job
+        data = fake_fact_bank()
+        data['facts'][0]['statement'] = 'Built a fictional system.\n## Not a section\n- <script>same fact</script>'
+        packet = build_packet(fake_job(), CandidateProfile((), (), ()), FactBank.parse(data))
+        html = resume_html(packet)
+        self.assertIn('Built a fictional system.\n## Not a section\n- &lt;script&gt;same fact&lt;/script&gt;', html)
+        self.assertEqual(html.count('<li class="literal-resume-text">'), 1)
+        self.assertNotIn('<h2 class="section-title">Not a section</h2>', html)
+        self.assertNotIn('<script>', html)
+        self.assertNotIn('Private fictional evidence', html)
+
+    def test_mismatched_structured_text_is_rejected(self):
+        from career_agent.application import build_packet
+        from career_agent.candidate import FactBank
+        from career_agent.models import CandidateProfile
+        from test_dashboard import fake_fact_bank, fake_job
+        packet = build_packet(fake_job(), CandidateProfile((), (), ()), FactBank.parse(fake_fact_bank()))
+        packet['resume_blocks'][-1]['text'] = 'Changed fictional claim.'
+        packet['packet_sha256'] = packet_fingerprint(packet)
+        with self.assertRaisesRegex(ValueError, 'does not match the reviewed text'): resume_html(packet)
+
     def test_tampered_packet_is_rejected(self):
         packet = sample_packet("# Fictional Candidate\n")
         packet["resume_markdown"] += "unreviewed change"
@@ -33,6 +58,21 @@ class ResumeHTMLTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("CAREER_AGENT_TEST_PDF") == "1", "Enable PDF integration tests with installed Chromium")
 class ResumePDFTests(unittest.TestCase):
+    def test_structured_pdf_preserves_literal_fact_text(self):
+        from pypdf import PdfReader
+        from career_agent.application import build_packet
+        from career_agent.candidate import FactBank
+        from career_agent.models import CandidateProfile
+        from test_dashboard import fake_fact_bank, fake_job
+        data = fake_fact_bank()
+        data['facts'][0]['statement'] = 'Built a fictional system.\n## Literal heading\n- Literal continuation'
+        packet = build_packet(fake_job(), CandidateProfile((), (), ()), FactBank.parse(data))
+        text = '\n'.join(page.extract_text() for page in PdfReader(io.BytesIO(resume_pdf(packet))).pages)
+        self.assertIn('Built a fictional system.', text)
+        self.assertIn('## Literal heading', text)
+        self.assertIn('- Literal continuation', text)
+        self.assertNotIn('Private fictional evidence', text)
+
     def test_pdf_contains_selectable_text_and_all_long_document_facts(self):
         from pypdf import PdfReader
         statements = [f"Fictional achievement {i:03d}: verification of financial workflows and software delivery." for i in range(80)]
