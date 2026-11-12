@@ -114,6 +114,28 @@ class DashboardTests(unittest.TestCase):
                   'profile': updated['profile'], 'facts': updated['facts']})
         self.assertTrue(self.call('GET', '/api/settings').json()['skills_configured'])
 
+    def test_historical_draft_preview_is_job_scoped_and_read_only(self):
+        response = self.call('POST', f'/api/jobs/{self.job.id}/draft', {})
+        self.assertEqual(response.status_code, 200, response.text)
+        first = response.json()
+        revised = fake_fact_bank(); revised['facts'][0]['statement'] = 'Changed fictional experience.'
+        self.facts_path.write_text(json.dumps(revised))
+        response = self.call('POST', f'/api/jobs/{self.job.id}/draft', {})
+        self.assertEqual(response.status_code, 200, response.text)
+        second = response.json()
+        path = f'/api/jobs/{self.job.id}/packet/versions'
+        self.assertEqual(self.call('GET', path, token='bad').status_code, 403)
+        versions = self.call('GET', path).json()['versions']
+        self.assertEqual([item['run_id'] for item in versions], [second['run_id'], first['run_id']])
+        preview = self.call('GET', path + '/' + first['run_id']).json()
+        self.assertIn('Delivered a fictional AI program', preview['resume_markdown'])
+        self.assertNotIn('Changed fictional experience.', preview['resume_markdown'])
+        self.assertNotIn('Private fictional evidence', json.dumps(preview))
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']['packet_sha256'], second['packet_sha256'])
+        other = fake_job('https://example.invalid/jobs/other')
+        with Store(self.db) as store: store.add_jobs([other])
+        self.assertEqual(self.call('GET', f'/api/jobs/{other.id}/packet/versions/{first["run_id"]}').status_code, 422)
+
     def test_release_check_requires_exact_consent_and_does_not_import(self):
         path = '/api/h1b/check-dol-releases'
         with patch('career_agent.dol_releases.check_dol_releases', return_value={'fiscal_year': 2026}) as check:

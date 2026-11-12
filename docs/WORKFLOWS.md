@@ -33,7 +33,9 @@ End-to-end graph workflow:
 
 The LangGraph pipeline executes \`analyze → draft → human_review\`. The human-review node uses an actual \`interrupt()\` and resumes with \`Command(resume=...)\`. It checks a packet fingerprint so an earlier approval cannot accidentally apply to a different version.
 
-The current graph uses \`InMemorySaver\`, so an interrupted run does not survive a process restart. The CLI conducts the review in one process. Production will need authenticated reviewers, durable checkpoints, tamper-resistant audit logs and private encrypted storage.
+The durable workflow stores checkpoints locally in SQLite so interrupted reviews can resume after a restart. The standalone CLI review runs in one process. This local application does not provide authenticated reviewers, tamper-resistant audit logs or encrypted private storage.
+
+In the dashboard, open an application packet and choose **Compare previous draft versions** to compare up to 20 recorded workflow drafts with the current draft. The text comes from the original checkpoint and its fingerprint is checked against the workflow record. Legacy drafts or missing checkpoints may be unavailable. Comparing does not approve or change a draft, and approval of an earlier fingerprint does not transfer to the current version. Checkpoints can retain earlier facts, including facts subsequently changed or revoked, so protect and manage their local storage accordingly.
 
 ## Interpreting the skill comparison
 

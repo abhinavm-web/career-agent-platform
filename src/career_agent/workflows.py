@@ -2,11 +2,12 @@
 import hashlib
 import json
 import os
+import re
 import uuid
 from dataclasses import asdict
 from pathlib import Path
 
-from .application import _reject_symlink_components, save_packet
+from .application import _reject_symlink_components, save_packet, validate_packet
 from .graph_review import build_career_graph
 from .storage import Store
 from .models import Job
@@ -48,6 +49,43 @@ class Workflows:
         with Store(self.db) as store:
             return [dict(r) for r in store.connection.execute('''SELECT run_id,job_id,status,
                 packet_sha256,error,created_at FROM workflow_runs ORDER BY rowid DESC LIMIT 100''')]
+
+    def versions(self, job_id):
+        """List published workflow runs; legacy packets may have no checkpoint history."""
+        with Store(self.db) as store:
+            rows = store.connection.execute('''SELECT run_id,packet_sha256,status,created_at
+                FROM workflow_runs WHERE job_id=? AND packet_sha256 IS NOT NULL
+                ORDER BY rowid DESC LIMIT 20''', (job_id,)).fetchall()
+            return [dict(row) for row in rows]
+
+    def historical_packet(self, job_id, run_id):
+        """Read a fingerprint-checked stored packet without resuming its graph."""
+        if not isinstance(run_id, str) or not re.fullmatch(r'[0-9a-f]{32}', run_id):
+            raise ValueError('Invalid draft version')
+        with Store(self.db) as store:
+            row = store.connection.execute('''SELECT packet_sha256 FROM workflow_runs
+                WHERE job_id=? AND run_id=? AND packet_sha256 IS NOT NULL''', (job_id, run_id)).fetchone()
+        if row is None:
+            raise ValueError('Draft version is unavailable for this job')
+        checkpoint_path = Path(self.checkpoints)
+        _reject_symlink_components(checkpoint_path)
+        if not checkpoint_path.is_file():
+            raise ValueError('Draft checkpoint is unavailable; historical text cannot be recovered')
+        try:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+            from langsmith import tracing_context
+            with tracing_context(enabled=False), SqliteSaver.from_conn_string(self.checkpoints) as saver:
+                snapshot = build_career_graph(saver).get_state({'configurable': {'thread_id': run_id}})
+            packet = snapshot.values.get('packet')
+            if validate_packet(packet) != row['packet_sha256'] or packet['job_id'] != job_id:
+                raise ValueError('Packet mismatch')
+            resume, cover = packet['resume_markdown'], packet['cover_note']
+            if not isinstance(resume, str) or not isinstance(cover, str) or len(resume) > 200000 or len(cover) > 200000:
+                raise ValueError('Packet text is invalid')
+        except Exception:
+            raise ValueError('Draft checkpoint is unavailable or invalid; historical text cannot be recovered') from None
+        return {'run_id': run_id, 'packet_sha256': row['packet_sha256'],
+                'resume_markdown': resume, 'cover_note': cover}
 
     def start(self, state, *, guard_workspace=False):
         run_id = uuid.uuid4().hex
