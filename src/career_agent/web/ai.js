@@ -33,12 +33,16 @@
   function changed() {
     el("ai-consent").checked = false;
     el("ai-test-consent").checked = false;
+    el("ai-sample-consent").checked = false;
     el("ai-test-status").textContent = "";
+    el("ai-sample-status").textContent = "";
+    el("ai-sample-results").replaceChildren();
     el("ai-results").replaceChildren();
     const r = routes.find((r) => r.route === el("ai-route").value);
     el("ai-destination").textContent = r ? `${r.provider} · ${r.model} · ${r.destination} · output cap ${r.max_tokens} tokens · ${r.daily_request_limit == null ? "no local daily request limit" : "daily local request limit " + r.daily_request_limit + " (UTC)"} · request history ${r.record_history ? "enabled" : "off"}` : "No route configured";
     el("ai-route-readiness").textContent = r ? `Provider SDK: ${r.sdk_installed ? "installed" : "missing"} · Credential: ${r.credential_status}. These local checks do not establish connectivity or model access.` : "";
     el("ai-test-route").disabled = !r;
+    el("ai-sample-run").disabled = !r;
   }
   el("ai-route").addEventListener("change", changed);
   el("ai-job").addEventListener("change", changed);
@@ -61,7 +65,9 @@
     try {
       const previousRoute = el("ai-route").value;
       const previousJob = el("ai-job").value;
-      const [models, jobs, settings] = await Promise.all([api("/api/ai/routes"), jobOptions(), api("/api/settings")]);
+      const [models, jobs, settings, sample] = await Promise.all([api("/api/ai/routes"), jobOptions(), api("/api/settings"), api("/api/ai/sample")]);
+      el("ai-sample-input").replaceChildren(text("p", "Fictional role: " + sample.title),
+        text("p", "Fictional posting: " + sample.description), text("p", "Fictional fact " + sample.fact_id + ": " + sample.fact_statement));
       routes = models.routes;
       for (const id of ["ai-route", "ai-job"]) el(id).replaceChildren();
       for (const r of routes) { const n = text("option", `${r.route} (${r.provider})`); n.value = r.route; el("ai-route").append(n); }
@@ -77,9 +83,13 @@
         const selected = routes.find((r) => r.route === el("ai-route").value);
         el("ai-route-readiness").textContent = selected ? `Provider SDK: ${selected.sdk_installed ? "installed" : "missing"} · Credential: ${selected.credential_status}. These local checks do not establish connectivity or model access.` : "";
         el("ai-test-route").disabled = !selected;
+        el("ai-sample-run").disabled = !selected;
       }
       const ready = settings.facts_configured;
       el("ai-consent").checked = false;
+      el("ai-sample-consent").checked = false;
+      el("ai-sample-status").textContent = "";
+      el("ai-sample-results").replaceChildren();
       if (!ready) el("ai-results").replaceChildren();
       el("ai-open-profile").hidden = ready;
       el("ai-run").disabled = !routes.length || !jobs.jobs.length || !ready;
@@ -98,7 +108,7 @@
       return;
     }
     busy = true;
-    const controls = ["ai-load", "ai-route", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor"]
+    const controls = ["ai-load", "ai-route", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor", "ai-sample-run", "ai-sample-consent"]
       .map((id) => el(id)).filter(Boolean);
     const states = controls.map((control) => control.disabled);
     controls.forEach((control) => { control.disabled = true; });
@@ -115,11 +125,45 @@
       busy = false;
     }
   });
+  el("ai-sample-run").addEventListener("click", async () => {
+    if (busy || !el("ai-sample-consent").checked || !el("ai-route").value) {
+      el("ai-sample-status").textContent = "Select a route and confirm the fictional test first.";
+      return;
+    }
+    busy = true;
+    const controls = ["ai-load", "ai-route", "ai-run", "ai-tailor", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent"]
+      .map(id => el(id)).filter(Boolean);
+    const states = controls.map(control => control.disabled);
+    controls.forEach(control => { control.disabled = true; });
+    el("ai-sample-results").replaceChildren();
+    el("ai-sample-status").textContent = "Analyzing fictional sample data with the selected provider…";
+    try {
+      const selected = routes.find(item => item.route === el("ai-route").value);
+      if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before testing.");
+      const result = await api("/api/ai/sample-analysis", {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
+      el("ai-sample-status").textContent = result.notice;
+      if (!result.requirements.length) el("ai-sample-results").append(text("p", "No sample requirements returned. This does not establish model quality."));
+      if (result.requirements.length === 20) el("ai-sample-results").append(text("p", "The response reached the 20-item limit; it may be incomplete."));
+      if (new Set(result.requirements.map(row => row.quote)).size < result.requirements.length)
+        el("ai-sample-results").append(text("p", "The response repeats an excerpt. Review the output; repetition does not establish model quality."));
+      for (const row of result.requirements) {
+        const section = document.createElement("section");
+        section.append(text("blockquote", row.quote), text("p", "Unverified interpretation: " + row.reason));
+        for (const [id, statement] of Object.entries(row.facts)) section.append(text("p", `${id}: ${statement}`));
+        el("ai-sample-results").append(section);
+      }
+    } catch (error) { el("ai-sample-status").textContent = error.message; }
+    finally {
+      controls.forEach((control, i) => { control.disabled = states[i]; });
+      el("ai-sample-consent").checked = false;
+      busy = false;
+    }
+  });
   el("ai-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (busy || !el("ai-consent").checked) return;
     busy = true;
-    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-job", "ai-consent"];
+    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-job", "ai-consent", "ai-sample-run", "ai-sample-consent", "ai-test-route", "ai-test-consent"];
     ids.forEach((id) => { el(id).disabled = true; });
     el("ai-results").replaceChildren();
     el("ai-status").textContent = "Analyzing with the selected provider…";

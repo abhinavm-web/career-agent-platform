@@ -425,6 +425,34 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(self.call('POST', path, request).status_code, 422)
             self.assertEqual(self.call('POST', path, request).status_code, 200)
 
+    def test_fictional_analysis_requires_consent_and_uses_no_workspace_data(self):
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
+        output = {'requirements': [{'quote': 'Experience building Python data pipelines.',
+                                    'fact_ids': ['sample-fact'], 'reason': 'Fictional evidence.'}]}
+        path = '/api/ai/sample-analysis'
+        sample = self.call('GET', '/api/ai/sample').json()
+        before = self.call('GET', '/api/workspace').json()
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            fingerprint = ai.route_fingerprint('local', route['local'])
+            self.assertEqual(self.call('POST', path, {'route': 'local', 'route_fingerprint': fingerprint}).status_code, 422)
+            self.assertEqual(self.call('POST', path, {'route': 'local', 'route_fingerprint': '0' * 64, 'acknowledged': True}).status_code, 422)
+            complete.assert_not_called()
+            request = {'route': 'local', 'route_fingerprint': fingerprint, 'acknowledged': True}
+            response = self.call('POST', path, request)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertIn('Fictional sample only', response.json()['notice'])
+            prompt = complete.call_args.args[1]
+            payload = json.loads(prompt)
+            self.assertEqual(payload['job'], {'title': sample['title'], 'description': sample['description']})
+            self.assertEqual(payload['verified_facts'], {sample['fact_id']: sample['fact_statement']})
+            self.assertNotIn(self.job.description, prompt)
+            self.assertNotIn('Private fictional evidence', prompt)
+            self.assertEqual(self.call('POST', path, request).status_code, 429)
+            self.assertEqual(complete.call_count, 1)
+        self.assertEqual(self.call('GET', '/api/workspace').json(), before)
+        self.assertFalse(self.packet_dir.exists())
+        self.assertEqual(self.call('GET', '/api/ai/history').json()['recent'][0]['purpose'], 'sample_analysis')
+
     def test_ai_route_test_reports_sanitized_missing_model(self):
         import httpx
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
