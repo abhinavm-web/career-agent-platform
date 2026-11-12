@@ -31,6 +31,30 @@ class FitEvidenceTests(unittest.TestCase):
         self.assertTrue(result['truncated'])
         self.assertEqual(result['requirements'], [])
 
+    def test_indented_continuations_preserve_qualifiers_and_bullet_boundaries(self):
+        text = ('Requirements:\n- Python experience is helpful,\n'
+                '  but not required.\n- Rust experience\n'
+                '  in production.\nPreferred skills:\n- SQL')
+        rows = requirement_evidence(text, self.facts)['requirements']
+        self.assertEqual([row['quote'] for row in rows],
+                         ['- Python experience is helpful,\n  but not required.',
+                          '- Rust experience\n  in production.', '- SQL'])
+        self.assertEqual([row['category'] for row in rows], ['required', 'required', 'preferred'])
+        self.assertEqual(rows[0]['suggested_facts'][0]['id'], 'fact-01')
+
+    def test_long_wrapped_bullet_is_omitted_whole(self):
+        result = requirement_evidence('Requirements:\n- Python\n  ' + 'x' * 1000, self.facts)
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['requirements'], [])
+
+    def test_indented_next_bullet_is_not_swallowed_by_previous_quote(self):
+        result = requirement_evidence('Requirements:\n- Python\n  - Rust\n  ## Responsibilities\n  - SQL', self.facts)
+        self.assertEqual([row['quote'] for row in result['requirements']], ['- Python', '- Rust'])
+        text = 'Requirements:\n- Python\n  **Preferred**\n  - SQL'
+        rows = requirement_evidence(text, self.facts)['requirements']
+        self.assertEqual([(row['category'], row['quote']) for row in rows],
+                         [('required', '- Python'), ('preferred', '- SQL')])
+
     def test_markdown_headings_preserve_source_and_do_not_infer_requirement_level(self):
         text = ('**Required Qualifications:**\n- Python experience\n'
                 '### Qualifications\n* Rust experience\n'

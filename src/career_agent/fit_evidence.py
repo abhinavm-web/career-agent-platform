@@ -24,7 +24,11 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
     section = None
     source_heading = None
     truncated = False
-    for raw in description.splitlines():
+    lines = description.splitlines()
+    index = 0
+    while index < len(lines):
+        raw = lines[index]
+        index += 1
         line = raw.strip()
         if not line:
             continue
@@ -45,6 +49,30 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
             quote = line
         elif section and re.match(r'^(?:[-*•]|\d+[.)])\s+\S', line):
             quote = line
+            oversized = len(quote) > 1000
+            # Keep indented wrapping with its bullet, including qualifications
+            # such as "not required". Never absorb another bullet or heading.
+            indent = len(raw.expandtabs(4)) - len(raw.expandtabs(4).lstrip())
+            while index < len(lines):
+                following = lines[index]
+                text = following.strip()
+                following_indent = len(following.expandtabs(4)) - len(following.expandtabs(4).lstrip())
+                if (not text or following_indent <= indent
+                        or re.match(r'^(?:[-*•]|\d+[.)])\s+\S', text)
+                        or re.match(r'^#{1,6}\s+', text)
+                        or re.fullmatch(r'\*\*[^*]+\*\*\s*:?', text)
+                        or text.casefold().replace('’', "'") in HEADINGS
+                        or text.endswith(':')):
+                    break
+                continuation = following.rstrip()
+                if len(quote) + 1 + len(continuation) > 1000:
+                    oversized = True
+                elif not oversized:
+                    quote += '\n' + continuation
+                index += 1
+            if oversized:
+                truncated = True
+                continue
         else:
             # Never carry a heading into unrecognized prose or a new section.
             section = None
