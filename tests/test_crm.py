@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from career_agent.crm import ApplicationCRM
@@ -38,6 +39,50 @@ class CRMStoreTests(unittest.TestCase):
         self.second = sample_job("beta")
         self.store.add_jobs([self.job, self.second])
         self.crm = ApplicationCRM(self.store)
+
+    def test_review_suggestions_use_recorded_active_stage_and_pending_tasks(self):
+        now = datetime.now(timezone.utc)
+        old = (now - timedelta(days=15)).strftime('%Y-%m-%d %H:%M:%S')
+        recent = (now - timedelta(days=2)).strftime('%Y-%m-%d %H:%M:%S')
+        self.crm.change_stage(self.job.id, 'saved')
+        self.store.stage(self.job.id)
+        self.store.confirm(self.job.id, 'fictional-receipt', attested=True)
+        self.store.stage(self.second.id)  # Drafts never qualify.
+        with self.store.connection:
+            self.store.connection.execute('UPDATE crm_stage_events SET created_at=? WHERE job_id=?', (old, self.job.id))
+            self.store.connection.execute('UPDATE applications SET updated_at=? WHERE job_id=?', (recent, self.job.id))
+        self.assertEqual(self.crm.summary()['review_suggestion_count'], 0)  # Old pre-application stage is irrelevant.
+        with self.store.connection:
+            self.store.connection.execute('UPDATE applications SET updated_at=? WHERE job_id=?', (old, self.job.id))
+        suggestions = self.crm.summary()['review_suggestions']
+        self.assertEqual([(x['job_id'], x['stage']) for x in suggestions], [(self.job.id, 'applied')])
+        task = self.crm.add_followup(self.job.id, 'Review next step', '2030-01-01')
+        self.assertEqual(self.crm.summary()['review_suggestion_count'], 0)
+        self.crm.update_followup(task['followup_id'], cancel=True)
+        self.assertEqual(self.crm.summary()['review_suggestion_count'], 1)
+        self.crm.change_stage(self.job.id, 'screening')
+        self.assertEqual(self.crm.summary()['review_suggestion_count'], 0)
+        with self.store.connection:
+            self.store.connection.execute('UPDATE crm_stage_events SET created_at=? WHERE job_id=? AND stage=?', (old, self.job.id, 'screening'))
+        self.assertEqual(self.crm.summary()['review_suggestions'][0]['stage'], 'screening')
+        with self.store.connection:
+            self.store.connection.execute('UPDATE crm_stage_events SET created_at=? WHERE job_id=? AND stage=?', ('invalid', self.job.id, 'screening'))
+        self.assertEqual(self.crm.summary()['review_suggestion_count'], 0)
+        self.crm.change_stage(self.job.id, 'offer')
+        self.assertEqual(self.crm.summary()['review_suggestion_count'], 0)
+
+    def test_review_suggestions_are_bounded_and_future_dates_are_ignored(self):
+        jobs = [sample_job(f'review-{i}') for i in range(22)]
+        self.store.add_jobs(jobs)
+        old = (datetime.now(timezone.utc) - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+        future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
+        with self.store.connection:
+            self.store.connection.executemany('INSERT INTO applications(job_id,stage,updated_at) VALUES(?,?,?)',
+                [(job.id, 'submitted', old if i < 21 else future) for i, job in enumerate(jobs)])
+        summary = self.crm.summary()
+        self.assertEqual(summary['review_suggestion_count'], 21)
+        self.assertEqual(len(summary['review_suggestions']), 20)
+        self.assertNotIn(jobs[-1].id, {row['job_id'] for row in summary['review_suggestions']})
 
     def test_summary_bulk_read_preserves_stages_and_query_count_at_scale(self):
         jobs = [sample_job(f"bulk-{i}") for i in range(1200)]

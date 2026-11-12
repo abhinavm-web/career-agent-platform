@@ -43,6 +43,8 @@ Create a task title, due date (YYYY-MM-DD), and optionally link a contact associ
 
 Follow-up dates are **not automation schedules**. No email, reminder notification or calendar entry is created. Overdue detection uses the computer's local date.
 
+The tracker also highlights up to 20 attested applications in applied, screening, assessment or interview stages with at least 14 UTC calendar days since the last recorded active stage. The submission attestation date is used until a post-submission stage is recorded. Applications with an open follow-up task are omitted, as are offers and terminal outcomes. This is a prompt to review your records, not evidence that an employer has not replied: email, calls and activity outside the tracker are not checked. Selecting a suggestion opens the opportunity; no task or message is created. Invalid or future timestamps do not produce suggestions.
+
 ## Recorded application outcomes
 
 The tracker shows all-time counts of attested submissions, opportunities with an explicitly recorded interview, recorded offers, and accepted offers. Each opportunity counts once per milestone, including when multiple interview rounds are recorded. Later rejection or withdrawal does not erase an earlier interview or offer.

@@ -1212,6 +1212,20 @@
       due.append(row);
     }
     root.append(due);
+    const suggestions = node("div", "crm-due-list");
+    suggestions.append(node("h3", "", "Applications to review"), node("p", "muted",
+      "Attested applications with no pending follow-up and at least 14 days since the last recorded active stage. This does not check messages or employer status; review before deciding whether to follow up. No task or message is created."));
+    const review = summary.review_suggestions || [];
+    if (!review.length) suggestions.append(node("p", "muted", "No applications currently meet these criteria."));
+    for (const item of review) {
+      const row = button("", "crm-due-item", () => selectCRMJob(item.job_id));
+      row.append(node("strong", "", item.title + " · " + item.company),
+        node("small", "", item.stage + " · recorded " + item.recorded_on + " · " + item.days + " calendar days ago (UTC)"));
+      suggestions.append(row);
+    }
+    if ((summary.review_suggestion_count || 0) > review.length)
+      suggestions.append(node("p", "muted", "Showing " + review.length + " of " + summary.review_suggestion_count + " applications to review."));
+    root.append(suggestions);
     const outcomePanel = byId("crm-outcomes");
     outcomePanel.replaceChildren();
     outcomePanel.append(node("h3", "", "Recorded application outcomes"));

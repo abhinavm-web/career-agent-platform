@@ -128,6 +128,8 @@ class ApplicationCRM:
             );
             CREATE INDEX IF NOT EXISTS idx_crm_followups_due
                 ON crm_followups(completed_at,due_date);
+            CREATE INDEX IF NOT EXISTS idx_crm_followups_job_open
+                ON crm_followups(job_id,completed_at);
 
             CREATE TABLE IF NOT EXISTS crm_followup_events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -459,12 +461,18 @@ class ApplicationCRM:
             "COALESCE(a.stage,'discovered') AS application_stage, "
             "(SELECT stage FROM crm_stage_events WHERE job_id=j.job_id "
             "ORDER BY event_id DESC LIMIT 1) AS crm_stage, "
+            "(SELECT created_at FROM crm_stage_events WHERE job_id=j.job_id "
+            "ORDER BY event_id DESC LIMIT 1) AS crm_stage_at, a.updated_at AS application_updated_at, "
+            "EXISTS(SELECT 1 FROM crm_followups f WHERE f.job_id=j.job_id AND f.completed_at IS NULL "
+            "AND NOT EXISTS(SELECT 1 FROM crm_followup_events e WHERE e.followup_id=f.followup_id AND e.action='cancelled')) AS has_pending_followup, "
             "COALESCE((SELECT priority FROM crm_priority_events WHERE job_id=j.job_id "
             "ORDER BY event_id DESC LIMIT 1),'none') AS priority "
             "FROM jobs j LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY j.rowid DESC"
         ).fetchall()
         counts: dict[str, int] = {}
         job_stages = []
+        review_candidates = []
+        today_utc = datetime.now(timezone.utc).date()
         for job in jobs:
             submitted = job["application_stage"] == "submitted"
             valid_stages = POST_APPLICATION if submitted else PRE_APPLICATION
@@ -476,6 +484,18 @@ class ApplicationCRM:
                 "priority": job["priority"],
             })
             counts[stage] = counts.get(stage, 0) + 1
+            if submitted and stage in ('applied', 'screening', 'assessment', 'interview') and not job['has_pending_followup']:
+                # SQLite CURRENT_TIMESTAMP is UTC. An organizer event preceding the
+                # submission must not be mistaken for a post-submission stage date.
+                stamp = job['crm_stage_at'] if job['crm_stage'] in POST_APPLICATION else job['application_updated_at']
+                try:
+                    recorded = datetime.strptime(stamp, '%Y-%m-%d %H:%M:%S').date()
+                except (TypeError, ValueError):
+                    continue
+                days = (today_utc - recorded).days
+                if days >= 14:
+                    review_candidates.append({'job_id': job['job_id'], 'title': job['title'], 'company': job['company'],
+                                              'stage': stage, 'recorded_on': recorded.isoformat(), 'days': days})
         rows = self.conn.execute(
             "SELECT f.followup_id,f.job_id,f.title,f.due_date,"
             " j.company,j.title AS job_title "
@@ -488,4 +508,6 @@ class ApplicationCRM:
             "stages": counts, "job_stages": job_stages,
             "open_followups": upcoming, "today": today,
             "outcomes": self.outcomes(),
+            "review_suggestions": sorted(review_candidates, key=lambda row: (-row['days'], row['job_id']))[:20],
+            "review_suggestion_count": len(review_candidates),
         }
