@@ -57,7 +57,7 @@ class Workflows:
                  json.dumps(state), signature(state), 'queued'))
         return self.advance(run_id, signature(state), expected_workspace_revision=(state.get('workspace_revision') or 0) if guard_workspace else None)
 
-    def advance(self, run_id, current_signature, decision=None, *, expected_workspace_revision=None):
+    def advance(self, run_id, current_signature, decision=None, *, expected_workspace_revision=None, recheck_state=None):
         try:
             from langgraph.checkpoint.sqlite import SqliteSaver
             from langgraph.types import Command
@@ -75,6 +75,13 @@ class Workflows:
                 raise ValueError('This run was superseded by a newer draft')
             if row['input_sha256'] != current_signature:
                 raise ValueError('Workflow inputs changed; create a new draft and review it')
+            if recheck_state is not None:
+                try:
+                    locked_signature = signature(recheck_state(store))
+                except (ValueError, OSError, KeyError, TypeError):
+                    raise ValueError('Workflow inputs changed or are unavailable; create a new draft and review it') from None
+                if row['input_sha256'] != locked_signature:
+                    raise ValueError('Workflow inputs changed; create a new draft and review it')
             if json.loads(row['input_json']).get('job_description_revision', 0) != store.description_revision(row['job_id']):
                 raise ValueError('Job description changed; create a new draft and review it')
             if expected_workspace_revision is not None and expected_workspace_revision != store.workspace_revision():
@@ -125,7 +132,7 @@ class Workflows:
                     store.connection.execute("UPDATE workflow_runs SET status='failed',error='Workflow failed; retry after checking inputs and dependencies' WHERE run_id=?", (run_id,))
                 raise
 
-    def review(self, job_id, fingerprint, approved, get_state):
+    def review(self, job_id, fingerprint, approved, get_state, get_locked_state=None):
         with Store(self.db) as store:
             row = store.connection.execute('SELECT run_id,packet_sha256 FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1',
                                            (job_id,)).fetchone()
@@ -133,7 +140,10 @@ class Workflows:
             return False  # Legacy CLI packets retain their existing review path.
         if row['packet_sha256'] != fingerprint:
             raise ValueError('Workflow publication is incomplete or superseded; resume the latest run or regenerate')
-        state = get_state()
+        try:
+            state = get_state()
+        except OSError:
+            raise ValueError('Workflow inputs are unavailable; restore them and review a current draft') from None
         self.advance(row['run_id'], signature(state), {'packet_sha256': fingerprint, 'approved': approved, 'reviewed': True},
-                     expected_workspace_revision=state.get('workspace_revision') or 0)
+                     expected_workspace_revision=state.get('workspace_revision') or 0, recheck_state=get_locked_state)
         return True

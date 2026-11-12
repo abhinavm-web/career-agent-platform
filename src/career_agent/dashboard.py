@@ -214,7 +214,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 return True
             try:
                 return run['input_sha256'] != workflow_signature(current_workflow_inputs(packet['job_id']))
-            except (ValueError, HTTPException):
+            except (ValueError, HTTPException, OSError):
                 return True
         return False
 
@@ -296,20 +296,44 @@ def create_app(config: DashboardConfig) -> FastAPI:
             automation.enable(sid, data.get('enabled'))
         return {'saved': True}
 
-    def current_workflow_inputs(job_id):
-        workspace = active_workspace()
-        profile = configured_profile()
+    def current_workflow_inputs(job_id, store=None):
+        if store is None:
+            with Store(config.db_path) as snapshot:
+                snapshot.connection.execute('BEGIN')
+                return current_workflow_inputs(job_id, snapshot)
+        # The supplied store may already hold BEGIN IMMEDIATE. Avoid constructors
+        # that initialize tables or commit, and read all DB inputs in that snapshot.
+        revision = store.workspace_revision()
+        if revision:
+            row = store.connection.execute('SELECT document FROM candidate_workspace_versions WHERE revision=?', (revision,)).fetchone()
+            workspace = json.loads(row['document'])
+            profile = CandidateWorkspace.scoring_profile(workspace)
+            bank = CandidateWorkspace.fact_bank(workspace)
+        else:
+            profile = CandidateProfile.load(config.profile_path) if config.profile_path else None
+            if config.facts_path is None:
+                raise ValueError('Verify career facts before drafting')
+            bank = FactBank.load(config.facts_path)
         if profile is None:
             raise ValueError('Configure a career profile first')
-        with Store(config.db_path) as store:
-            store.connection.execute('BEGIN')
-            job = _get_job(store, job_id)
-            job_revision = store.description_revision(job.id)
-            run = store.connection.execute('SELECT input_json FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1', (job.id,)).fetchone()
-            previous_inputs = json.loads(run['input_json']) if run else {}
-            selection = previous_inputs.get('tailored_fact_ids')
-            section_order = previous_inputs.get('tailored_section_order')
-        return workflow_inputs(job, profile, configured_facts(), load_filing_evidence(config.filings_path), workspace['revision'] or None, job_revision or None, selection, section_order)
+        job = _get_job(store, job_id)
+        job_revision = store.description_revision(job.id)
+        run = store.connection.execute('SELECT input_json FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1', (job.id,)).fetchone()
+        previous_inputs = json.loads(run['input_json']) if run else {}
+        return workflow_inputs(job, profile, bank, load_filing_evidence(config.filings_path), revision or None,
+                               job_revision or None, previous_inputs.get('tailored_fact_ids'), previous_inputs.get('tailored_section_order'))
+
+    def workflow_inputs_changed(store, packet):
+        run = store.connection.execute('SELECT input_sha256,packet_sha256 FROM workflow_runs WHERE job_id=? ORDER BY rowid DESC LIMIT 1',
+                                       (packet['job_id'],)).fetchone()
+        if not run:
+            return False  # Historical standalone CLI packets have no input snapshot.
+        if run['packet_sha256'] != packet['packet_sha256']:
+            return True
+        try:
+            return run['input_sha256'] != workflow_signature(current_workflow_inputs(packet['job_id'], store))
+        except (ValueError, HTTPException, OSError, KeyError, TypeError):
+            return True
 
     @app.post('/api/workflows/{run_id}/retry')
     async def workflow_retry(run_id: str, request: Request):
@@ -319,7 +343,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
         row = next((r for r in workflows.list() if r['run_id'] == run_id), None)
         if row is None:
             raise ValueError('Unknown workflow run')
-        state = current_workflow_inputs(row['job_id'])
+        try:
+            state = current_workflow_inputs(row['job_id'])
+        except OSError:
+            raise ValueError('Workflow inputs are unavailable; restore them before retrying') from None
         result = await run_in_threadpool(workflows.advance, run_id, workflow_signature(state),
                                          expected_workspace_revision=state['workspace_revision'] or 0)
         return {'run_id': run_id, 'status': result['status']}
@@ -906,7 +933,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
         fingerprint = data.get("packet_sha256")
         if not isinstance(fingerprint, str) or not hmac.compare_digest(fingerprint, current["packet_sha256"]):
             raise HTTPException(status_code=409, detail="Stale packet; reload and review the latest draft")
-        handled = await run_in_threadpool(workflows.review, job_id, fingerprint, data['approved'], lambda: current_workflow_inputs(job_id))
+        handled = await run_in_threadpool(workflows.review, job_id, fingerprint, data['approved'],
+                                          lambda: current_workflow_inputs(job_id),
+                                          lambda store: current_workflow_inputs(job_id, store))
         with Store(config.db_path) as store:
             try:
                 result = store.latest_review(job_id, fingerprint) if handled else store.record_review(
@@ -936,7 +965,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             latest = current_packet(job_id)
             if (store.description_revision(job_id) != packet.get('job_description_revision', 0)
                     or store.workspace_revision() != (packet.get('candidate_workspace_revision') or 0)
-                    or latest is None or latest['packet_sha256'] != packet_sha256):
+                    or latest is None or latest['packet_sha256'] != packet_sha256
+                    or workflow_inputs_changed(store, packet)):
                 raise HTTPException(status_code=409, detail='Packet or job description changed during export; reload and review')
             decision = store.latest_review(job_id, packet_sha256)
             if not decision or decision['decision'] != 'approved_for_manual_submission':
@@ -987,7 +1017,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             latest = current_packet(job_id)
             if (store.description_revision(job_id) != packet.get('job_description_revision', 0)
                     or store.workspace_revision() != (packet.get('candidate_workspace_revision') or 0)
-                    or latest is None or latest['packet_sha256'] != fingerprint):
+                    or latest is None or latest['packet_sha256'] != fingerprint
+                    or workflow_inputs_changed(store, packet)):
                 raise HTTPException(status_code=409, detail='Job description or packet changed; regenerate and review')
             decision = store.latest_review(job_id, fingerprint)
             if not decision or decision["decision"] != "approved_for_manual_submission":
