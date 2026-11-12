@@ -26,6 +26,23 @@ def sample_job(description: str = "", url: str = "https://example.com/job?id=123
 
 
 class ModelTests(unittest.TestCase):
+    def test_missing_scalars_fall_back_without_boolean_coercion(self):
+        class MissingScalar:
+            def __bool__(self):
+                raise TypeError('ambiguous missing scalar')
+            def __str__(self):
+                return '<NA>'
+        missing = MissingScalar()
+        job = Job.from_mapping({'company': missing, 'company_name': 'Example',
+                                'title': float('nan'), 'job_title': 'Engineer',
+                                'job_url': missing, 'url': 'https://example.com/job/1',
+                                'site': missing, 'source': 'indeed',
+                                'description': missing, 'posted_date_status': missing})
+        self.assertEqual((job.company, job.title, job.source), ('Example', 'Engineer', 'indeed'))
+        self.assertEqual(job.url, 'https://example.com/job/1')
+        self.assertEqual(job.description, '')
+        self.assertEqual(job.posted_date_status, 'missing')
+
     def test_normalization_drops_tracking_but_keeps_job_id(self):
         self.assertEqual(
             canonical_url("https://EXAMPLE.com/job?utm_source=x&id=123"),

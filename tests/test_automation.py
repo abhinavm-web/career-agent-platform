@@ -200,6 +200,28 @@ class AutomationTests(unittest.TestCase):
             results = discover_jobspy('Fictional role', 'USA', 3, sites=['indeed', 'linkedin'])
         self.assertEqual(results.source_status['linkedin']['state'], 'inconclusive')
 
+    def test_jobspy_keeps_valid_rows_when_missing_values_have_no_truth_value(self):
+        from career_agent.discovery import discover_jobspy
+        class MissingScalar:
+            def __bool__(self):
+                raise TypeError('ambiguous missing scalar')
+            def __str__(self):
+                return '<NA>'
+        missing = MissingScalar()
+        class Frame:
+            attrs = {}
+            def to_dict(self, orient):
+                return [
+                    {'company': missing, 'company_name': 'Example', 'title': 'Engineer',
+                     'job_url': missing, 'url': 'https://example.com/jobs/1', 'site': 'indeed'},
+                    {'company': missing, 'title': 'Incomplete', 'job_url': 'https://example.com/jobs/2', 'site': 'indeed'},
+                    {'company': 'Second', 'title': 'Developer', 'job_url': 'https://example.com/jobs/3', 'site': 'indeed'},
+                ]
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=lambda **kwargs: Frame())}):
+            results = discover_jobspy('Engineer', 'USA', 3, sites=['indeed'])
+        self.assertEqual([item.company for item in results], ['Example', 'Second'])
+        self.assertEqual(results.source_status['indeed']['returned'], 2)
+
     def test_jobspy_logged_skips_are_reported_without_provider_text(self):
         from career_agent.discovery import discover_jobspy
         logger = logging.getLogger('jobspy.ziprecruiter')
