@@ -70,7 +70,7 @@ class H1BBrowserTests(unittest.TestCase):
                               document.getElementById('detail-panel'), {childList: true});
                             window.releasePacket();
                         }''')
-                        page.wait_for_function('window.detailRerendered === true')
+                        page.wait_for_function('() => window.detailRerendered === true')
                         expect(editor.locator('textarea').nth(0)).to_have_value('Revised fictional description.')
                         expect(editor.locator('textarea').nth(1)).to_have_value('Fictional source note')
                         page.evaluate('window.omitBoard = true')
