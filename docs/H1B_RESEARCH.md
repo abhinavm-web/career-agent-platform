@@ -14,6 +14,8 @@ For supported quarterly releases, paste the direct `https://www.dol.gov/media/LC
 
 1. Visit the official [DOL OFLC performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance) page and download an LCA disclosure workbook. In the H-1B research import panel, provide the source URL and capture date, choose the original XLSX (up to 512 MB), and confirm the provenance. Install workbook support first (`pip install -e '.[lca]'`; the Docker image includes it). The upload is streamed to a temporary local file, removed after processing, and runs the same atomic validation as the CLI. Large files may take time and substantial temporary disk space. The panel reports upload, structure-scan and row-reading progress; those counts are not committed records. Wait for the final success message. The app does not independently verify a supplied file or its source.
 
+   A second tab or a reloaded page can observe an active workbook upload or download after opening H-1B research. Once it stops, that observer cannot know whether it succeeded: refresh coverage and inspect recent import history before retrying. Progress is in memory and is lost if the server restarts; the observer does not track CSV imports or imports run from the CLI.
+
    Alternatively, use the command below to import the original XLSX without a CSV conversion:
 
 ```powershell
