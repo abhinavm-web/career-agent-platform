@@ -189,8 +189,11 @@ def main(argv: list[str] | None = None) -> int:
         with Store(args.db) as store:
             if args.command == "ai-analyze":
                 from .ai import analyze
-                print(json.dumps(analyze(store.get_job(args.job_id), FactBank.load(args.facts),
-                    args.route, args.acknowledge_data_sharing), indent=2))
+                from .ai_history import run_recorded
+                if not args.acknowledge_data_sharing:
+                    raise ValueError('Explicit consent to send the posting and verified fact statements is required')
+                print(json.dumps(run_recorded(args.db, args.route, 'requirements', analyze,
+                    store.get_job(args.job_id), FactBank.load(args.facts), args.route, True), indent=2))
             elif args.command == "uscis-import":
                 from .uscis import USCISRecords
                 with Path(args.csv).open('rb') as source:

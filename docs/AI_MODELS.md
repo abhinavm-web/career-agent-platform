@@ -22,7 +22,7 @@ Create `.local/ai.json` (ignored by Git). Keep only the routes you intend to use
 
 ```json
 {
-  "claude": {"provider": "anthropic", "model": "YOUR_CLAUDE_MODEL_ID", "key_env": "ANTHROPIC_API_KEY", "max_tokens": 1500},
+  "claude": {"provider": "anthropic", "model": "YOUR_CLAUDE_MODEL_ID", "key_env": "ANTHROPIC_API_KEY", "max_tokens": 1500, "daily_request_limit": 20},
   "azure": {"provider": "azure", "model": "YOUR_DEPLOYMENT_NAME", "base_url": "https://YOUR_RESOURCE.openai.azure.com/openai/v1", "key_env": "AZURE_OPENAI_API_KEY"},
   "aws": {"provider": "bedrock", "model": "YOUR_CONVERSE_MODEL_OR_INFERENCE_PROFILE_ID", "region": "us-east-1"},
   "ollama": {"provider": "ollama", "model": "YOUR_INSTALLED_MODEL", "base_url": "http://127.0.0.1:11434/v1"},
@@ -37,6 +37,14 @@ $env:ANTHROPIC_API_KEY = Read-Host 'Anthropic API key' -MaskInput
 ```
 
 `-MaskInput` requires PowerShell 7.1+. Use an environment/secret manager with older shells. Never paste credentials into chat, browser forms, config JSON or Git. The app does not load `.env` files. Restart a running server after changing its environment. Configure a provider-side spending limit as well; output token limits are not dollar budgets.
+
+### Local request limits and history
+
+History is off by default. Set `record_history: true` on a route to opt in without a limit, or set `daily_request_limit` to an integer from 0 to 10,000 to opt in and cap requests; omitting the limit means no local cap, and 0 blocks that route. For enabled routes, the app atomically reserves one attempt before each consented dashboard test, chat, requirement analysis or résumé suggestion, and CLI `ai-analyze` using the same workspace database. Reservations are counted by route name and UTC calendar day; failed, interrupted and locally rejected attempts still count. A process interrupted during a request remains `running` in history and its reservation is retained. Requests are rejected before a provider call when the cap is reached.
+
+Open **Local AI request history and limits** in AI analysis to see recent request metadata and today's counts. The local SQLite journal stores route name, provider, model, purpose, timestamps and completed/failed/running state. It does not store prompts, responses, job IDs, private facts, provider errors, credentials, token counts or costs. It is private plaintext workspace data and is retained with the database and backups. `completed` indicates the app accepted a response, not that a model's advice is correct.
+
+This cap is **not a dollar, token or account-wide budget**. Different route names, separate workspace databases, direct provider use, configuration changes, or restoring an older database can bypass or reset it. Set provider-side spending limits independently. No usage or cost is estimated by this journal.
 
 AWS uses the normal SDK credential chain (prefer a signed-in profile/role). No credentials are read from JSON. An explicitly configured region is required; inference profiles may route across regions according to AWS configuration. Azure supports key-authenticated Azure OpenAI v1 chat completions, not arbitrary Foundry endpoints or Entra ID yet. Local routes require literal loopback HTTP addresses. Optional `key_env` can name a local server token; otherwise a dummy local credential is used. A loopback endpoint does not guarantee local inference: Ollama cloud models, proxies and LM Studio remote links may forward requests. Check that server's settings.
 
@@ -59,7 +67,7 @@ Use `CAREER_AGENT_AI_CONFIG` to point to another private JSON file. Unknown fiel
 - Malformed JSON, invented quotes/IDs, excess fields, incomplete generation and tool calls are rejected. Prompt injection cannot invoke tools; it can still corrupt interpretations, which need human review.
 - Keys and raw provider errors are not returned to the dashboard. No app prompt logging, telemetry or remote tracing is added. Provider-side retention/logging depends on your account; do not enable SDK debug logging with real candidate data.
 - SDK contract tests use simulated transports and fictional credentials; they are not live model quality benchmarks. No paid cloud calls or installed local model inference were validated during this increment.
-- Still needed for model calls: durable AI jobs/cancellation, complete model-run history and usage/cost budgets, broader provider health diagnostics, and semantic-quality evaluation fixtures. Wording suggestions retain their cited source when saved for review, but need explicit candidate verification. Deterministic workflow persistence and opted-in scheduled JobSpy discovery are implemented separately.
+- Still needed for model calls: durable AI jobs/cancellation, provider-reported token usage and account-wide cost budgets, broader provider health diagnostics, and semantic-quality evaluation fixtures. The local metadata journal does not record token usage or spending. Wording suggestions retain their cited source when saved for review, but need explicit candidate verification. Deterministic workflow persistence and opted-in scheduled JobSpy discovery are implemented separately.
 
 ## API references
 

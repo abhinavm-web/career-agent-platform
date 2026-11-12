@@ -30,6 +30,7 @@ from starlette.concurrency import run_in_threadpool
 from .application import _reject_symlink_components, load_packet
 from .candidate import FactBank
 from . import ai
+from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM, StageConflict
@@ -151,6 +152,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.exception_handler(ValueError)
     async def invalid_input(request: Request, error: ValueError):
         return JSONResponse({"detail": str(error)}, status_code=422)
+
+    @app.exception_handler(DailyRequestLimit)
+    async def ai_limit_reached(request: Request, error: DailyRequestLimit):
+        return JSONResponse({"detail": str(error)}, status_code=429)
 
     def assets(name: str) -> str:
         return files("career_agent").joinpath("web", name).read_text(encoding="utf-8")
@@ -314,6 +319,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def ai_routes():
         return {"routes": ai.catalog()}
 
+    @app.get("/api/ai/history")
+    def ai_history():
+        with Store(config.db_path) as store:
+            history = AIHistory(store)
+            return {"recent": history.recent(), "today": history.today()}
+
     @app.post("/api/ai/test-route")
     async def ai_test_route(request: Request):
         data = await request.json()
@@ -322,7 +333,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="An AI request is already running")
         try:
-            return await run_in_threadpool(ai.test_route, data["route"], True)
+            return await run_in_threadpool(run_recorded, config.db_path, data["route"], 'route_test', ai.test_route, data["route"], True)
         finally:
             ai_lock.release()
 
@@ -345,7 +356,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                               if fact["verified_by_candidate"]}
                 elif config.facts_path:
                     claims = FactBank.load(config.facts_path).public_claims()
-            return await run_in_threadpool(ai.profile_chat, data.get("route"), data.get("message"), claims, True, data.get("history", []))
+            return await run_in_threadpool(run_recorded, config.db_path, data.get("route"), 'career_chat', ai.profile_chat, data.get("route"), data.get("message"), claims, True, data.get("history", []))
         finally:
             ai_lock.release()
 
@@ -369,7 +380,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             with Store(config.db_path) as store:
                 job = _get_job(store, job_id)
             bank = configured_facts()
-            return await run_in_threadpool(ai.analyze, job, bank, data.get('route'), True)
+            return await run_in_threadpool(run_recorded, config.db_path, data.get('route'), 'requirements', ai.analyze, job, bank, data.get('route'), True)
         finally:
             ai_lock.release()
 
@@ -384,7 +395,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             with Store(config.db_path) as store:
                 job = _get_job(store, job_id)
             bank = configured_facts()
-            return await run_in_threadpool(ai.tailoring_suggestions, job, bank, data.get('route'), True)
+            return await run_in_threadpool(run_recorded, config.db_path, data.get('route'), 'resume_suggestions', ai.tailoring_suggestions, job, bank, data.get('route'), True)
         finally:
             ai_lock.release()
 

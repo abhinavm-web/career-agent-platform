@@ -148,7 +148,7 @@ class AITests(unittest.TestCase):
 
     def test_config_rejects_credentials_and_untrusted_endpoints(self):
         changes = [{'api_key': 'fictional-secret'}, {'provider': []}, {'max_tokens': True}, {'max_tokens': 99999},
-                   {'key_env': 'not a variable'}, {'base_url': 'http://localhost:1234/v1'},
+                   {'key_env': 'not a variable'}, {'record_history': 'true'}, {'daily_request_limit': True}, {'daily_request_limit': -1}, {'daily_request_limit': 10001}, {'base_url': 'http://localhost:1234/v1'},
                    {'base_url': 'https://example.invalid/v1'}, {'base_url': 'http://127.0.0.1:1234/v1?token=x'},
                    {'provider': 'azure', 'base_url': 'https://example.openai.azure.com.evil.invalid/openai/v1'},
                    {'provider': 'bedrock', 'region': 'invalid'}]

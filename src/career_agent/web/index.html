@@ -359,6 +359,11 @@
         <p id="ai-status" role="status" aria-live="polite">Configure .local/ai.json to enable model routes. Keep API keys in server environment variables.</p>
         <button type="button" class="button" id="ai-open-profile" hidden>Set up career profile</button>
         <div id="ai-results"></div>
+        <details><summary>Local AI request history and limits</summary>
+          <p>History is opt-in per route; setting a daily limit enables it. Requests, including failures and interrupted attempts, count toward that limit. This is not a spending limit; provider bills and token usage are not tracked.</p>
+          <button type="button" id="ai-history-refresh" class="button">Refresh request history</button>
+          <div id="ai-history" role="status" aria-live="polite"></div>
+        </details>
       </details>
       </section>
       <footer>Working product name · Local prototype · No automated submissions or hosted accounts</footer>
