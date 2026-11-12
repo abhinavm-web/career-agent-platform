@@ -169,6 +169,10 @@ class _IncompleteResponse(ValueError):
     pass
 
 
+class _InvalidCompletion(ValueError):
+    pass
+
+
 class _ResponseLimitExceeded(Exception):
     pass
 
@@ -184,6 +188,8 @@ def _provider_error_message(error):
         return 'The selected provider credential is not configured in the server environment.' + suffix
     if isinstance(error, _IncompleteResponse):
         return 'The provider response was incomplete or requested a tool; no result was accepted.' + suffix
+    if isinstance(error, _InvalidCompletion):
+        return 'The provider response was empty, too long, refused, or contained unsupported content; no result was accepted.' + suffix
     response = getattr(error, 'response', None)
     metadata = response.get('ResponseMetadata', {}) if isinstance(response, dict) else {}
     status = getattr(error, 'status_code', None)
@@ -337,6 +343,18 @@ class _CompletionText(str):
         return item
 
 
+def _completion_text(parts, reported_model=None):
+    """Accept bounded, nonempty text only; never silently omit provider blocks."""
+    if not isinstance(parts, list) or not parts or not all(isinstance(part, str) for part in parts):
+        raise _InvalidCompletion()
+    if sum(len(part) for part in parts) > 32000:
+        raise _InvalidCompletion()
+    text = ''.join(parts)
+    if not text.strip():
+        raise _InvalidCompletion()
+    return _CompletionText(text, reported_model)
+
+
 def complete(route, prompt, *, system=SYSTEM, json_schema=None):
     """One attempt, no fallback; SDK errors are sanitized before reaching UI/logs."""
     provider = route['provider']
@@ -352,9 +370,15 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                 r = client.converse(modelId=route['model'], system=[{'text': system}],
                     messages=[{'role': 'user', 'content': [{'text': prompt}]}],
                     inferenceConfig={'maxTokens': maximum})
-            if r.get('stopReason') != 'end_turn':
+            if not isinstance(r, dict) or r.get('stopReason') != 'end_turn':
                 raise _IncompleteResponse()
-            return _CompletionText(''.join(c['text'] for c in r['output']['message']['content'] if 'text' in c))
+            output = r.get('output')
+            message = output.get('message') if isinstance(output, dict) else None
+            blocks = message.get('content') if isinstance(message, dict) else None
+            if (not isinstance(message, dict) or message.get('role') != 'assistant' or not isinstance(blocks, list)
+                    or not all(isinstance(block, dict) and set(block) == {'text'} for block in blocks)):
+                raise _InvalidCompletion()
+            return _completion_text([block['text'] for block in blocks])
         # Ignore ambient proxies; local requests never leave through a proxy.
         with closing(_transport()) as transport:
             if provider == 'anthropic':
@@ -365,7 +389,10 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                         system=system, messages=[{'role': 'user', 'content': prompt}])
                 if r.stop_reason != 'end_turn':
                     raise _IncompleteResponse()
-                return _CompletionText(''.join(c.text for c in r.content if c.type == 'text'), getattr(r, 'model', None))
+                if (getattr(r, 'role', None) != 'assistant' or not isinstance(r.content, list)
+                        or not all(getattr(block, 'type', None) == 'text' for block in r.content)):
+                    raise _InvalidCompletion()
+                return _completion_text([getattr(block, 'text', None) for block in r.content], getattr(r, 'model', None))
             from openai import OpenAI
             with OpenAI(api_key=_key(route), base_url=route['base_url'],
                         http_client=transport, max_retries=0) as client:
@@ -375,10 +402,13 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                         {'name': 'resume_suggestions', 'schema': json_schema}}
                 r = client.chat.completions.create(model=route['model'],
                     messages=[{'role': 'system', 'content': system}, {'role': 'user', 'content': prompt}], **kwargs)
-            if len(r.choices) != 1 or r.choices[0].finish_reason != 'stop' or r.choices[0].message.tool_calls:
+            if len(r.choices) != 1 or r.choices[0].finish_reason != 'stop':
                 raise _IncompleteResponse()
-            content = r.choices[0].message.content
-            return _CompletionText(content, getattr(r, 'model', None)) if isinstance(content, str) else content
+            message = r.choices[0].message
+            if (getattr(message, 'role', None) != 'assistant' or getattr(message, 'tool_calls', None)
+                    or getattr(message, 'function_call', None) or getattr(message, 'refusal', None)):
+                raise _InvalidCompletion()
+            return _completion_text([message.content], getattr(r, 'model', None))
     except ImportError:
         raise ValueError('Install the optional AI dependencies: pip install -e ".[ai]"') from None
     except Exception as error:
