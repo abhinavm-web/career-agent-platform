@@ -76,6 +76,18 @@ class AutomationTests(unittest.TestCase):
             self.assertEqual({r['description_comparison'] for r in rows}, {'differs'})
             self.assertEqual(len(store.list_jobs()), 1)
 
+    def test_scheduled_discovery_preserves_conflicting_source_posting_dates(self):
+        self.auto.save(self.search)
+        row = {'company': 'Fictional', 'title': 'Engineer', 'url': 'https://example.invalid/dated',
+               'source': 'indeed', 'date_posted': '2025-02-03'}
+        with patch('career_agent.automation.fetch', return_value=[row, {**row, 'date_posted': '2025-03-04'}]):
+            self.assertTrue(self.auto.tick())
+        with Store(self.db) as store:
+            job = Job.from_mapping(row)
+            observation = store.discovery_observations([job.id])[job.id][0]
+            self.assertEqual(observation['posted_date_status'], 'conflicting')
+            self.assertIsNone(observation['reported_posted_date'])
+
     def test_discovery_description_comparison_preserves_saved_text_and_reviews(self):
         job = replace(fake_job(), source='indeed', description='Original Python skills.')
         with Store(self.db) as store:

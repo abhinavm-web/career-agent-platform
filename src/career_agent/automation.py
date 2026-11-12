@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Event, Thread
 from typing import TypedDict
 
-from .models import Job
+from .models import Job, merge_discovery_rows
 from .storage import Store
 
 
@@ -196,9 +196,9 @@ class Automation:
             rows = fetch(state['settings'], self.stop)
             return {'jobs': list(rows), 'source_status': getattr(rows, 'source_status', {})}
         def normalize(state):
-            normalized = {(j.id, j.source): j for j in (Job.from_mapping(r) for r in state['jobs'])}
+            normalized = merge_discovery_rows([Job.from_mapping(r) for r in state['jobs']], prefer_last=True)
             from dataclasses import asdict
-            return {'jobs': [asdict(j) for j in normalized.values()]}
+            return {'jobs': [asdict(j) for j in normalized]}
         def ingest(state):
             with Store(self.db) as store, store.connection:
                 store.connection.execute('BEGIN IMMEDIATE')

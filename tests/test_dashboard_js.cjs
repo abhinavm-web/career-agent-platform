@@ -338,8 +338,10 @@ test('discovery history is visible without claiming a job is current', async () 
   const job = {...fakeJob(ID_A, 'Role Alpha'), discovery_observations: [{
     source: '<fictional source>', first_seen: '2026-01-01T00:00:00Z',
     last_seen: '2026-01-02T00:00:00Z', observation_count: 2,
-    description_comparison: 'differs', description_observed_at: '2026-01-02T00:00:00Z'
-  }]};
+    description_comparison: 'differs', description_observed_at: '2026-01-02T00:00:00Z',
+    reported_posted_date: '2025-12-31', posted_date_status: 'partial', posted_date_observed_at: '2026-01-02T00:00:00Z'
+  }, {source: 'other', first_seen: '2026-01-01Z', last_seen: '2026-01-02Z', observation_count: 1,
+    reported_posted_date: '9999-01-01', posted_date_status: 'reported', posted_date_observed_at: '2026-01-02T00:00:00Z'}]};
   const h = createHarness({jobsOverride: [job]}); await flush();
   assert.match(h.get('job-list').textContent, /Source text differs/);
   h.get('job-list').children[0].click();
@@ -348,6 +350,10 @@ test('discovery history is visible without claiming a job is current', async () 
   assert.match(h.get('detail-panel').textContent, /not proof that the posting is open/);
   assert.match(h.get('detail-panel').textContent, /differs from the saved description/);
   assert.match(h.get('detail-panel').textContent, /may be partial or outdated/);
+  assert.match(h.get('detail-panel').textContent, /Source-reported posting date: 2025-12-31/);
+  assert.match(h.get('detail-panel').textContent, /Other returned rows did not provide a consistent date/);
+  assert.match(h.get('detail-panel').textContent, /does not establish that the role is open/);
+  assert.match(h.get('detail-panel').textContent, /reported date is in the future/);
 });
 
 test('hard constraint warnings appear separately from the score', async () => {
