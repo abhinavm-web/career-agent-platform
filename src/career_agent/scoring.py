@@ -3,10 +3,39 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 
 from .models import CandidateProfile, Job
 
 STOPWORDS = {"and", "or", "the", "of", "for", "a", "in", "to"}
+
+_PAY_NUMBER = r"(?:\d{1,3}(?:,\d{3}){1,2}|\d{1,9}(?:\.\d{1,3})?)(?:k)?"
+_ANNUAL_BASE = re.compile(
+    rf"^(?=.*(?:\bUSD\b|US\$))\s*(?:annual\s+)?base\s+salary\s*:\s*(?:USD\s*|US)?\$(?P<low>{_PAY_NUMBER})"
+    rf"(?:\s*(?:-|–|—|to)\s*(?:USD\s*|US)?\$(?P<high>{_PAY_NUMBER}))?"
+    r"\s*(?:per\s+(?:year|annum)|/\s*(?:year|yr)|annually|a\s+year)(?:\s+USD)?\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _annual_base_range(description: str):
+    """Recognize one exact annual base salary line; never infer a pay period or currency."""
+    lines = description.splitlines()
+    monetary = [line for line in lines if re.search(r"[$€£¥]\s*\d|\b(?:USD|CAD|EUR|GBP)\s*\d", line, re.IGNORECASE)]
+    if len(monetary) != 1:
+        return None
+    match = _ANNUAL_BASE.fullmatch(monetary[0])
+    if not match:
+        return None
+    def number(raw):
+        raw = raw.lower().replace(',', '')
+        amount = Decimal(raw[:-1]) * 1000 if raw.endswith('k') else Decimal(raw)
+        return int(amount) if amount == amount.to_integral_value() else 0
+    low = number(match.group('low'))
+    high = number(match.group('high') or match.group('low'))
+    if not 0 < low <= high <= 100_000_000:
+        return None
+    return low, high, monetary[0].strip()
 
 
 @dataclass(frozen=True)
@@ -58,6 +87,21 @@ def constraint_evidence(job: Job, profile: dict) -> list[dict[str, str]]:
             "detail": (f"The saved employer name exactly matches your exclusion: {exact}. Review this role before applying."
                        if exact else "No exact excluded name matched. Affiliates, aliases and legal identities are not checked."),
         })
+    minimum = profile.get("minimum_annual_base_usd")
+    if minimum is not None:
+        pay = _annual_base_range(job.description)
+        if pay is None:
+            results.append({"constraint": "Minimum annual base salary",
+                            "status": "unknown",
+                            "detail": "The saved posting does not contain one unambiguous annual USD base-salary line. Confirm compensation directly."})
+        else:
+            low, high, quote = pay
+            flagged = high < minimum
+            results.append({"constraint": "Minimum annual base salary",
+                            "status": "flagged" if flagged else "source_marked",
+                            "detail": (f"Saved posting: {quote}. " +
+                                       (f"The stated maximum is below your ${minimum:,} minimum." if flagged else
+                                        f"The stated amount or range reaches your ${minimum:,} minimum; actual offers and eligibility are not confirmed."))})
     return results
 
 

@@ -85,6 +85,15 @@ class WorkspaceModelTests(unittest.TestCase):
         self.assertIn("geographic eligibility", rows[0]["detail"])
         self.assertIn("aliases", rows[1]["detail"])
 
+    def test_salary_minimum_is_optional_validated_and_saved(self):
+        saved = self.ws.save(0, {**preferences(), 'minimum_annual_base_usd': 150000}, [])
+        self.assertEqual(self.ws.latest()['profile']['minimum_annual_base_usd'], 150000)
+        for minimum in [True, 1.5, 0, -1, 10_000_001, '150000']:
+            with self.subTest(minimum=minimum), self.assertRaisesRegex(ValueError, 'Minimum annual base salary'):
+                self.ws.save(saved['revision'], {**preferences(), 'minimum_annual_base_usd': minimum}, [])
+        cleared = self.ws.save(saved['revision'], {**preferences(), 'minimum_annual_base_usd': None}, [])
+        self.assertIsNone(cleared['profile']['minimum_annual_base_usd'])
+
     def test_fact_must_be_verified_in_separate_action(self):
         saved = self.ws.save(0, preferences(), [fact()])
         with self.assertRaisesRegex(ValueError, "Confirm at least one"):
@@ -258,6 +267,22 @@ class WorkspaceDashboardTests(unittest.TestCase):
         row = self.api("GET", "/api/jobs").json()["jobs"][0]
         self.assertEqual([item["status"] for item in row["constraint_evidence"]], ["unknown", "flagged"])
         self.assertTrue(row["fit_reasons"])
+
+    def test_board_compares_current_saved_description_with_minimum(self):
+        profile = {**preferences(), 'minimum_annual_base_usd': 150000}
+        result = self.api('PUT', '/api/workspace', {'expected_revision': 0, 'profile': profile, 'facts': []})
+        self.assertEqual(result.status_code, 200, result.text)
+        row = self.api('GET', '/api/jobs').json()['jobs'][0]
+        self.assertEqual(row['constraint_evidence'][0]['status'], 'unknown')
+        corrected = self.api('PUT', f'/api/jobs/{self.job.id}/description', {
+            'description': 'Base salary: USD $100,000 - $140,000 per year',
+            'expected_revision': 0, 'source_note': 'Fictional posting', 'acknowledged': True,
+        })
+        self.assertEqual(corrected.status_code, 200, corrected.text)
+        row = self.api('GET', '/api/jobs').json()['jobs'][0]
+        evidence = row['constraint_evidence'][0]
+        self.assertEqual(evidence['status'], 'flagged')
+        self.assertIn('Base salary: USD $100,000 - $140,000 per year', evidence['detail'])
 
     def test_legacy_import_only_when_explicit_and_does_not_edit_source(self):
         data = self.api("GET", "/api/workspace").json()["workspace"]
