@@ -32,6 +32,8 @@ def blank_workspace() -> dict[str, Any]:
             "skills": [],
             "preferred_locations": [],
             "allow_remote": True,
+            "require_remote": False,
+            "excluded_companies": [],
         },
         "facts": [],
     }
@@ -40,7 +42,7 @@ def blank_workspace() -> dict[str, Any]:
 def _validate_profile(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("profile must be an object")
-    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote"}:
+    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies"}:
         raise ValueError("Unknown profile field")
     name = value.get("name", "")
     headline = value.get("headline", "")
@@ -51,6 +53,11 @@ def _validate_profile(value: Any) -> dict[str, Any]:
     remote = value.get("allow_remote", True)
     if type(remote) is not bool:
         raise ValueError("allow_remote must be a boolean")
+    required_remote = value.get("require_remote", False)
+    if type(required_remote) is not bool:
+        raise ValueError("require_remote must be a boolean")
+    if required_remote and not remote:
+        raise ValueError("Include fully remote roles when requiring remote work")
     profile = {"name": name.strip(), "headline": headline.strip()}
     for field in PROFILE_LISTS:
         entries = value.get(field, [])
@@ -59,6 +66,12 @@ def _validate_profile(value: Any) -> dict[str, Any]:
             raise ValueError(f"{field} must contain at most 40 nonempty strings of 100 characters")
         profile[field] = list(dict.fromkeys(item.strip() for item in entries))
     profile["allow_remote"] = remote
+    profile["require_remote"] = required_remote
+    exclusions = value.get("excluded_companies", [])
+    if (not isinstance(exclusions, list) or len(exclusions) > 40 or
+            not all(isinstance(x, str) and 0 < len(x.strip()) <= 100 for x in exclusions)):
+        raise ValueError("excluded_companies must contain at most 40 nonempty names of 100 characters")
+    profile["excluded_companies"] = list(dict.fromkeys(item.strip() for item in exclusions))
     return profile
 
 

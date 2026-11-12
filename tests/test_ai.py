@@ -43,6 +43,10 @@ class AITests(unittest.TestCase):
         self.assertNotIn(self.bank.facts[0].source_note, prompt)
         self.assertEqual(result['suggestions'][0]['original_fact'], self.bank.public_claims()['experience-01'])
         self.assertIn('do not prove', result['notice'])
+        schema = complete.call_args.kwargs['json_schema']
+        item = schema['properties']['suggestions']['items']['properties']
+        self.assertEqual(item['fact_id']['enum'], ['experience-01'])
+        self.assertEqual(item['job_quote']['enum'], [self.job.description])
 
     def test_tailoring_rejects_invented_citations_and_schema(self):
         row = {'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Suggested wording'}
@@ -52,6 +56,27 @@ class AITests(unittest.TestCase):
                 ai.tailoring_suggestions(self.job, self.bank, 'local', True)
         with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [row, row]})), self.assertRaises(ValueError):
             ai.tailoring_suggestions(self.job, self.bank, 'local', True)
+
+    def test_route_diagnostics_require_consent_and_send_only_synthetic_text(self):
+        with patch('career_agent.ai.complete', return_value='OK') as complete:
+            for route, consent in [('local', False), ('missing', True), ([], True)]:
+                with self.assertRaises(ValueError):
+                    ai.test_route(route, consent)
+            complete.assert_not_called()
+            result = ai.test_route('local', True)
+            self.assertEqual(complete.call_args.args[1], 'Reply with OK.')
+            self.assertEqual(complete.call_args.args[0]['max_tokens'], 128)
+            self.assertNotIn('answer', result)
+        with patch('career_agent.ai.complete', return_value=' '), self.assertRaises(ValueError):
+            ai.test_route('local', True)
+
+    def test_catalog_readiness_never_discloses_key(self):
+        self.config.write_text(json.dumps({'cloud': {'provider': 'anthropic', 'model': 'fictional', 'key_env': 'FICTIONAL_TEST_KEY'}}))
+        with patch.dict(os.environ, {'FICTIONAL_TEST_KEY': 'do-not-disclose'}):
+            result = ai.catalog()
+        self.assertEqual(result[0]['credential_status'], 'configured')
+        self.assertNotIn('do-not-disclose', json.dumps(result))
+        self.assertNotIn('FICTIONAL_TEST_KEY', json.dumps(result))
 
     def test_profile_chat_requires_consent_and_sends_only_supplied_facts(self):
         claims = self.bank.public_claims()
@@ -142,6 +167,23 @@ class AITests(unittest.TestCase):
 
 @unittest.skipUnless(all(importlib.util.find_spec(m) for m in ('anthropic', 'openai', 'boto3', 'httpx')), 'Install optional AI dependencies')
 class SDKContracts(unittest.TestCase):
+    def test_ollama_receives_constrained_output_schema(self):
+        import httpx
+        original = httpx.Client
+        requests = []
+        def handler(request):
+            requests.append(request)
+            return httpx.Response(200, json={'id': 'fictional', 'object': 'chat.completion', 'created': 0,
+                'model': 'fictional', 'choices': [{'index': 0, 'finish_reason': 'stop',
+                'message': {'role': 'assistant', 'content': '{"suggestions":[]}'}}]})
+        schema = {'type': 'object', 'properties': {'suggestions': {'type': 'array'}}}
+        route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
+        with patch('career_agent.ai._transport', side_effect=lambda: original(transport=httpx.MockTransport(handler))):
+            ai.complete(route, 'fictional prompt', json_schema=schema)
+        format = json.loads(requests[0].content)['response_format']
+        self.assertEqual(format['type'], 'json_schema')
+        self.assertEqual(format['json_schema']['schema'], schema)
+
     def test_incomplete_and_tool_responses_are_rejected(self):
         import httpx
         route = {'provider': 'lmstudio', 'model': 'fictional', 'base_url': 'http://127.0.0.1:1234/v1'}

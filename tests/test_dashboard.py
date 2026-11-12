@@ -190,6 +190,16 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('GET', '/api/workspace').json(), before)
         self.assertFalse(self.packet_dir.exists())
 
+    def test_ai_route_test_requires_consent_and_releases_lock_on_failure(self):
+        with patch('career_agent.dashboard.ai.test_route', return_value={'notice': 'ok'}) as probe:
+            path = '/api/ai/test-route'
+            self.assertEqual(self.call('POST', path, {'route': 'local'}).status_code, 422)
+            probe.assert_not_called()
+            self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 200)
+            with patch('career_agent.dashboard.ai.test_route', side_effect=ValueError('unavailable')):
+                self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 422)
+            self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 200)
+
     def test_profile_chat_sends_only_opted_in_verified_statements(self):
         path = '/api/workspace/chat'
         request = {'route': 'local', 'message': 'What should I highlight?'}

@@ -39,7 +39,7 @@ from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
-from .scoring import score_job
+from .scoring import constraint_evidence, score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
@@ -201,7 +201,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
                  records: tuple, workspace_revision: int, posting_checks: PostingChecks,
-                 discovery_observations: list[dict]) -> dict:
+                 discovery_observations: list[dict], constraints: dict) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
@@ -224,6 +224,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "application_stage": store.stage_of(job.id),
             "fit_score": fit.score if fit is not None else None,
             "fit_reasons": list(fit.reasons) if fit is not None else [],
+            "constraint_evidence": constraint_evidence(job, constraints),
             "sponsorship_status": sponsorship["status"],
             "sponsorship_reason": sponsorship["reason"],
             "packet_available": packet is not None,
@@ -304,6 +305,18 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get("/api/ai/routes")
     def ai_routes():
         return {"routes": ai.catalog()}
+
+    @app.post("/api/ai/test-route")
+    async def ai_test_route(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"route", "acknowledged"} or data["acknowledged"] is not True:
+            raise ValueError("Confirm that the test contacts the selected provider and may incur charges")
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="An AI request is already running")
+        try:
+            return await run_in_threadpool(ai.test_route, data["route"], True)
+        finally:
+            ai_lock.release()
 
     @app.post("/api/workspace/chat")
     async def workspace_chat(request: Request):
@@ -547,7 +560,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             observations = store.discovery_observations([job.id for job in jobs])
             items = [
                 job_view(store, job, profile, records, workspace["revision"], posting_checks,
-                         observations.get(job.id, []))
+                         observations.get(job.id, []), workspace["profile"] if workspace["revision"] else {})
                 for job in jobs
             ]
         return {"jobs": items, "total": len(items), "next_before": next_before}

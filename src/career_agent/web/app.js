@@ -217,6 +217,8 @@
       const lower = node("div", "job-item-bottom");
       const signal = sponsorshipLabel(job.sponsorship_status);
       lower.append(chip(signal[0], signal[1]));
+      if (job.constraint_evidence?.some((row) => row.status === "flagged")) lower.append(chip("Constraint flagged", "amber"));
+      else if (job.constraint_evidence?.some((row) => row.status === "unknown")) lower.append(chip("Constraint unknown", "amber"));
       if (job.source) lower.append(chip("Source: " + job.source));
       const observation = postingObservation(job);
       lower.append(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""));
@@ -404,6 +406,16 @@
       byId("nav-h1b").click();
     }));
     detail.append(sponsor);
+
+    if (job.constraint_evidence?.length) {
+      const constraints = section("Your hard constraints");
+      constraints.append(node("p", "muted", "These are separate from the preference score. Review the source and confirm details before deciding."));
+      for (const row of job.constraint_evidence) {
+        const label = row.status === "flagged" ? "Flagged" : row.status === "source_marked" ? "Source marked" : "Unknown";
+        constraints.append(node("strong", "", row.constraint + " — " + label), node("p", "", row.detail));
+      }
+      detail.append(constraints);
+    }
 
     if (job.fit_reasons && job.fit_reasons.length) {
       const fit = section("Why this role matched");
@@ -762,7 +774,9 @@
       target_titles: linesFromText(byId("career-targets").value),
       skills: linesFromText(byId("career-skills").value),
       preferred_locations: linesFromText(byId("career-locations").value),
-      allow_remote: byId("career-remote").checked
+      allow_remote: byId("career-remote").checked,
+      require_remote: byId("career-require-remote").checked,
+      excluded_companies: linesFromText(byId("career-excluded-companies").value)
     };
   }
 
@@ -786,6 +800,8 @@
     byId("career-skills").value = p.skills.join("\n");
     byId("career-locations").value = p.preferred_locations.join("\n");
     byId("career-remote").checked = p.allow_remote;
+    byId("career-require-remote").checked = p.require_remote;
+    byId("career-excluded-companies").value = p.excluded_companies.join("\n");
     state.editingFactId = draft.editingFactId;
     byId("fact-form-heading").textContent = draft.editingFactId
       ? "Edit fact " + draft.editingFactId : "Add career fact";
@@ -842,6 +858,8 @@
     byId("career-skills").value = profile.skills.join("\n");
     byId("career-locations").value = profile.preferred_locations.join("\n");
     byId("career-remote").checked = profile.allow_remote;
+    byId("career-require-remote").checked = profile.require_remote || false;
+    byId("career-excluded-companies").value = (profile.excluded_companies || []).join("\n");
     byId("legacy-import").hidden = workspace.revision !== 0 || !state.settings.legacy_import_available;
     const list = byId("career-facts-list");
     list.replaceChildren();
