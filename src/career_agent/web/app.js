@@ -1437,6 +1437,47 @@
       row.append(node("strong", "", task.title), node("small", task.overdue ? "overdue" : "", task.due_date + " · " + task.company));
       due.append(row);
     }
+    const total = Number.isInteger(summary.open_followup_count) ? summary.open_followup_count : summary.open_followups.length;
+    if (total > summary.open_followups.slice(0, 6).length) due.append(node("p", "muted", "Showing the first " + Math.min(6, summary.open_followups.length) + " of " + total + " open follow-ups."));
+    const allTasks = node("div");
+    let loadingTasks = false;
+    async function showTasks(offset) {
+      if (loadingTasks) return;
+      loadingTasks = true; allTasks.replaceChildren(node("p", "muted", "Loading local follow-ups…"));
+      try {
+        const page = await api("/api/crm/followups?offset=" + offset);
+        if (state.crmSummary !== summary || state.screen !== "tracker") return;
+        allTasks.replaceChildren(node("p", "muted", "Open follow-ups " + (page.tasks.length ? offset + 1 : 0) + "–" + (page.tasks.length ? offset + page.tasks.length : 0) + " of " + page.total + ". Dates use this computer's local calendar. Lists can change; refresh to recheck."));
+        for (const task of page.tasks) {
+          const entry = node("div", "crm-record");
+          entry.append(node("strong", "", task.title), node("small", task.overdue ? "overdue" : "", task.due_date + " · " + task.company + " · " + task.job_title));
+          const controls = node("div", "button-row");
+          controls.append(button("Open tracked job", "button", () => {
+            if (state.crmJobId && !window.confirm("Open this job? Unsaved tracker form edits will be discarded.")) return;
+            selectCRMJob(task.job_id);
+          }));
+          controls.append(button("Mark completed", "button", async () => {
+            if (!window.confirm("Confirm this follow-up was completed? No email will be sent." + (state.crmJobId ? " Unsaved tracker form edits will be discarded." : ""))) return;
+            await crmPost("/api/crm/followups/" + task.followup_id + "/complete", {acknowledged: true}, "Follow-up marked completed.");
+          }));
+          controls.append(button("Cancel follow-up", "button", async () => {
+            if (!window.confirm("Cancel this follow-up? No message will be sent." + (state.crmJobId ? " Unsaved tracker form edits will be discarded." : ""))) return;
+            await crmPost("/api/crm/followups/" + task.followup_id + "/cancel", {acknowledged: true}, "Follow-up cancelled.");
+          }));
+          const date = node("input"); date.type = "date"; date.value = task.due_date;
+          date.setAttribute("aria-label", "Reschedule " + task.title);
+          controls.append(date, button("Reschedule", "button", () => {
+            if (state.crmJobId && !window.confirm("Reschedule this task? Unsaved tracker form edits will be discarded.")) return;
+            return crmPost("/api/crm/followups/" + task.followup_id + "/reschedule", {due_date: date.value}, "Follow-up rescheduled.");
+          }));
+          entry.append(controls); allTasks.append(entry);
+        }
+        if (offset > 0) allTasks.append(button("Previous follow-ups", "button", () => showTasks(Math.max(0, offset - 20))));
+        if (Number.isInteger(page.next_offset)) allTasks.append(button("Next follow-ups", "button", () => showTasks(page.next_offset)));
+      } catch (error) { if (state.crmSummary === summary) allTasks.textContent = error.message; }
+      finally { loadingTasks = false; }
+    }
+    if (total) due.append(button("Browse all open follow-ups", "button", () => showTasks(0)), allTasks);
     root.append(due);
     const suggestions = node("div", "crm-due-list");
     suggestions.append(node("h3", "", "Applications to review"), node("p", "muted",
@@ -1508,14 +1549,14 @@
     }
   }
 
-  async function selectCRMJob(jobId) {
+  async function selectCRMJob(jobId, followupOffset = 0) {
     state.crmJobId = jobId;
     state.crmDetails = null;
     const requestNumber = ++state.crmRequestSeq;
     renderCRMJobs();
     renderCRMDetail();
     try {
-      const details = await api("/api/jobs/" + jobId + "/crm");
+      const details = await api("/api/jobs/" + jobId + "/crm" + (followupOffset ? "?followup_offset=" + followupOffset : ""));
       if (requestNumber !== state.crmRequestSeq || state.crmJobId !== jobId) return;
       state.crmDetails = details;
       renderCRMDetail();
@@ -1710,7 +1751,7 @@
 
     const tasks = crmSection("Follow-ups and reminders");
     tasks.append(node("p", "muted", "Tasks are local reminders. Nothing is scheduled or sent automatically."));
-    if (!data.followups.length) tasks.append(node("p", "muted", "No follow-up tasks yet."));
+    if (!data.followups.length) tasks.append(node("p", "muted", data.followup_offset ? "No tasks on this page; the list may have changed." : "No follow-up tasks yet."));
     for (const followup of data.followups) {
       const row = node("div", "crm-record");
       row.append(node("strong", "", followup.title));
@@ -1741,6 +1782,16 @@
         row.append(buttons);
       }
       tasks.append(row);
+    }
+    const taskOffset = data.followup_offset || 0;
+    const taskTotal = Number.isInteger(data.followup_total) ? data.followup_total : data.followups.length;
+    if (taskTotal > data.followups.length || taskOffset) {
+      tasks.append(node("p", "muted", "Showing " + (data.followups.length ? taskOffset + 1 : 0) + "–" + (data.followups.length ? taskOffset + data.followups.length : 0) + " of " + taskTotal + " follow-ups. Lists can change; refresh to recheck."));
+      const page = (offset) => {
+        if (window.confirm("Change follow-up page? Unsaved tracker form edits on this job will be discarded.")) selectCRMJob(item.id, offset);
+      };
+      if (taskOffset) tasks.append(button("Previous job follow-ups", "button", () => page(Math.max(0, taskOffset - 100))));
+      if (Number.isInteger(data.followup_next_offset)) tasks.append(button("Next job follow-ups", "button", () => page(data.followup_next_offset)));
     }
     const followupForm = node("form", "crm-form");
     const title = crmInput("Follow-up title", "title", "text", true, 200);

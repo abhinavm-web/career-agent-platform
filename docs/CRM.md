@@ -39,7 +39,7 @@ For each opportunity, enter a recruiter's or referrer's name, optional role, ema
 
 ## Follow-up tasks
 
-Create a task title, due date (YYYY-MM-DD), and optionally link a contact associated with the same job. The summary lists upcoming and overdue tasks ordered by date. Open a job to reschedule, cancel, or explicitly mark a task complete. Cancellation removes an unnecessary task from the pending list without claiming that it was completed. These actions leave a local event history; cancelled and completed tasks cannot be changed.
+Create a task title, due date (YYYY-MM-DD), and optionally link a contact associated with the same job. The summary shows the first six open tasks and the total. Choose **Browse all open follow-ups** for dated pages, and open a job or use the page actions to reschedule, cancel, or explicitly mark a task complete. A job’s task history uses pages of 100, including completed and cancelled tasks; switching those pages discards unsaved tracker form edits. Lists can shift when tasks are added, completed, cancelled or rescheduled, so refresh when needed. Task actions refresh the tracker and return the job history to its first page. Cancellation removes an unnecessary task from the pending list without claiming that it was completed. These actions leave a local event history; cancelled and completed tasks cannot be changed.
 
 Follow-up dates are **not automation schedules**. No email, reminder notification or calendar entry is created. Overdue detection uses the computer's local date.
 
