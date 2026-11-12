@@ -23,7 +23,7 @@ All private candidate files should be outside the public repository or under a g
 - Draft a Markdown resume and cover note containing **only candidate-attested statements**.
 - Open a draft in the UI, inspect text and source-aware review checklist, then explicitly approve or reject.
 - New drafts include a fingerprinted list of selected verified facts, posting keyword matches and IDs of verified facts omitted by the 12-fact selection limit. The review panel shows those details without exposing private source notes. Older packets remain reviewable under their original fingerprints; regenerate to see the comparison.
-- Download an approved current résumé as PDF or editable Word. Word edits made after download are not tracked and are not covered by the packet approval; review those changes before use. Private career source notes are not included.
+- Download an approved current résumé as PDF or editable Word, and its cover note as UTF-8 plain text. Edits made after download are not tracked and are not covered by the packet approval; review those changes before use. Private career source notes are not included.
 - Approval/rejection is stored in a local append-only SQLite table with the packet fingerprint.
 - After **manually applying on an employer site**, record a confirmation reference and attestation to update application status.
 - Show dashboard counts and recent review decisions.

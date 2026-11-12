@@ -812,6 +812,29 @@ class DashboardTests(unittest.TestCase):
             'approved': False, 'acknowledged': True, 'packet_sha256': fingerprint})
         self.assertEqual(self.call('GET', path).status_code, 412)
 
+    def test_cover_note_export_requires_current_approval_and_preserves_exact_text(self):
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/cover-note.txt').status_code, 404)
+        fingerprint = self._draft()
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        path = f'/api/jobs/{self.job.id}/cover-note.txt?packet_sha256={fingerprint}'
+        self.assertEqual(self.call('GET', path, token='bad').status_code, 403)
+        self.assertEqual(self.call('GET', path).status_code, 412)
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/cover-note.txt?packet_sha256=' + 'a' * 64).status_code, 409)
+        result = self.call('GET', path)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.content, packet['cover_note'].encode('utf-8'))
+        self.assertNotIn(b'Private fictional evidence', result.content)
+        self.assertTrue(result.headers['content-type'].startswith('text/plain; charset=utf-8'))
+        self.assertEqual(result.headers['cache-control'], 'no-store')
+        self.assertIn(fingerprint[:12], result.headers['content-disposition'])
+        with patch('career_agent.dashboard.CandidateWorkspace.latest', return_value={'revision': 99}):
+            self.assertEqual(self.call('GET', path).status_code, 409)
+        self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': False, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(self.call('GET', path).status_code, 412)
+
     def test_no_token_cannot_read_jobs_or_write(self):
         denied = self.client.get("/api/jobs")
         self.assertEqual(denied.status_code, 403)

@@ -838,9 +838,29 @@
         finally { downloadWord.disabled = false; }
       });
       tools.append(downloadWord);
-      tools.append(node("p", "muted", "Word edits made after download are not tracked or covered by this approval."));
+      const downloadCover = button("Download reviewed cover note", "button", async () => {
+        downloadCover.disabled = true;
+        try {
+          const response = await fetch("/api/jobs/" + job.id + "/cover-note.txt?packet_sha256=" + packet.packet_sha256, {
+            headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || "Cover note export failed");
+          }
+          const url = URL.createObjectURL(await response.blob());
+          const link = document.createElement("a"); link.href = url;
+          link.download = "cover-note-" + job.id + "-" + packet.packet_sha256.slice(0, 12) + ".txt";
+          document.body.append(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          notice("Reviewed cover note downloaded. Edits made outside this app are not tracked; review before use.");
+        } catch (error) { notice(error.message, true); }
+        finally { downloadCover.disabled = false; }
+      });
+      tools.append(downloadCover);
+      tools.append(node("p", "muted", "Edits made after download are not tracked or covered by this approval."));
     } else {
-      tools.append(node("span", "muted", "Approve the current packet to download a resume PDF or Word document."));
+      tools.append(node("span", "muted", "Approve the current packet to download a résumé or cover note."));
     }
     card.append(tools);
 

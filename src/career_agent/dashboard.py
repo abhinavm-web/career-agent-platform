@@ -999,7 +999,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=409, detail=str(error)) from None
         return {**result, "submission_sent": False}
 
-    def approved_resume_packet(job_id: str, packet_sha256: str):
+    def approved_document_packet(job_id: str, packet_sha256: str):
         with Store(config.db_path) as store:
             _get_job(store, job_id)
             packet = current_packet(job_id)
@@ -1009,7 +1009,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=409, detail="Packet changed; reload, regenerate and review before export")
             decision = store.latest_review(job_id, packet_sha256)
             if not decision or decision["decision"] != "approved_for_manual_submission":
-                raise HTTPException(status_code=412, detail="Approve this packet before downloading its resume")
+                raise HTTPException(status_code=412, detail="Approve this packet before downloading its documents")
         return packet
 
     def recheck_export(job_id: str, packet_sha256: str, packet: dict):
@@ -1027,7 +1027,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get("/api/jobs/{job_id}/resume.pdf")
     def export_resume(job_id: str, packet_sha256: str = ""):
-        packet = approved_resume_packet(job_id, packet_sha256)
+        packet = approved_document_packet(job_id, packet_sha256)
         try:
             content = resume_pdf(packet)
         except PDFUnavailable as error:
@@ -1039,7 +1039,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get("/api/jobs/{job_id}/resume.docx")
     def export_resume_docx(job_id: str, packet_sha256: str = ""):
-        packet = approved_resume_packet(job_id, packet_sha256)
+        packet = approved_document_packet(job_id, packet_sha256)
         try:
             content = resume_docx(packet)
         except DOCXUnavailable as error:
@@ -1047,6 +1047,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
         recheck_export(job_id, packet_sha256, packet)
         return Response(content, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={
             "Content-Disposition": f'attachment; filename="resume-{job_id}-{packet_sha256[:12]}.docx"',
+        })
+
+    @app.get("/api/jobs/{job_id}/cover-note.txt")
+    def export_cover_note(job_id: str, packet_sha256: str = ""):
+        packet = approved_document_packet(job_id, packet_sha256)
+        note = packet.get('cover_note')
+        if (not isinstance(note, str) or not note.strip() or len(note) > 200_000
+                or any((ord(c) < 32 and c not in '\t\r\n') or 0xd800 <= ord(c) <= 0xdfff for c in note)):
+            raise ValueError('The reviewed packet has no valid cover note to export')
+        content = note.encode('utf-8')
+        recheck_export(job_id, packet_sha256, packet)
+        return Response(content, media_type='text/plain; charset=utf-8', headers={
+            'Content-Disposition': f'attachment; filename="cover-note-{job_id}-{packet_sha256[:12]}.txt"',
         })
 
     @app.post("/api/jobs/{job_id}/submitted")
