@@ -62,6 +62,14 @@ class PostingTests(unittest.TestCase):
         self.assertEqual(checked['availability'], 'listed')
         self.assertEqual(checked['policy']['policy'], 'excluded')
 
+    def test_live_posting_does_not_present_scoped_support_as_role_commitment(self):
+        text = '<p>Visa sponsorship is available for other roles.</p>'
+        checked = self.checked(payload(content=text))
+        self.assertEqual(checked['availability'], 'listed')
+        self.assertEqual(checked['policy']['policy'], 'conditional')
+        self.assertIn('Visa sponsorship is available for other roles.', checked['policy']['quotes'])
+        self.assertNotIn('potential_match', checked['policy'])
+
     def test_errors_redirects_and_removed_urls_remain_unknown(self):
         for response in ((403, b'', ''), (404, b'', ''), (429, b'', ''), (302, b'', ''),
                          (200, b'<html>captcha</html>', 'text/html'), (200, b'{}', 'application/json')):

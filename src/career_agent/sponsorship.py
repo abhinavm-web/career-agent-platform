@@ -122,6 +122,13 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
         # The recognized "H-1B transfers only" case retains its own category.
         is_conditional = is_conditional or bool(re.search(r'\bonly (?:for|if|when|to)\b|\bfor\b[^.!?]{1,120}\bonly\b', value))
         is_conditional = is_conditional or (not transfer_only and bool(re.search(r'\bonly\b', value)))
+        # A general offer can be scoped to another job or depend on a future
+        # decision. Neither establishes support for this particular candidate.
+        is_conditional = is_conditional or bool(re.search(
+            r'\b(?:subject to|pending|contingent (?:on|upon)|dependent (?:on|upon))\b'
+            r'|\b(?:at (?:the |our )?discretion|on a discretionary basis)\b'
+            r'|\b(?:for|in) (?:some|certain|other|select) (?:roles?|positions?|jobs?|cases?|circumstances?)\b'
+            r'|\b(?:except|excluding) (?:for )?(?:this|the) (?:role|position|job)\b', value))
         no_requirement = bool(re.search(r'no (?:visa )?sponsorship (?:is )?(?:required|needed|restrictions)', value))
         # A transfer-specific restriction says nothing about new sponsorship.
         # Keep mixed claims conflicting, and apply the restriction to a transfer need.
