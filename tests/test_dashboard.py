@@ -465,6 +465,27 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('model or endpoint', response.json()['detail'])
         self.assertNotIn('PRIVATE', response.text)
 
+    def test_fictional_tailoring_browser_api_respects_consent_route_and_limit(self):
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
+        path = '/api/ai/tailoring-sample'
+        before = self.call('GET', '/api/workspace').json()
+        cases = self.call('GET', path).json()['cases']
+        self.assertEqual(len(cases), 3)
+        output = {'suggestions': [{'fact_id': 'fact-01', 'job_quote': 'Experience building Python data pipelines.',
+                                   'wording': cases[0]['source_fact']}]}
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            fingerprint = ai.route_fingerprint('local', route['local'])
+            request = {'route': 'local', 'route_fingerprint': fingerprint, 'acknowledged': True}
+            self.assertEqual(self.call('POST', path, request, token='bad').status_code, 403)
+            self.assertEqual(self.call('POST', path, {**request, 'acknowledged': False}).status_code, 422)
+            self.assertEqual(self.call('POST', path, {**request, 'route_fingerprint': '0' * 64}).status_code, 422)
+            complete.assert_not_called()
+            response = self.call('POST', path, request)
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual([row['status'] for row in response.json()['cases']], ['validated_response', 'not_sent_limit'])
+            self.assertEqual(complete.call_count, 1)
+        self.assertEqual(self.call('GET', '/api/workspace').json(), before)
+
     def test_ai_history_limit_applies_across_dashboard_features(self):
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='OK') as complete:

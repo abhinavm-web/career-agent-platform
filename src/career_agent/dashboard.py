@@ -407,6 +407,27 @@ def create_app(config: DashboardConfig) -> FastAPI:
         finally:
             ai_lock.release()
 
+    @app.get('/api/ai/tailoring-sample')
+    def ai_tailoring_sample():
+        from .live_tailoring_evaluation import CASES
+        return {'cases': [{'case': case, 'source_fact': source, 'job_description': job,
+                           'title': 'Fictional analyst', 'company': 'Fictional employer'}
+                          for case, source, job in CASES]}
+
+    @app.post('/api/ai/tailoring-sample')
+    async def ai_tailoring_sample_run(request: Request):
+        from .live_tailoring_evaluation import evaluate
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm sending the fictional tailoring cases to the selected provider')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            return await run_in_threadpool(evaluate, data['route'], config.db_path, True, expected_route_fingerprint=fingerprint)
+        finally:
+            ai_lock.release()
+
     @app.post("/api/workspace/chat")
     async def workspace_chat(request: Request):
         data = await request.json()

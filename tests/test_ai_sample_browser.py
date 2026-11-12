@@ -56,6 +56,26 @@ class AISampleBrowserTests(unittest.TestCase):
                         self.assertEqual(page.locator('#ai-sample-results script').count(), 0)
                         expect(page.locator('#ai-sample-consent')).not_to_be_checked()
                         self.assertEqual(complete.call_count, 1)
+                        complete.reset_mock()
+                        def tailor(_route, prompt, **_kwargs):
+                            payload = json.loads(prompt)
+                            return json.dumps({'suggestions': [{'fact_id': 'fact-01',
+                                'job_quote': payload['job']['description'].splitlines()[1],
+                                'wording': payload['verified_facts']['fact-01']}]})
+                        complete.side_effect = tailor
+                        expect(page.locator('#ai-tailoring-sample-run')).to_be_disabled()
+                        page.get_by_text('Review fictional résumé tailoring cases').click()
+                        expect(page.locator('#ai-tailoring-sample-cases section')).to_have_count(3)
+                        page.locator('#ai-tailoring-sample-run').click()
+                        expect(page.locator('#ai-tailoring-sample-status')).to_contain_text('confirm the fictional test')
+                        complete.assert_not_called()
+                        page.locator('#ai-tailoring-sample-consent').check()
+                        page.locator('#ai-tailoring-sample-run').click()
+                        expect(page.locator('#ai-tailoring-sample-status')).to_contain_text('Fictional cases only')
+                        expect(page.locator('#ai-tailoring-sample-results section')).to_have_count(3)
+                        expect(page.locator('#ai-tailoring-sample-results')).to_contain_text('Built a prototype dashboard; it was not deployed to production.')
+                        expect(page.locator('#ai-tailoring-sample-consent')).not_to_be_checked()
+                        self.assertEqual(complete.call_count, 3)
                         with Store(db) as store:
                             self.assertEqual(store.list_jobs(), [])
                             self.assertEqual(CandidateWorkspace(store).latest()['revision'], 0)
