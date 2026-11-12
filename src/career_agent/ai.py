@@ -169,6 +169,14 @@ class _IncompleteResponse(ValueError):
     pass
 
 
+class _ResponseLimitExceeded(Exception):
+    pass
+
+
+class _UnsupportedResponseEncoding(Exception):
+    pass
+
+
 def _provider_error_message(error):
     """Map fixed error categories only; never return provider text or payloads."""
     suffix = ' No fallback was attempted.'
@@ -194,6 +202,10 @@ def _provider_error_message(error):
     while current is not None and id(current) not in seen and len(seen) < 8:
         seen.add(id(current)); kinds.add(type(current).__name__)
         current = current.__cause__ or current.__context__
+    if '_ResponseLimitExceeded' in kinds:
+        return 'The provider response exceeded the local size limit; no result was accepted.' + suffix
+    if '_UnsupportedResponseEncoding' in kinds:
+        return 'The provider returned a compressed response that cannot be safely bounded; no result was accepted.' + suffix
     if kinds & {'APITimeoutError', 'ConnectTimeout', 'ReadTimeout', 'WriteTimeout', 'PoolTimeout', 'ConnectTimeoutError', 'ReadTimeoutError', 'TimeoutError'}:
         return 'The provider request timed out. Check model loading and server availability before retrying.' + suffix
     if kinds & {'APIConnectionError', 'ConnectError', 'EndpointConnectionError'}:
@@ -269,9 +281,51 @@ def local_model_inventory(route_name, expected_fingerprint):
             'notice': 'IDs are reported by the local server. A listed model may not be loaded or usable; aliases may work even if absent. No inference was run.'}
 
 
+def _bounded_transport(inner=None, *, maximum=1024 * 1024):
+    """Bound raw HTTP response bytes before an SDK buffers a completion or error."""
+    import httpx
+
+    class LimitedStream(httpx.SyncByteStream):
+        def __init__(self, stream):
+            self.stream = stream
+        def __iter__(self):
+            received = 0
+            for chunk in self.stream:
+                received += len(chunk)
+                if received > maximum:
+                    raise _ResponseLimitExceeded()
+                yield chunk
+        def close(self):
+            self.stream.close()
+
+    class LimitedTransport(httpx.BaseTransport):
+        def __init__(self, transport):
+            self.transport = transport
+        def handle_request(self, request):
+            # Reject compression even if a server ignores the request: bounding
+            # compressed bytes alone cannot bound decoded memory consumption.
+            request.headers['Accept-Encoding'] = 'identity'
+            response = self.transport.handle_request(request)
+            encoding = response.headers.get('content-encoding', '').strip().casefold()
+            length = response.headers.get('content-length', '').strip()
+            if encoding not in ('', 'identity'):
+                response.close()
+                raise _UnsupportedResponseEncoding()
+            if length.isascii() and length.isdecimal() and (len(length) > 12 or int(length) > maximum):
+                response.close()
+                raise _ResponseLimitExceeded()
+            response.stream = LimitedStream(response.stream)
+            return response
+        def close(self):
+            self.transport.close()
+
+    return LimitedTransport(inner if inner is not None else httpx.HTTPTransport(retries=0, trust_env=False))
+
+
 def _transport():
     import httpx
-    return httpx.Client(timeout=httpx.Timeout(60, connect=10), trust_env=False, follow_redirects=False)
+    return httpx.Client(transport=_bounded_transport(), timeout=httpx.Timeout(60, connect=10),
+                        trust_env=False, follow_redirects=False)
 
 
 class _CompletionText(str):
