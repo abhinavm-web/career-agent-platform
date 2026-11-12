@@ -891,6 +891,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
         fetch_details = data.get('fetch_details', False)
         if type(fetch_details) is not bool or (fetch_details and results > 20):
             raise HTTPException(status_code=422, detail='Detail fetching requires a boolean and at most 20 results per source')
+        stage_changed = data.get('stage_changed_descriptions', False)
+        if type(stage_changed) is not bool or (stage_changed and not fetch_details):
+            raise HTTPException(status_code=422, detail='Saving changed source text requires the detail-fetch option')
         sites = data.get('sites')
         if 'sites' in data:
             try:
@@ -916,7 +919,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             except Exception as error:
                 raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
             with Store(config.db_path) as store:
-                added = store.add_discovered_jobs(jobs, stage_descriptions=fetch_details)
+                added = store.add_discovered_jobs(jobs, stage_descriptions=fetch_details, stage_changed_descriptions=stage_changed)
             result = {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
             if getattr(jobs, 'source_status', None):
                 result['source_status'] = jobs.source_status

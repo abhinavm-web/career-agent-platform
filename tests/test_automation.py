@@ -90,6 +90,23 @@ class AutomationTests(unittest.TestCase):
             self.assertEqual(store.get_job(job.id).description, 'Reviewed posting.')
             self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
 
+    def test_changed_descriptions_require_separate_opt_in_and_never_replace_saved_text(self):
+        job = replace(fake_job(), source='linkedin', description='Original posting.')
+        observed = replace(job, description='Updated unverified posting.')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+            store.add_discovered_jobs([observed], stage_descriptions=True)
+            self.assertEqual(store.description_candidates(job.id), [])
+            store.add_discovered_jobs([observed], stage_descriptions=True, stage_changed_descriptions=True)
+            self.assertEqual(store.get_job(job.id).description, job.description)
+            self.assertEqual(store.description_revision(job.id), 0)
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
+            self.assertTrue(store.discovery_observations([job.id])[job.id][0]['candidate_differs'])
+            store.correct_description(job.id, observed.description, 0, 'Reviewed fictional source')
+            self.assertFalse(store.discovery_observations([job.id])[job.id][0]['candidate_differs'])
+            store.add_discovered_jobs([replace(observed, description='')], stage_descriptions=True, stage_changed_descriptions=True)
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
+
     def test_saved_detail_search_stages_existing_blank_description(self):
         job = replace(fake_job(), source='linkedin', description='')
         with Store(self.db) as store:
@@ -121,7 +138,7 @@ class AutomationTests(unittest.TestCase):
             store.add_jobs([job])
             with store.connection:
                 store.connection.execute("INSERT INTO applications(job_id,stage) VALUES(?,'submitted')", (job.id,))
-            store.add_discovered_jobs([replace(job, description='Fictional source text.')], stage_descriptions=True)
+            store.add_discovered_jobs([replace(job, description='Fictional source text.')], stage_descriptions=True, stage_changed_descriptions=True)
             self.assertEqual(store.description_candidates(job.id), [])
             self.assertEqual(store.get_job(job.id).description, '')
 

@@ -917,6 +917,34 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(store.get_job(blank.id).description, '')
             self.assertEqual(store.description_revision(blank.id), 0)
 
+    def test_reviewed_description_update_requires_explicit_opt_in_and_invalidates_draft(self):
+        observed = replace(self.job, source='linkedin', description='Updated fictional description.')
+        data = {'query': 'Fictional role', 'location': 'USA', 'results': 5, 'sites': ['linkedin'],
+                'fetch_details': True, 'acknowledged': True}
+        fingerprint = self._draft()
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision',
+            {'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 200)
+        with patch('career_agent.dashboard.discover_isolated', return_value=[observed]) as discover:
+            self.assertEqual(self.call('POST', '/api/discover', {**data, 'fetch_details': False,
+                'stage_changed_descriptions': True}).status_code, 422)
+            self.assertEqual(self.call('POST', '/api/discover', {**data, 'stage_changed_descriptions': 'yes'}).status_code, 422)
+            discover.assert_not_called()
+            self.assertEqual(self.call('POST', '/api/discover', data).status_code, 200)
+            self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/description-candidates').json()['candidates'], [])
+            self.assertEqual(self.call('POST', '/api/discover', {**data, 'stage_changed_descriptions': True}).status_code, 200)
+        self.assertFalse(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        candidates = self.call('GET', f'/api/jobs/{self.job.id}/description-candidates').json()['candidates']
+        self.assertEqual(candidates[0]['description'], observed.description)
+        row = next(row for row in self.call('GET', '/api/jobs').json()['jobs'] if row['id'] == self.job.id)
+        self.assertTrue(row['discovery_observations'][0]['candidate_differs'])
+        self.assertEqual(row['description'], self.job.description)
+        payload = {'description': observed.description, 'source_note': 'Reviewed fictional posting',
+                   'expected_revision': 0, 'acknowledged': True}
+        self.assertEqual(self.call('PUT', f'/api/jobs/{self.job.id}/description', payload).status_code, 200)
+        self.assertTrue(self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision',
+            {'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint}).status_code, 409)
+
     def test_manual_discovery_reports_sanitized_partial_source_status(self):
         from career_agent.discovery import DiscoveryResults
         statuses = {'indeed': {'state': 'returned', 'returned': 1},
