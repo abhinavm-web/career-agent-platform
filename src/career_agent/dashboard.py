@@ -634,8 +634,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def settings():
         workspace = active_workspace()
         is_saved = workspace["revision"] > 0
+        profile = workspace["profile"]
+        if not is_saved and config.profile_path:
+            try:
+                legacy_profile = CandidateProfile.load(config.profile_path)
+                targets, skills = legacy_profile.target_titles, legacy_profile.skills
+            except (OSError, ValueError):
+                targets, skills = (), ()
+        else:
+            targets, skills = profile["target_titles"], profile["skills"]
         return {
             "profile_configured": bool(workspace["profile"]["name"]) if is_saved else config.profile_path is not None,
+            "target_titles_configured": bool(targets),
+            "skills_configured": bool(skills),
             "facts_configured": (
                 any(fact["verified_by_candidate"] for fact in workspace["facts"])
                 if is_saved else config.facts_path is not None
