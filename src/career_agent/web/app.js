@@ -156,8 +156,9 @@
   }
 
   function hasReviewableSourceText(job) {
-    return !job.description?.trim() && job.application_stage !== "submitted" &&
-      job.discovery_observations?.some((row) => Boolean(row.candidate_observed_at));
+    return job.application_stage !== "submitted" &&
+      job.discovery_observations?.some((row) => Boolean(row.candidate_observed_at) &&
+        (row.candidate_differs === true || (row.candidate_differs === undefined && !job.description?.trim())));
   }
 
   function filteredJobs() {
@@ -667,7 +668,7 @@
         finally { captureButton.disabled = false; submit.disabled = false; }
       });
       capturePanel.append(captureButton, captureStatus); form.append(capturePanel);
-      if (!job.description?.trim()) {
+      {
         const candidates = node("details");
         candidates.append(node("summary", "", "Review returned source descriptions"), node("p", "muted", "Load text previously returned by an opt-in detail search. Compare the source title and employer with this job and its original posting; the text is unverified and may be stale or belong to a different listing."));
         const candidateStatus = node("p", "muted"); candidateStatus.setAttribute("role", "status");
@@ -1890,7 +1891,7 @@
   byId("setup-add-job").addEventListener("click", () => byId("show-add-job").click());
   byId("ai-open-profile").addEventListener("click", () => byId("nav-profile").click());
   const manualSources = [["discover-site-indeed", "indeed"], ["discover-site-linkedin", "linkedin"], ["discover-site-zip", "zip_recruiter"]];
-  for (const id of ["discover-query", "discover-location", "discover-results", "discover-details", ...manualSources.map(([id]) => id)]) {
+  for (const id of ["discover-query", "discover-location", "discover-results", "discover-details", "discover-stage-changes", ...manualSources.map(([id]) => id)]) {
     byId(id).addEventListener("input", () => { byId("discover-consent").checked = false; });
     byId(id).addEventListener("change", () => { byId("discover-consent").checked = false; });
   }
@@ -1905,7 +1906,10 @@
     }
     const sites = manualSources.filter(([id]) => byId(id).checked).map(([, source]) => source);
     if (!sites.length) { status.textContent = "Choose at least one job source."; return; }
-    const controls = ["discover-query", "discover-location", "discover-results", "discover-details", "discover-consent", ...manualSources.map(([id]) => id)];
+    if (byId("discover-stage-changes").checked && !byId("discover-details").checked) {
+      status.textContent = "Request individual job details to retain changed source descriptions."; return;
+    }
+    const controls = ["discover-query", "discover-location", "discover-results", "discover-details", "discover-stage-changes", "discover-consent", ...manualSources.map(([id]) => id)];
     controls.forEach(id => { byId(id).disabled = true; });
     submit.disabled = true;
     byId("discover-form").setAttribute("aria-busy", "true");
@@ -1913,7 +1917,7 @@
     try {
       const result = await api("/api/discover", "POST", {
         query: byId("discover-query").value, location: byId("discover-location").value,
-        results: Number(byId("discover-results").value), sites, ...(byId("discover-details").checked ? {fetch_details: true} : {}), acknowledged: true
+        results: Number(byId("discover-results").value), sites, ...(byId("discover-details").checked ? {fetch_details: true} : {}), ...(byId("discover-stage-changes").checked ? {stage_changed_descriptions: true} : {}), acknowledged: true
       });
       status.textContent = result.found + " returned · " + result.new + " added · " + result.duplicates +
         " duplicates. Sources may return partial results." + (result.found ? "" : " No usable rows is inconclusive and may indicate a source failure.");

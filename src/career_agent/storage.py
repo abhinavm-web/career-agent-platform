@@ -118,7 +118,7 @@ class Store:
                 inserted += result.rowcount
         return inserted
 
-    def _record_discovery(self, jobs: list[Job], *, stage_descriptions: bool = False) -> int:
+    def _record_discovery(self, jobs: list[Job], *, stage_descriptions: bool = False, stage_changed_descriptions: bool = False) -> int:
         """Record returned rows within the caller's transaction, once per job/source."""
         inserted = 0
         for job in merge_discovery_rows(jobs):
@@ -130,7 +130,9 @@ class Store:
             if (stage_descriptions and not result.rowcount and job.source in {'indeed', 'linkedin', 'zip_recruiter'}
                     and _candidate_text_valid(job)):
                 saved = self.connection.execute('SELECT url,description FROM jobs WHERE job_id=?', (job.id,)).fetchone()
-                if saved and saved['url'] == job.url and not saved['description'].strip() and self.stage_of(job.id) != 'submitted':
+                if (saved and saved['url'] == job.url and self.stage_of(job.id) != 'submitted'
+                        and (not saved['description'].strip() or
+                             (stage_changed_descriptions and saved['description'] != job.description))):
                     self.connection.execute('''INSERT INTO job_description_candidates(job_id,source,description,title,company,observed_at)
                         VALUES(?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
                         ON CONFLICT(job_id,source) DO UPDATE SET description=excluded.description,
@@ -156,10 +158,10 @@ class Store:
             ''', (job.id, job.source, job.reported_posted_date, job.posted_date_status))
         return inserted
 
-    def add_discovered_jobs(self, jobs: list[Job], *, stage_descriptions: bool = False) -> int:
+    def add_discovered_jobs(self, jobs: list[Job], *, stage_descriptions: bool = False, stage_changed_descriptions: bool = False) -> int:
         """Atomically import jobs and record when a source returned each URL."""
         with self.connection:
-            return self._record_discovery(jobs, stage_descriptions=stage_descriptions)
+            return self._record_discovery(jobs, stage_descriptions=stage_descriptions, stage_changed_descriptions=stage_changed_descriptions)
 
     def description_candidates(self, job_id: str) -> list[dict]:
         rows = self.connection.execute('''SELECT source,description,title,company,observed_at
@@ -174,7 +176,7 @@ class Store:
             f'''SELECT o.job_id,o.source,o.first_seen,o.last_seen,o.observation_count,
                 d.description_sha256,d.observed_at,j.description,
                 p.reported_date,p.status AS posted_date_status,p.observed_at AS posted_date_observed_at,
-                c.observed_at AS candidate_observed_at
+                c.observed_at AS candidate_observed_at, c.description <> j.description AS candidate_differs
                 FROM job_discovery_observations o JOIN jobs j ON j.job_id=o.job_id
                 LEFT JOIN job_discovery_descriptions d ON d.job_id=o.job_id AND d.source=o.source
                 LEFT JOIN job_discovery_posting_dates p ON p.job_id=o.job_id AND p.source=o.source
@@ -188,6 +190,7 @@ class Store:
                 'matches' if digest == _description_digest(row['description']) else 'differs')
             item['description_observed_at'] = row['observed_at']
             item['candidate_observed_at'] = row['candidate_observed_at']
+            item['candidate_differs'] = bool(row['candidate_differs']) if row['candidate_observed_at'] else False
             item['reported_posted_date'] = row['reported_date']
             item['posted_date_status'] = row['posted_date_status'] or 'unknown'
             item['posted_date_observed_at'] = row['posted_date_observed_at']
