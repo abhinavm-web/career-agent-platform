@@ -225,6 +225,19 @@ class AITests(unittest.TestCase):
 
 @unittest.skipUnless(all(importlib.util.find_spec(m) for m in ('anthropic', 'openai', 'boto3', 'httpx')), 'Install optional AI dependencies')
 class SDKContracts(unittest.TestCase):
+    def test_provider_reported_model_is_bounded_untrusted_metadata(self):
+        import httpx
+        route = {'provider': 'lmstudio', 'model': 'alias', 'base_url': 'http://127.0.0.1:1234/v1'}
+        for label, expected in [('vendor/resolved-model:1', 'vendor/resolved-model:1'),
+                                ('private information with spaces', None), ('x' * 201, None)]:
+            def handler(request):
+                return httpx.Response(200, json={'id': 'fictional', 'object': 'chat.completion', 'created': 0,
+                    'model': label, 'choices': [{'index': 0, 'finish_reason': 'stop',
+                    'message': {'role': 'assistant', 'content': '{"requirements":[]}'}}]})
+            with self.subTest(label=label), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))):
+                response = ai.complete(route, 'fictional prompt')
+                self.assertEqual(response, '{"requirements":[]}')
+                self.assertEqual(response.reported_model, expected)
     def test_ollama_receives_constrained_output_schema(self):
         import httpx
         original = httpx.Client

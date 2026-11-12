@@ -16,6 +16,7 @@ class AISampleBrowserTests(unittest.TestCase):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
         from career_agent.dashboard import DashboardConfig, create_app
+        from career_agent.ai import _CompletionText
         from career_agent.storage import Store
         from career_agent.workspace import CandidateWorkspace
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
@@ -33,7 +34,7 @@ class AISampleBrowserTests(unittest.TestCase):
                     if server.started: break
                     time.sleep(.05)
                 self.assertTrue(server.started)
-                with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete, sync_playwright() as p:
+                with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=_CompletionText(json.dumps(output), 'resolved-model')) as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
@@ -47,6 +48,8 @@ class AISampleBrowserTests(unittest.TestCase):
                         complete.assert_not_called()
                         page.locator('#ai-sample-consent').check(); page.locator('#ai-sample-run').click()
                         expect(page.locator('#ai-sample-status')).to_contain_text('Fictional sample only')
+                        expect(page.locator('#ai-sample-status')).to_contain_text('Configured model: fictional')
+                        expect(page.locator('#ai-sample-status')).to_contain_text('Provider-reported model: resolved-model (unverified)')
                         expect(page.locator('#ai-sample-results')).to_contain_text('Experience building Python data pipelines.')
                         expect(page.locator('#ai-sample-results')).to_contain_text('<script>fictional</script>')
                         expect(page.locator('#ai-sample-results')).to_contain_text('response repeats an excerpt')

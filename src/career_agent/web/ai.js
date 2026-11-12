@@ -5,6 +5,7 @@
   let routes = [];
   let busy = false;
   const text = (tag, value) => { const n = document.createElement(tag); n.textContent = value; return n; };
+  const modelInfo = (result) => ` Configured model: ${result.model}. Provider-reported model: ${result.reported_model || "not available"} (unverified).`;
   async function api(path, data) {
     const r = await fetch(path, {method: data ? "POST" : "GET", cache: "no-store",
       headers: {"X-Session-Token": token, "Content-Type": "application/json"},
@@ -55,7 +56,7 @@
       const panel = el("ai-history"); panel.replaceChildren();
       panel.append(text("p", "Today (UTC): " + (history.today.map((row) => `${row.route}: ${row.attempts} attempts`).join("; ") || "no attempts")));
       if (!history.recent.length) panel.append(text("p", "No recorded AI requests."));
-      for (const row of history.recent) panel.append(text("p", `${row.started_at} UTC · ${row.route} · ${row.provider} · ${row.model} · ${row.purpose} · ${row.status}`));
+      for (const row of history.recent) panel.append(text("p", `${row.started_at} UTC · ${row.route} · ${row.provider} · configured model: ${row.model} · ${row.purpose} · ${row.status}`));
     } catch (error) { el("ai-history").textContent = error.message; }
     finally { button.disabled = false; }
   });
@@ -117,7 +118,7 @@
       const selected = routes.find((item) => item.route === el("ai-route").value);
       if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before testing.");
       const result = await api("/api/ai/test-route", {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
-      el("ai-test-status").textContent = result.notice;
+      el("ai-test-status").textContent = result.notice + modelInfo(result);
     } catch (e) { el("ai-test-status").textContent = e.message; }
     finally {
       controls.forEach((control, i) => { control.disabled = states[i]; });
@@ -141,7 +142,7 @@
       const selected = routes.find(item => item.route === el("ai-route").value);
       if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before testing.");
       const result = await api("/api/ai/sample-analysis", {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
-      el("ai-sample-status").textContent = result.notice;
+      el("ai-sample-status").textContent = result.notice + modelInfo(result);
       if (!result.requirements.length) el("ai-sample-results").append(text("p", "No sample requirements returned. This does not establish model quality."));
       if (result.requirements.length === 20) el("ai-sample-results").append(text("p", "The response reached the 20-item limit; it may be incomplete."));
       if (new Set(result.requirements.map(row => row.quote)).size < result.requirements.length)
@@ -174,7 +175,7 @@
       if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before sharing.");
       const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/${tailoring ? "ai-tailoring-suggestions" : "ai-analysis"}`, {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
       if (el("ai-job").dataset.requestedJob && el("ai-job").dataset.requestedJob !== jobId) return;
-      el("ai-status").textContent = `${r.notice} Model: ${r.model}. Checked: ${r.observed_at}.`;
+      el("ai-status").textContent = `${r.notice}${modelInfo(r)} Checked: ${r.observed_at}.`;
       if (tailoring) {
         if (!r.suggestions.length) el("ai-results").append(text("p", "No wording suggestions returned."));
         for (const row of r.suggestions) {
