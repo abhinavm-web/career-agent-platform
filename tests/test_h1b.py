@@ -595,6 +595,21 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.research.search('Example', name_mode='unknown')
 
+    def test_broad_name_search_finds_jobs_without_joining_legal_entities(self):
+        self.ingest([{'EMPLOYER_NAME': 'Example Inc'}, {'EMPLOYER_NAME': 'Example, Inc.'}])
+        job = Job.from_mapping({'company': 'Example, Inc.', 'title': 'Engineer',
+                                'job_url': 'https://example.invalid/broad-search',
+                                'description': 'Python skills.'})
+        self.store.add_jobs([job])
+        self.assertEqual(self.research.search('Example Inc')['jobs'], [])
+        result = self.research.search('Example Inc', name_mode='punctuation')
+        self.assertEqual([item['id'] for item in result['jobs']], [job.id])
+        self.assertEqual(result['jobs'][0]['association_scope'], 'exact_name')
+        self.assertIsNone(result['jobs'][0]['employer_association'])
+        self.assertEqual(result['jobs'][0]['history']['employer'], 'Example, Inc.')
+        self.assertEqual(result['jobs'][0]['history']['recent_certified_cases'], 1)
+        self.assertEqual(result['jobs'][0]['policy'], 'unknown')
+
     def test_punctuation_search_paginates_distinct_legal_names(self):
         self.ingest([{'EMPLOYER_NAME': f'Example-{i:02d} LLC'} for i in range(27)])
         first = self.research.search('Ex.ample', name_mode='punctuation')

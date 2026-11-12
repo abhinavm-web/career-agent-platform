@@ -573,7 +573,9 @@ class H1BResearch:
         else:
             total = self.conn.execute(employers + 'SELECT COUNT(DISTINCT employer_key) FROM employers WHERE instr(employer_key,?)>0', (key,)).fetchone()[0]
             companies = self.conn.execute(employers + 'SELECT MIN(employer) AS employer FROM employers WHERE instr(employer_key,?)>0 GROUP BY employer_key ORDER BY employer_key LIMIT 25 OFFSET ?', (key, offset)).fetchall()
-        jobs = [self.job(job, settings) for job in self.store.list_jobs(limit=-1) if key in employer_key(job.company)]
+        jobs = [self.job(job, settings) for job in self.store.list_jobs(limit=-1)
+                if (candidate_key in employer_search_key(job.company) if name_mode == 'punctuation'
+                    else key in employer_key(job.company))]
         if not settings['include_unknown']:
             jobs = [job for job in jobs if job['policy'] != 'unknown']
         return {'companies': [self.company(row['employer'], settings) for row in companies],
