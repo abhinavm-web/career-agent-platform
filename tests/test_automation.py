@@ -66,6 +66,65 @@ class AutomationTests(unittest.TestCase):
         self.assertNotIn('fetch_description', calls[0])
         self.assertIs(calls[1]['fetch_description'], True)
 
+    def test_description_candidates_require_opt_in_and_never_overwrite_saved_jobs(self):
+        job = replace(fake_job(), source='linkedin', description='')
+        observed = replace(job, description='Fictional source description.', title='Source reported title')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+            store.add_discovered_jobs([observed])
+            self.assertEqual(store.description_candidates(job.id), [])
+            store.add_discovered_jobs([observed], stage_descriptions=True)
+            candidates = store.description_candidates(job.id)
+            self.assertEqual(len(candidates), 1)
+            self.assertEqual(candidates[0]['description'], observed.description)
+            self.assertEqual(candidates[0]['title'], observed.title)
+            self.assertEqual(store.get_job(job.id).description, '')
+            self.assertEqual(store.description_revision(job.id), 0)
+            self.assertTrue(store.discovery_observations([job.id])[job.id][0]['candidate_observed_at'])
+            store.add_discovered_jobs([replace(job, description='')], stage_descriptions=True)
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
+            store.add_discovered_jobs([replace(job, description='x' * 50001)], stage_descriptions=True)
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
+            store.correct_description(job.id, 'Reviewed posting.', 0, 'Fictional source')
+            store.add_discovered_jobs([replace(job, description='Later text.')], stage_descriptions=True)
+            self.assertEqual(store.get_job(job.id).description, 'Reviewed posting.')
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
+
+    def test_saved_detail_search_stages_existing_blank_description(self):
+        job = replace(fake_job(), source='linkedin', description='')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+        self.auto.save(self.search | {'sites': ['linkedin'], 'fetch_details': True})
+        observed = replace(job, description='Fictional detail from source.')
+        with patch('career_agent.automation.fetch', return_value=DiscoveryResults(
+                [asdict(observed)], {'linkedin': {'state': 'returned', 'returned': 1}})) as fetch:
+            self.assertTrue(self.auto.tick())
+            self.assertTrue(fetch.call_args.args[0]['fetch_details'])
+        with Store(self.db) as store:
+            self.assertEqual(store.get_job(job.id).description, '')
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], observed.description)
+
+    def test_candidate_staging_rolls_back_with_a_failed_import(self):
+        job = replace(fake_job(), source='linkedin', description='')
+        malformed = Job(company='Fictional', title='Role', location='', url='not a URL')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+            with self.assertRaises(ValueError):
+                store.add_discovered_jobs([replace(job, description='Fictional source text.'), malformed],
+                                          stage_descriptions=True)
+            self.assertEqual(store.description_candidates(job.id), [])
+            self.assertEqual(store.discovery_observations([job.id]), {})
+
+    def test_submitted_job_does_not_stage_a_description_candidate(self):
+        job = replace(fake_job(), source='linkedin', description='')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+            with store.connection:
+                store.connection.execute("INSERT INTO applications(job_id,stage) VALUES(?,'submitted')", (job.id,))
+            store.add_discovered_jobs([replace(job, description='Fictional source text.')], stage_descriptions=True)
+            self.assertEqual(store.description_candidates(job.id), [])
+            self.assertEqual(store.get_job(job.id).description, '')
+
     def test_isolated_worker_forwards_detail_opt_in(self):
         from career_agent.discovery_worker import main
         payload = {'query': 'Fictional', 'location': 'USA', 'results': 5,

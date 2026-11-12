@@ -287,7 +287,8 @@ class Automation:
                 lease = store.connection.execute('SELECT token,expires FROM discovery_lease WHERE id=1').fetchone()
                 if not enabled or not enabled['enabled'] or lease['token'] != run_id or lease['expires'] <= time.time() or self.stop.is_set():
                     raise ValueError('Discovery was paused or lease expired')
-                added = store._record_discovery([Job.from_mapping(raw) for raw in state['jobs']])
+                added = store._record_discovery([Job.from_mapping(raw) for raw in state['jobs']],
+                                                stage_descriptions=state['settings'].get('fetch_details') is True)
                 counts = {'found': len(state['jobs']), 'added': added, 'source_status': state.get('source_status', {})}
                 store.connection.execute('INSERT INTO discovery_imports VALUES(?,?)', (run_id,json.dumps(counts)))
                 return {'counts': counts}

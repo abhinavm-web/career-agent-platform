@@ -246,6 +246,7 @@
       if (job.source) lower.append(chip("Source: " + job.source));
       if (!job.description?.trim()) lower.append(chip("Description missing", "amber"));
       if (job.discovery_observations?.some((row) => row.description_comparison === "differs")) lower.append(chip("Source text differs", "amber"));
+      if (!job.description?.trim() && job.discovery_observations?.some((row) => row.candidate_observed_at)) lower.append(chip("Source text to review", "amber"));
       const observation = postingObservation(job);
       lower.append(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""));
       if (job.packet_available) lower.append(chip(
@@ -635,6 +636,39 @@
         finally { captureButton.disabled = false; submit.disabled = false; }
       });
       capturePanel.append(captureButton, captureStatus); form.append(capturePanel);
+      if (!job.description?.trim()) {
+        const candidates = node("details");
+        candidates.append(node("summary", "", "Review returned source descriptions"), node("p", "muted", "Load text previously returned by an opt-in detail search. Compare the source title and employer with this job and its original posting; the text is unverified and may be stale or belong to a different listing."));
+        const candidateStatus = node("p", "muted"); candidateStatus.setAttribute("role", "status");
+        const candidateList = node("div");
+        const loadCandidates = button("Load saved source text", "button", async () => {
+          if (loadCandidates.disabled) return;
+          loadCandidates.disabled = true; candidateStatus.textContent = "Loading saved source text…";
+          try {
+            const result = await api("/api/jobs/" + job.id + "/description-candidates");
+            if (!editor.isConnected || state.selectedId !== job.id) return;
+            if (result.job_id !== job.id || !Array.isArray(result.candidates)) throw new Error("Unable to load source text for this job.");
+            candidateList.replaceChildren();
+            candidateStatus.textContent = result.candidates.length ? "Review each source before using it. This does not save a correction." : "No saved source text is available for review.";
+            for (const candidate of result.candidates) {
+              const entry = node("section");
+              entry.append(node("p", "", `Source: ${candidate.source} · received ${candidate.observed_at} · ${candidate.title} at ${candidate.company}`),
+                           node("p", "description", candidate.description));
+              entry.append(button("Use this source text", "button", () => {
+                if (submit.disabled) return;
+                if (input.value.trim() && !window.confirm("Replace the description editor text with this source text?")) return;
+                input.value = candidate.description;
+                if (!source.value.trim()) source.value = `JobSpy ${candidate.source}, received ${candidate.observed_at}; source text not independently verified.`;
+                acknowledged.checked = false;
+                candidateStatus.textContent = "Text loaded into the editor only. Review it and confirm before saving.";
+              }));
+              candidateList.append(entry);
+            }
+          } catch (error) { candidateStatus.textContent = error.message; }
+          finally { loadCandidates.disabled = false; }
+        });
+        candidates.append(loadCandidates, candidateStatus, candidateList); form.append(candidates);
+      }
       const submit = button("Save corrected description", "button button-primary"); submit.type = "submit";
       const status = node("p", "muted"); status.setAttribute("role", "status");
       form.append(submit, status);

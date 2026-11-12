@@ -878,7 +878,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             except Exception as error:
                 raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
             with Store(config.db_path) as store:
-                added = store.add_discovered_jobs(jobs)
+                added = store.add_discovered_jobs(jobs, stage_descriptions=fetch_details)
             result = {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
             if getattr(jobs, 'source_status', None):
                 result['source_status'] = jobs.source_status
@@ -950,6 +950,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def interview_preparation(job_id: str):
         from .interview_prep import preparation_guide
         return preparation_guide(fit_evidence(job_id))
+
+    @app.get('/api/jobs/{job_id}/description-candidates')
+    def description_candidates(job_id: str):
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            return {'job_id': job.id, 'candidates': store.description_candidates(job.id)}
 
     @app.post('/api/jobs/{job_id}/capture-preview')
     async def capture_description_preview(job_id: str, request: Request):

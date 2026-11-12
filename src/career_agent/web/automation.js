@@ -44,7 +44,7 @@
       input.type = "checkbox"; input.checked = s.settings.sites.includes(id); siteFields[id] = input;
       wrapper.prepend(input); form.append(wrapper);
     }
-    const detailLabel = node("label", " Request individual job details when supported on each run (additional external requests; up to 20 results per source).");
+    const detailLabel = node("label", " Request individual job details when supported on each run (additional external requests; up to 20 results per source). Text for existing jobs without descriptions may be stored locally for review; saved descriptions are not overwritten.");
     const detail = document.createElement("input"); detail.type = "checkbox"; detail.checked = s.settings.fetch_details === true;
     detailLabel.prepend(detail); form.append(detailLabel);
     const consentLabel = node("label", " I confirm these settings for future recurring searches.");
