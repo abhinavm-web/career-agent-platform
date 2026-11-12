@@ -296,8 +296,15 @@
           <span id="profile-revision" class="config-pill">Not saved yet</span>
         </div>
         <p class="muted">These details are stored in your local SQLite database, not in Git. Storage is not encrypted. Only individually verified facts can appear in generated application drafts.</p>
-        <section class="profile-guide panel" aria-label="Profile setup steps"><div><span class="eyebrow">YOUR FOUNDATION</span><h3>Build a profile you can trust</h3><p>Start with a résumé or preferences, then review and verify each career fact before using it in a draft.</p></div><div class="button-row"><button id="profile-start-resume" class="button button-primary" type="button">Import a résumé</button><button id="profile-start-preferences" class="button" type="button">Set preferences</button></div></section>
-        <details class="panel profile-editor">
+        <section class="profile-guide panel" aria-label="Profile setup steps"><div><span class="eyebrow">YOUR FOUNDATION</span><h3>Build a profile you can trust</h3><p>Start with a résumé or preferences, then review and verify each career fact before using it in a draft.</p></div><div class="button-row"><button id="profile-start-guided" class="button button-primary" type="button">Start guided setup</button><button id="profile-start-resume" class="button" type="button">Import a résumé</button><button id="profile-start-preferences" class="button" type="button">Set preferences</button></div></section>
+        <section id="profile-wizard" class="panel profile-editor" aria-label="Guided profile setup" hidden>
+          <p class="eyebrow">GUIDED SETUP</p><h3 id="profile-wizard-heading" tabindex="-1">1 of 3 · Preferences</h3>
+          <p id="profile-wizard-instructions" class="muted"></p>
+          <p class="muted">Moving between steps keeps entries in this page, but only the Save buttons write to your workspace. Extracted statements are never verified automatically.</p>
+          <div class="button-row"><button id="profile-wizard-previous" type="button" class="button">Previous step</button><button id="profile-wizard-next" type="button" class="button button-primary">Next step</button><button id="profile-wizard-exit" type="button" class="button">Exit guided setup</button></div>
+        </section>
+        <section id="profile-wizard-resume" class="panel profile-editor" aria-label="Résumé import step" hidden></section>
+        <details id="profile-portability" class="panel profile-editor">
           <summary>Export or import career profile</summary>
           <p class="muted">Export the current profile and facts, including contact details, private source notes and any AI wording source excerpts, to an unencrypted JSON file. This is not a full backup: jobs, application history, previous revisions and documents are excluded. Keep the file private.</p>
           <button id="career-export" type="button" class="button">Download career profile JSON</button>
@@ -313,7 +320,7 @@
           <p class="muted">You can copy the configured profile and verified fact bank into this editable workspace. Your original files will not be changed.</p>
           <button id="import-career-data" type="button" class="button">Import configured files</button>
         </div>
-        <details class="panel profile-editor">
+        <details id="profile-assistant" class="panel profile-editor">
           <summary>Ask a career assistant</summary>
           <p class="muted">Each request sends your question, this session's conversation and any selected verified facts to the selected provider. Answers are unverified suggestions and do not change your profile. Conversations are not saved; cloud providers may charge for use.</p>
           <button id="profile-chat-load" type="button" class="button">Load model routes</button>
@@ -348,7 +355,7 @@
           <p class="muted">Title-level phrases compare literally with saved job titles and do not determine seniority or eligibility. Required remote, employer exclusions, and minimum annual base salary are reviewed separately from the preference score. Confirm remote scope, employer identity, and compensation directly.</p>
           <div class="form-footer"><span class="muted">Changing preferences does not automatically verify a career achievement.</span><button type="submit" class="button button-primary">Save preferences</button></div>
         </form>
-        <div class="panel profile-editor">
+        <div id="career-facts-panel" class="panel profile-editor">
           <div class="section-heading"><div><h3>Career facts</h3><p class="muted">Each achievement or credential needs your explicit verification. Changing its content revokes earlier verification.</p></div></div>
           <div id="career-facts-list" aria-label="Saved career facts"></div>
           <details>
@@ -404,7 +411,7 @@
             </div>
           </form>
         </div>
-        <div class="panel profile-editor">
+        <div id="profile-revisions-panel" class="panel profile-editor">
           <h3>Local revision history</h3>
           <p class="muted">Saved revisions are append-only. This history is readable on this device but is not encrypted or a cloud backup.</p>
           <div id="career-revision-list" aria-label="Career workspace revisions"></div>

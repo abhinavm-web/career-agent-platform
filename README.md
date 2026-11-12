@@ -75,6 +75,12 @@ and may send the selected job and verified facts to that provider. For restorabl
 passphrase-protected archives, see [backup and restore](docs/BACKUP.md). For a
 separate fictional demo and test commands, see [Local development](docs/LOCAL_DEVELOPMENT.md).
 
+The Application panel can compare AI-suggested wording beside its verified source fact.
+Each request requires consent to the displayed provider. Saving wording stages a new
+unverified fact; review and verify it separately before including it in a draft.
+Career profile also offers guided preferences, local résumé extraction, and fact-review
+steps. Moving between steps does not save inputs or verify facts automatically.
+
 ## Design and future direction
 
 See the [Product Requirements Document](docs/PRD.md) for the complete vision, feature catalog and release gates; then [Architecture](docs/ARCHITECTURE.md), [Roadmap](docs/ROADMAP.md), [Security](SECURITY.md), and [Open-source integration notes](docs/UPSTREAM.md) for the current implementation.
