@@ -121,6 +121,15 @@ class PacketTests(unittest.TestCase):
             self.job, fictional_preferences(), self.bank, fictional_evidence()
         )
 
+    def test_contact_line_is_in_the_reviewed_packet_and_changes_its_fingerprint(self):
+        raw = fictional_facts()
+        raw['resume_contact'] = 'fictional@example.invalid · +1 555 0100'
+        bank = FactBank.parse(raw)
+        packet = build_packet(self.job, fictional_preferences(), bank, fictional_evidence())
+        self.assertIn(raw['resume_contact'], packet['resume_markdown'])
+        self.assertNotEqual(packet['packet_sha256'], self.packet['packet_sha256'])
+        self.assertNotIn(raw['resume_contact'], bank.public_claims().values())
+
     def test_packet_has_exact_supported_claims_no_inventions(self):
         resume = self.packet["resume_markdown"]
         self.assertIn("Delivered a fictional AWS automation pilot", resume)

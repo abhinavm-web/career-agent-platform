@@ -36,13 +36,14 @@ class ResumePDFTests(unittest.TestCase):
     def test_pdf_contains_selectable_text_and_all_long_document_facts(self):
         from pypdf import PdfReader
         statements = [f"Fictional achievement {i:03d}: verification of financial workflows and software delivery." for i in range(80)]
-        packet = sample_packet("# Fictional Candidate\nAI Program Lead\n## Relevant Experience\n" + "\n".join("- " + s for s in statements))
+        packet = sample_packet("# Fictional Candidate\nfictional@example.invalid\nAI Program Lead\n## Relevant Experience\n" + "\n".join("- " + s for s in statements))
         content = resume_pdf(packet)
         self.assertTrue(content.startswith(b"%PDF-"))
         reader = PdfReader(io.BytesIO(content))
         self.assertGreater(len(reader.pages), 1)
         text = " ".join(" ".join(page.extract_text().split()) for page in reader.pages)
         self.assertIn("Fictional Candidate", text)
+        self.assertIn("fictional@example.invalid", text)
         for statement in statements:
             self.assertIn(statement, text)
         self.assertNotIn("PRIVATE EVIDENCE", text)

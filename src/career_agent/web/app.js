@@ -959,6 +959,7 @@
     return {
       name: byId("career-name").value.trim(),
       headline: byId("career-headline").value.trim(),
+      resume_contact: byId("career-resume-contact").value.trim(),
       target_titles: linesFromText(byId("career-targets").value),
       skills: linesFromText(byId("career-skills").value),
       preferred_locations: linesFromText(byId("career-locations").value),
@@ -986,6 +987,7 @@
     const p = draft.profile;
     byId("career-name").value = p.name;
     byId("career-headline").value = p.headline;
+    byId("career-resume-contact").value = p.resume_contact || "";
     byId("career-targets").value = p.target_titles.join("\n");
     byId("career-skills").value = p.skills.join("\n");
     byId("career-locations").value = p.preferred_locations.join("\n");
@@ -1046,6 +1048,7 @@
     byId("profile-revision").textContent = "Revision " + workspace.revision;
     byId("career-name").value = profile.name;
     byId("career-headline").value = profile.headline;
+    byId("career-resume-contact").value = profile.resume_contact || "";
     byId("career-targets").value = profile.target_titles.join("\n");
     byId("career-skills").value = profile.skills.join("\n");
     byId("career-locations").value = profile.preferred_locations.join("\n");

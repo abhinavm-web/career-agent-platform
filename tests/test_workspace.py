@@ -53,6 +53,21 @@ class WorkspaceModelTests(unittest.TestCase):
         self.addCleanup(self.store.connection.close)
         self.ws = CandidateWorkspace(self.store)
 
+    def test_resume_contact_persists_and_old_clients_do_not_erase_it(self):
+        line = 'fictional@example.invalid · +1 555 0100'
+        saved = self.ws.save(0, {**preferences(), 'resume_contact': line}, [fact()])
+        self.assertEqual(saved['profile']['resume_contact'], line)
+        saved = self.ws.verify(saved['revision'], 'pilot-01', True, True)
+        self.assertEqual(self.ws.fact_bank(saved).resume_contact, line)
+        updated = self.ws.save(saved['revision'], preferences(), saved['facts'])
+        self.assertEqual(updated['profile']['resume_contact'], line)
+        self.assertTrue(updated['facts'][0]['verified_by_candidate'])
+        cleared = self.ws.save(updated['revision'], {**preferences(), 'resume_contact': ''}, updated['facts'])
+        self.assertEqual(cleared['profile']['resume_contact'], '')
+        for invalid in ('name\nnew line', 'bad\x00character', 'x' * 501, None):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.ws.save(cleared['revision'], {**preferences(), 'resume_contact': invalid}, cleared['facts'])
+
     def test_blank_document_requires_explicit_first_save(self):
         self.assertEqual(self.ws.latest(), blank_workspace())
         self.assertEqual(self.ws.history(), [])
@@ -438,6 +453,22 @@ class WorkspaceDashboardTests(unittest.TestCase):
         }).status_code, 409)
         with Store(self.db) as store:
             self.assertEqual(store.stage_of(self.job.id), "discovered")
+
+    def test_changing_contact_invalidates_approved_export(self):
+        saved = self.api('PUT', '/api/workspace', {'expected_revision': 0,
+            'profile': {**preferences(), 'resume_contact': 'first@example.invalid'}, 'facts': [fact()]})
+        self.assertEqual(saved.status_code, 200)
+        verified = self.api('POST', '/api/workspace/facts/pilot-01/verification',
+            {'expected_revision': 1, 'verified': True, 'acknowledged': True}).json()['workspace']
+        draft = self.api('POST', f'/api/jobs/{self.job.id}/draft', {}).json()
+        fingerprint = draft['packet_sha256']
+        self.assertEqual(self.api('POST', f'/api/jobs/{self.job.id}/decision',
+            {'packet_sha256': fingerprint, 'approved': True, 'acknowledged': True}).status_code, 200)
+        saved = self.api('PUT', '/api/workspace', {'expected_revision': verified['revision'],
+            'profile': {**verified['profile'], 'resume_contact': 'new@example.invalid'}, 'facts': verified['facts']})
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(self.api('GET', f'/api/jobs/{self.job.id}/resume.docx?packet_sha256={fingerprint}').status_code, 409)
+        self.assertTrue(self.api('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
 
     def test_changed_verified_fact_is_excluded_from_new_draft(self):
         self.assertEqual(self.api("PUT", "/api/workspace", {

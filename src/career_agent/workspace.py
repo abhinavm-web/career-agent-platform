@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from .candidate import FactBank, VerifiedFact
+from .candidate import FactBank, VerifiedFact, resume_contact
 from .models import CandidateProfile
 from .storage import Store
 
@@ -29,6 +29,7 @@ def blank_workspace() -> dict[str, Any]:
         "profile": {
             "name": "",
             "headline": "",
+            "resume_contact": "",
             "target_titles": [],
             "skills": [],
             "preferred_locations": [],
@@ -45,7 +46,7 @@ def blank_workspace() -> dict[str, Any]:
 def _validate_profile(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("profile must be an object")
-    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies", "minimum_annual_base_usd", "preferred_title_levels"}:
+    if set(value) - {"name", "headline", "resume_contact", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies", "minimum_annual_base_usd", "preferred_title_levels"}:
         raise ValueError("Unknown profile field")
     name = value.get("name", "")
     headline = value.get("headline", "")
@@ -61,7 +62,7 @@ def _validate_profile(value: Any) -> dict[str, Any]:
         raise ValueError("require_remote must be a boolean")
     if required_remote and not remote:
         raise ValueError("Include fully remote roles when requiring remote work")
-    profile = {"name": name.strip(), "headline": headline.strip()}
+    profile = {"name": name.strip(), "headline": headline.strip(), "resume_contact": resume_contact(value.get('resume_contact', ''))}
     for field in PROFILE_LISTS:
         entries = value.get(field, [])
         if (not isinstance(entries, list) or len(entries) > 40 or
@@ -194,6 +195,9 @@ class CandidateWorkspace:
         validated_facts = _validate_facts(facts)
 
         def transform(current):
+            # Older clients omit this optional field; do not erase a saved line.
+            if 'resume_contact' not in profile:
+                validated_profile['resume_contact'] = current['profile'].get('resume_contact', '')
             previous = {fact["id"]: fact for fact in current["facts"]}
             for fact in validated_facts:
                 old = previous.get(fact["id"])
@@ -257,6 +261,7 @@ class CandidateWorkspace:
         seed = {
             "name": bank.name,
             "headline": bank.headline,
+            "resume_contact": bank.resume_contact,
             "target_titles": list(profile.target_titles),
             "skills": list(profile.skills),
             "preferred_locations": list(profile.preferred_locations),
@@ -300,5 +305,6 @@ class CandidateWorkspace:
         return FactBank.parse({
             "name": profile["name"],
             "headline": profile["headline"],
+            "resume_contact": profile.get("resume_contact", ""),
             "facts": verified,
         })
