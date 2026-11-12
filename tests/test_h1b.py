@@ -24,6 +24,16 @@ def lca_csv(rows):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_transfer_restriction_does_not_exclude_unspecified_new_sponsorship(self):
+        text = 'H-1B transfers are not supported.'
+        for need, expected in [('new', 'conditional'), ('any', 'conditional'), ('transfer', 'excluded')]:
+            with self.subTest(need=need):
+                result = h1b_policy(text, need)
+                self.assertEqual(result['policy'], expected)
+                self.assertEqual(result['quotes'], [text])
+                self.assertFalse(result['potential_match'])
+        self.assertEqual(h1b_policy('No visa sponsorship. H-1B transfers are not supported.', 'new')['policy'], 'excluded')
+
     def test_scope_restrictions_and_denied_transfer_do_not_imply_general_support(self):
         cases = {
             'H-1B transfers are supported for existing employees only.': 'conditional',
