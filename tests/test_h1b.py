@@ -24,6 +24,24 @@ def lca_csv(rows):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_restrictions_scoped_to_other_roles_need_clarification(self):
+        scoped = (
+            'Visa sponsorship is not available for other roles.',
+            'We do not offer visa sponsorship for certain positions.',
+            'Employment-based visa sponsorship is not available in select jobs.',
+        )
+        for text in scoped:
+            for need in ('any', 'new', 'transfer'):
+                with self.subTest(text=text, need=need):
+                    result = h1b_policy(text, need)
+                    self.assertEqual(result['policy'], 'conditional')
+                    self.assertFalse(result['potential_match'])
+                    self.assertIn(text, result['quotes'])
+        self.assertEqual(h1b_policy('No visa sponsorship for this role; other teams may sponsor.')['policy'], 'excluded')
+        self.assertEqual(h1b_policy('No visa sponsorship; benefits differ for other roles.')['policy'], 'excluded')
+        self.assertEqual(h1b_policy(scoped[0] + ' No visa sponsorship for this role.')['policy'], 'excluded')
+        self.assertEqual(h1b_policy(scoped[0] + ' Visa sponsorship is available.')['policy'], 'conditional')
+
     def test_employer_and_employment_based_sponsorship_exclusions(self):
         exclusions = (
             'Applicants must be authorized to work in the United States without employer sponsorship.',
@@ -172,6 +190,17 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(results['counts']['excluded'], 1)
         self.assertEqual(results['jobs'][0]['id'], job.id)
         self.assertEqual(results['jobs'][0]['policy'], 'excluded')
+
+    def test_other_role_restriction_is_in_clarification_filter(self):
+        job = Job.from_mapping({'company': 'Fictional Employer', 'title': 'Engineer',
+                                'job_url': 'https://example.invalid/scoped',
+                                'description': 'Visa sponsorship is not available for other roles.'})
+        self.store.add_jobs([job])
+        review = self.research.opportunities(category='review')
+        excluded = self.research.opportunities(category='excluded')
+        self.assertEqual(review['jobs'][0]['id'], job.id)
+        self.assertEqual(review['jobs'][0]['policy'], 'conditional')
+        self.assertEqual(excluded['jobs'], [])
 
     def test_dol_refresh_downloads_only_allowed_url_and_records_atomic_provenance(self):
         try:
