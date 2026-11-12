@@ -34,6 +34,9 @@ test('structured description is explicitly requested and ambiguous postings are 
   await h.structured.click();
   assert.equal(JSON.parse(h.value()).selection, 'Fictional description');
   assert.equal(JSON.parse(h.value()).text_source, 'structured_description');
+  const plain = harness(data, [JSON.stringify({...posting, description: 'Requirements\n- Python'})]);
+  await plain.structured.click();
+  assert.equal(JSON.parse(plain.value()).selection, 'Requirements\n- Python');
   const ambiguous = harness(data, [JSON.stringify([posting, posting])]);
   await ambiguous.structured.click();
   assert.equal(ambiguous.value(), null);

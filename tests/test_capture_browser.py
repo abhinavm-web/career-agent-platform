@@ -10,6 +10,83 @@ from pathlib import Path
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class CaptureBrowserTests(unittest.TestCase):
+    def test_structured_capture_review_to_matching_and_storage(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.candidate import FactBank
+        from career_agent.dashboard import DashboardConfig, create_app
+        from career_agent.models import CandidateProfile, Job
+        from career_agent.storage import Store
+        from career_agent.workspace import CandidateWorkspace
+        from test_dashboard import fake_fact_bank
+
+        popup = (Path(__file__).resolve().parents[1] / 'browser-companion' / 'popup.js').read_text(encoding='utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'fictional.sqlite3'
+            job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer',
+                                    'job_url': 'https://example.invalid/job', 'description': ''})
+            with Store(db) as store:
+                store.add_jobs([job])
+                CandidateWorkspace(store).import_legacy(CandidateProfile(('Engineer',), ('Python',), (), True), FactBank.parse(fake_fact_bank()))
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                posting = {'@type': 'JobPosting', 'title': 'Engineer', 'hiringOrganization': {'name': 'Fictional Co'},
+                           'description': '<p>Overview</p><img src="https://tracking.invalid/pixel"><h2>Requirements</h2><ul><li><p>Python\n experience</p></li><li>Works with teams</li></ul>'}
+                body = ('<title>Engineer</title><button id="capture">Selected</button>'
+                        '<button id="capture-structured">Structured</button><p id="status"></p>'
+                        '<script type="application/ld+json">' + json.dumps(posting) + '</script>')
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page()
+                        attempted = []
+                        page.route('https://tracking.invalid/**', lambda route: (attempted.append(route.request.url), route.abort()))
+                        page.route('https://example.invalid/**', lambda route: route.fulfill(status=200, content_type='text/html', body=body))
+                        page.goto(job.url)
+                        page.evaluate('''() => {
+                            window.copiedCapture = null;
+                            Object.defineProperty(navigator, 'clipboard', {value: {writeText: async value => { window.copiedCapture = value; }}});
+                            window.chrome = {tabs: {query: async () => [{id: 1}]}, scripting: {executeScript: async ({func, args}) => [{result: func(...args)}]}};
+                        }''')
+                        page.add_script_tag(content=popup); page.locator('#capture-structured').click()
+                        expect(page.locator('#status')).to_contain_text('Copied structured')
+                        captured = page.evaluate('window.copiedCapture')
+                        self.assertEqual(json.loads(captured)['selection'], 'Overview\nRequirements\n- Python experience\n- Works with teams')
+                        page.wait_for_timeout(100)
+                        self.assertEqual(attempted, [])
+                        page.goto(f'http://127.0.0.1:{port}')
+                        page.get_by_role('button', name='View Engineer at Fictional Co').click()
+                        page.get_by_text('Correct saved description', exact=True).click()
+                        page.get_by_text('Use a browser capture for this job', exact=True).click()
+                        editor = page.locator('#job-description-editor')
+                        editor.get_by_label('Browser capture JSON').fill(captured)
+                        editor.get_by_role('button', name='Fill description from capture').click()
+                        expect(editor.get_by_label('Corrected job description')).to_have_value(json.loads(captured)['selection'])
+                        expect(editor.get_by_label('I reviewed this corrected description.')).not_to_be_checked()
+                        with Store(db) as store: self.assertEqual(store.get_job(job.id).description, '')
+                        editor.get_by_label('I reviewed this corrected description.').check()
+                        editor.get_by_role('button', name='Save corrected description').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('- Python experience')
+                        with Store(db) as store:
+                            self.assertEqual(store.get_job(job.id).description, json.loads(captured)['selection'])
+                            self.assertIn('Structured JobPosting', store.description_latest(job.id)['source_note'])
+                        evidence = page.locator('#fit-evidence')
+                        evidence.get_by_role('button', name='Compare requirements').click()
+                        expect(evidence).to_contain_text('Labeled required')
+                        expect(evidence).to_contain_text('- Python experience')
+                        expect(evidence).to_contain_text('Potentially relevant verified fact experience-01')
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_structured_capture_reads_only_a_single_inert_job_description(self):
         from playwright.sync_api import sync_playwright, expect
         popup = (Path(__file__).resolve().parents[1] / 'browser-companion' / 'popup.js').read_text(encoding='utf-8')
@@ -35,7 +112,7 @@ class CaptureBrowserTests(unittest.TestCase):
                 page.locator('#capture-structured').click()
                 expect(page.locator('#status')).to_contain_text('Copied structured')
                 capture = json.loads(page.evaluate('window.copiedCapture'))
-                self.assertEqual(capture['selection'], 'Build & review\nPython')
+                self.assertEqual(capture['selection'], 'Build & review\n- Python')
                 self.assertEqual(capture['text_source'], 'structured_description')
                 self.assertEqual(capture['metadata']['company'], 'Fictional Co')
                 self.assertFalse(page.evaluate('Boolean(window.unsafeRan)'))

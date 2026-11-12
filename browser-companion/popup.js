@@ -40,20 +40,35 @@ async function captureJob(mode) {
           // Template content is inert and is never attached to the active page.
           const template = document.createElement("template");
           template.innerHTML = posting.description;
-          const blocks = new Set(["P", "DIV", "LI", "BR", "UL", "OL", "H1", "H2", "H3", "H4", "H5", "H6", "TR"]);
+          const blocks = new Set(["P", "DIV", "LI", "BR", "UL", "OL", "H1", "H2", "H3", "H4", "H5", "H6", "TR", "PRE"]);
           const excluded = new Set(["SCRIPT", "STYLE", "TEMPLATE", "NOSCRIPT", "SVG", "IFRAME"]);
           const pieces = [], queue = [{node: template.content, end: false}];
+          const htmlContent = /<\/?[a-z][^>]*>/i.test(posting.description);
+          const lineBreak = () => {
+            const last = pieces[pieces.length - 1];
+            if (last && last !== "- " && !last.endsWith("\n")) pieces.push("\n");
+          };
           let count = 0;
           while (queue.length && ++count <= 10000) {
-            const {node, end} = queue.pop();
-            if (end) { pieces.push("\n"); continue; }
-            if (node.nodeType === 3) { pieces.push(node.nodeValue || ""); continue; }
+            const {node, end, verbatim} = queue.pop();
+            if (end) { lineBreak(); continue; }
+            if (node.nodeType === 3) {
+              let text = node.nodeValue || "";
+              if (htmlContent && !verbatim) text = text.replace(/\s+/g, " ");
+              if (pieces[pieces.length - 1] === "- ") text = text.replace(/^\s+/, "");
+              if (text) pieces.push(text);
+              continue;
+            }
             if (node.nodeType === 1 && excluded.has(node.tagName)) continue;
-            if (node.nodeType === 1 && blocks.has(node.tagName)) queue.push({node, end: true});
+            if (node.nodeType === 1 && blocks.has(node.tagName)) {
+              lineBreak();
+              if (node.tagName === "LI") pieces.push("- ");
+              queue.push({node, end: true});
+            }
             const children = node.childNodes || [];
-            for (let i = children.length - 1; i >= 0; i--) queue.push({node: children[i], end: false});
+            for (let i = children.length - 1; i >= 0; i--) queue.push({node: children[i], end: false, verbatim: verbatim || node.tagName === "PRE"});
           }
-          if (count <= 10000) capture.selection = pieces.join("").replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+          if (count <= 10000) capture.selection = pieces.join("").replace(/\r\n?/g, "\n").replace(/[ \t]*\n[ \t]*/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
           else capture.selection = "";
           capture.text_source = "structured_description";
         }
