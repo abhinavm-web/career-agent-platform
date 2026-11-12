@@ -153,6 +153,12 @@ class AITests(unittest.TestCase):
             result = ai.analyze(self.job, self.bank, 'local', True)
         prompt = complete.call_args.args[1]
         self.assertNotIn(self.bank.name, prompt)
+        schema = complete.call_args.kwargs['json_schema']
+        row = schema['properties']['requirements']['items']
+        self.assertEqual(row['properties']['fact_ids']['items']['enum'], ['experience-01'])
+        self.assertEqual(row['properties']['quote']['enum'], [self.job.description])
+        self.assertEqual(set(row['required']), {'quote', 'fact_ids', 'reason'})
+        self.assertFalse(row['additionalProperties'])
         self.assertNotIn(self.bank.facts[0].source_note, prompt)
         self.assertNotIn(self.job.url, prompt)
         self.assertEqual(result['requirements'][0]['facts'], self.bank.public_claims())
