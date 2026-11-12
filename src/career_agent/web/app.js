@@ -102,6 +102,8 @@
     }
     byId("section-name").textContent = screens[screen];
     window.scrollTo?.(0, 0);
+    const heading = byId(screen + "-screen").querySelector?.("h2");
+    if (heading) { heading.setAttribute("tabindex", "-1"); heading.focus(); }
   }
 
   function renderMetrics() {
@@ -1904,8 +1906,14 @@
     }
     renderJobs();
   });
-  byId("show-add-job").addEventListener("click", () => {byId("add-job-form").hidden = false;});
-  byId("close-add-job").addEventListener("click", () => {byId("add-job-form").hidden = true;});
+  byId("show-add-job").addEventListener("click", () => {
+    byId("add-job-form").hidden = false;
+    byId("add-job-form").querySelector?.('[name="title"]')?.focus();
+  });
+  byId("close-add-job").addEventListener("click", () => {
+    byId("add-job-form").hidden = true;
+    byId("show-add-job").focus();
+  });
   byId("add-job-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1922,6 +1930,7 @@
       const result = await api("/api/jobs", "POST", data);
       form.reset();
       form.hidden = true;
+      byId("show-add-job").focus();
       notice(result.created ? "Opportunity added." : "This opportunity was already tracked.");
       await refresh(result.job_id);
     } catch (error) {notice(error.message, true);}
