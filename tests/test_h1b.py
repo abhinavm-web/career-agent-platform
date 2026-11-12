@@ -24,6 +24,26 @@ def lca_csv(rows):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_employer_and_employment_based_sponsorship_exclusions(self):
+        exclusions = (
+            'Applicants must be authorized to work in the United States without employer sponsorship.',
+            'Applicants must be legally authorized to work in the US without employment visa sponsorship.',
+            'The company does not provide employment-based visa sponsorship for this role.',
+            'We cannot offer immigration sponsorship.',
+            'This position is not eligible for employment-based visa sponsorship.',
+        )
+        for text in exclusions:
+            for need in ('any', 'new', 'transfer'):
+                with self.subTest(text=text, need=need):
+                    result = h1b_policy(text, need)
+                    self.assertEqual(result['policy'], 'excluded')
+                    self.assertFalse(result['potential_match'])
+                    self.assertIn(text, result['quotes'])
+        self.assertEqual(h1b_policy(exclusions[2] + ' Visa sponsorship is available.')['policy'], 'conflicting')
+        self.assertEqual(h1b_policy('Do you require employer sponsorship?')['policy'], 'conditional')
+        self.assertEqual(h1b_policy('We may provide employment-based visa sponsorship.')['policy'], 'conditional')
+        self.assertEqual(h1b_policy('Employment-based visa sponsorship is available.')['policy'], 'possible')
+
     def test_current_and_foreseeable_future_visa_exclusion(self):
         exclusion = ('Guardian Life is not currently or in the foreseeable future sponsoring '
                      'employment-based visas (e.g., such as an H-1B).')
@@ -137,6 +157,16 @@ class ResearchTests(unittest.TestCase):
         job = Job.from_mapping({'company': 'Fictional Employer', 'title': 'Engineer',
             'job_url': 'https://example.invalid/role', 'description':
             'We are not currently or in the foreseeable future sponsoring employment-based visas (e.g., such as an H-1B).'})
+        self.store.add_jobs([job])
+        results = self.research.opportunities(category='excluded')
+        self.assertEqual(results['counts']['excluded'], 1)
+        self.assertEqual(results['jobs'][0]['id'], job.id)
+        self.assertEqual(results['jobs'][0]['policy'], 'excluded')
+
+    def test_employer_sponsorship_exclusion_appears_in_restricted_filter(self):
+        description = 'Applicants must be authorized to work in the United States without employer sponsorship.'
+        job = Job.from_mapping({'company': 'Fictional Employer', 'title': 'Engineer',
+                                'job_url': 'https://example.invalid/employer-sponsorship', 'description': description})
         self.store.add_jobs([job])
         results = self.research.opportunities(category='excluded')
         self.assertEqual(results['counts']['excluded'], 1)
