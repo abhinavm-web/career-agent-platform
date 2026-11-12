@@ -142,7 +142,8 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       notice: 'Keyword links need review', truncated: false,
       requirements: [{category: 'required', quote: '- Python <script>unsafe</script>',
         suggested_facts: [{id: 'fact-01', statement: 'Verified fictional Python work', matched_keywords: ['Python']}]},
-        {category: 'preferred', quote: '- Rust', suggested_facts: []}]
+        {category: 'preferred', quote: '- Rust', suggested_facts: []},
+        {category: 'unspecified', source_heading: '**Qualifications**', quote: '- SQL', suggested_facts: []}]
     }));
     if (url === "/api/ai/routes") return Promise.resolve(ok({routes: [{route: "local", provider: "ollama", model: "fictional", destination: "loopback", route_fingerprint: "a".repeat(64)}]}));
     if (url === "/api/workspace/chat") {
@@ -406,6 +407,8 @@ test('fit evidence presents untrusted excerpts and unknowns without claiming qua
   assert.match(output, /Python <script>unsafe<\/script>/);
   assert.match(output, /Potentially relevant verified fact fact-01/);
   assert.match(output, /evidence remains unknown/);
+  assert.match(output, /Qualification level unspecified/);
+  assert.match(output, /Section heading: \*\*Qualifications\*\*/);
 });
 
 test("reviewed Word download appears only for an approved current packet", async () => {
