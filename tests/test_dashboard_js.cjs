@@ -730,6 +730,22 @@ test("opportunity filters combine and old observations are never shown as listed
   assert.match(harness.get("job-list").textContent, /Role Beta/);
 });
 
+test("description review filter excludes submitted jobs and combines with source", async () => {
+  const observation = [{source: "linkedin", candidate_observed_at: "2025-01-01T00:00:00Z"}];
+  const pending = {...fakeJob(ID_A, "Reviewable role"), source: "linkedin", description: "", discovery_observations: observation};
+  const submitted = {...fakeJob(ID_B, "Submitted role"), source: "linkedin", description: "", application_stage: "submitted", discovery_observations: observation};
+  const harness = createHarness({jobsOverride: [pending, submitted]});
+  await flush();
+  const filter = harness.get("filter"); filter.value = "missing-description"; filter.handlers.change({target: filter});
+  assert.match(harness.get("job-list").textContent, /Reviewable role/);
+  assert.match(harness.get("job-list").textContent, /Submitted role/);
+  filter.value = "source-text-review"; filter.handlers.change({target: filter});
+  assert.match(harness.get("job-list").textContent, /Reviewable role/);
+  assert.doesNotMatch(harness.get("job-list").textContent, /Submitted role/);
+  harness.get("source-filter").value = "indeed"; harness.get("source-filter").handlers.input();
+  assert.doesNotMatch(harness.get("job-list").textContent, /Reviewable role/);
+});
+
 test("a passed or invalid provider deadline is never displayed as currently listed", async () => {
   const base = {availability: "listed", checked_at: new Date().toISOString(), reason: "Listed at check"};
   const past = {...fakeJob(ID_A, "Role Alpha"), live_check: {...base, application_deadline: new Date(Date.now() - 1000).toISOString()}};
