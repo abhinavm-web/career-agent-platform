@@ -17,22 +17,31 @@ Working name only. Final product branding awaits trademark clearance.
 - Requires manual review and a user-attested employer confirmation reference before recording an application as submitted.
 - Sends no applications, performs no browser automation, and uses no telemetry.
 
-## Start your local workspace (Windows, Python 3.11+)
+## Start your local workspace (Python 3.11+)
 
-From the repository root in PowerShell, install the dashboard and start it:
+From the repository root, run:
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[web,jobspy,resume,lca]"
-.\.venv\Scripts\python.exe -m career_agent.cli serve
+```text
+python scripts/launch.py
 ```
 
+The launcher creates `.venv` if needed, installs the dashboard, JobSpy, résumé
+and LCA import, encrypted backup and AI-provider dependencies using pip, then
+starts the app. Package installation uses the network. For later starts use
+`python scripts/launch.py --skip-install` to start without checking or
+updating dependencies. Add `--with-pdf` when installing to also download the
+Chromium PDF renderer; Linux may require additional system libraries. See
+[local development](docs/LOCAL_DEVELOPMENT.md) for manual installation.
+
 Open http://127.0.0.1:8765/ on this computer. If the port is occupied, add
-`--port 8766` and open that port instead. Stop the server with Ctrl+C; keep it
+`--port 8766` to the launcher command and open that port instead. Stop the server with Ctrl+C; keep it
 running for scheduled searches. Your workspace uses `.local/career_agent.sqlite3`
 and `.local/packets`, separate from the fictional demo in
 [Local development](docs/LOCAL_DEVELOPMENT.md). These local files are plaintext;
 never commit them, your résumé, or credentials to Git.
+The default is a separate workspace from any custom `--db` previously used.
+Use `--db PATH --packet-dir PATH` to select an existing workspace. Enabled saved
+searches in the selected database may contact job boards when the server starts.
 
 The **Get started** panel tracks profile setup and your first opportunity. Its
 search button opens the JobSpy form; no search runs until you explicitly consent
