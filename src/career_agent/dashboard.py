@@ -200,7 +200,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return False
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
-                 records: tuple, workspace_revision: int, posting_checks: PostingChecks) -> dict:
+                 records: tuple, workspace_revision: int, posting_checks: PostingChecks,
+                 discovery_observations: list[dict]) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
@@ -214,6 +215,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "remote": job.remote,
             "url": job.url,
             "source": job.source,
+            "discovery_observations": discovery_observations,
             "live_check_supported": posting_target(job.url) is not None,
             "live_check": posting_checks.latest(job.id),
             "description": job.description,
@@ -542,8 +544,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
             posting_checks = PostingChecks(store)
             store.connection.execute('BEGIN')
             jobs, next_before = store.job_page(limit=limit, before=before)
+            observations = store.discovery_observations([job.id for job in jobs])
             items = [
-                job_view(store, job, profile, records, workspace["revision"], posting_checks)
+                job_view(store, job, profile, records, workspace["revision"], posting_checks,
+                         observations.get(job.id, []))
                 for job in jobs
             ]
         return {"jobs": items, "total": len(items), "next_before": next_before}
@@ -574,7 +578,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             except Exception as error:
                 raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
             with Store(config.db_path) as store:
-                added = store.add_jobs(jobs)
+                added = store.add_discovered_jobs(jobs)
             return {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
         finally:
             discovery_lock.release()

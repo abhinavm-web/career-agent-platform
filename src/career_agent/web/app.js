@@ -334,6 +334,14 @@
       info.append(cell);
     }
     detail.append(info);
+    if (job.discovery_observations?.length) {
+      const discovery = section("Discovery history");
+      discovery.append(node("p", "muted", "These are times your searches returned this URL, not proof that the posting is open, current, or unchanged."));
+      for (const row of job.discovery_observations) {
+        discovery.append(node("p", "", row.source + " · first returned " + row.first_seen + " · last returned " + row.last_seen + " · " + row.observation_count + " search(es)"));
+      }
+      detail.append(discovery);
+    }
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
     actions.append(button("Analyze with AI", "button", () => {

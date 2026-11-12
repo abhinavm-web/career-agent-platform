@@ -169,7 +169,7 @@ class Automation:
         def discover(state):
             return {'jobs': fetch(state['settings'], self.stop)}
         def normalize(state):
-            normalized = {j.id: j for j in (Job.from_mapping(r) for r in state['jobs'])}
+            normalized = {(j.id, j.source): j for j in (Job.from_mapping(r) for r in state['jobs'])}
             from dataclasses import asdict
             return {'jobs': [asdict(j) for j in normalized.values()]}
         def ingest(state):
@@ -182,11 +182,7 @@ class Automation:
                 lease = store.connection.execute('SELECT token,expires FROM discovery_lease WHERE id=1').fetchone()
                 if not enabled or not enabled['enabled'] or lease['token'] != run_id or lease['expires'] <= time.time() or self.stop.is_set():
                     raise ValueError('Discovery was paused or lease expired')
-                added = 0
-                for raw in state['jobs']:
-                    j = Job.from_mapping(raw)
-                    added += store.connection.execute('INSERT OR IGNORE INTO jobs(job_id,company,title,location,url,description,source,remote) VALUES(?,?,?,?,?,?,?,?)',
-                        (j.id,j.company,j.title,j.location,j.url,j.description,j.source,int(j.remote))).rowcount
+                added = store._record_discovery([Job.from_mapping(raw) for raw in state['jobs']])
                 counts = {'found': len(state['jobs']), 'added': added}
                 store.connection.execute('INSERT INTO discovery_imports VALUES(?,?)', (run_id,json.dumps(counts)))
                 return {'counts': counts}
