@@ -660,6 +660,34 @@
         packet.fact_evidence.every((fact) => fact && typeof fact.id === "string" && typeof fact.section === "string" &&
           typeof fact.statement === "string" && Array.isArray(fact.matched_keywords) && fact.matched_keywords.every((item) => typeof item === "string")) &&
         packet.omitted_fact_ids.every((item) => typeof item === "string")) {
+      if (Array.isArray(packet.baseline_fact_evidence) &&
+          packet.baseline_fact_evidence.every((fact) => fact && typeof fact.id === "string" &&
+            typeof fact.section === "string" && typeof fact.statement === "string")) {
+        const comparison = node("details", "resume-comparison");
+        comparison.append(node("summary", "", "Compare verified facts and tailored draft"),
+          node("p", "muted", "This baseline is your verified fact bank at drafting time, grouped in the default section order. It is not your uploaded résumé. The draft copies selected facts verbatim; review omissions and order before approving."));
+        const grid = node("div", "resume-comparison-grid");
+        const baseline = node("section");
+        baseline.append(node("h5", "", "Verified facts at drafting"));
+        const included = new Set(packet.fact_evidence.map((fact) => fact.id));
+        const originalList = node("ol");
+        for (const fact of packet.baseline_fact_evidence) {
+          const item = node("li");
+          item.append(node("strong", "", fact.id + " · " + fact.section + (included.has(fact.id) ? " · Included" : " · Omitted")), node("p", "", fact.statement));
+          originalList.append(item);
+        }
+        baseline.append(originalList);
+        const tailored = node("section");
+        tailored.append(node("h5", "", "Facts in draft order"));
+        const draftList = node("ol");
+        for (const fact of packet.fact_evidence) {
+          const item = node("li");
+          item.append(node("strong", "", fact.id + " · " + fact.section), node("p", "", fact.statement));
+          draftList.append(item);
+        }
+        tailored.append(draftList);
+        grid.append(baseline, tailored); comparison.append(grid); card.append(comparison);
+      }
       const evidence = node("details", "packet-evidence");
       evidence.append(node("summary", "", "Review source facts and omissions"),
         node("p", "", "These statements were confirmed by you when the draft was created. Keyword matches help order facts; they do not establish qualifications or hiring likelihood."));

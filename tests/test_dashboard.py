@@ -868,6 +868,44 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
             'approved': True, 'acknowledged': True, 'packet_sha256': first}).status_code, 409)
 
+    def test_tailored_comparison_snapshot_is_bound_and_never_exported(self):
+        from career_agent.application import validate_packet
+        from career_agent.resume_pdf import resume_html
+        from career_agent.resume_docx import resume_docx
+        from docx import Document
+        import io
+
+        data = fake_fact_bank()
+        data['facts'].append({**data['facts'][0], 'id': 'experience-02',
+            'statement': 'Omitted fictional statement for comparison.', 'source_note': 'Private comparison evidence.'})
+        self.facts_path.write_text(json.dumps(data))
+        options = self.call('GET', '/api/tailoring/facts').json()
+        request = {'fact_ids': ['experience-01'], 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}
+        response = self.call('POST', f'/api/jobs/{self.job.id}/tailored-draft', request)
+        self.assertEqual(response.status_code, 200, response.text)
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        self.assertEqual([item['id'] for item in packet['baseline_fact_evidence']], ['experience-01', 'experience-02'])
+        self.assertEqual(packet['baseline_fact_evidence'][1]['statement'], 'Omitted fictional statement for comparison.')
+        self.assertNotIn('Private comparison evidence.', json.dumps(packet))
+        altered = json.loads(json.dumps(packet)); altered['baseline_fact_evidence'][1]['statement'] += ' altered'
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            validate_packet(altered)
+        self.assertNotIn('Omitted fictional statement', packet['cover_note'])
+        self.assertNotIn('Omitted fictional statement', resume_html(packet))
+        self.assertNotIn('Private comparison evidence.', resume_html(packet))
+        document = Document(io.BytesIO(resume_docx(packet)))
+        rendered = '\n'.join(paragraph.text for paragraph in document.paragraphs)
+        self.assertNotIn('Omitted fictional statement', rendered)
+        self.assertNotIn('Private comparison evidence.', rendered)
+        self.assertNotIn('Omitted fictional statement', self.call('GET', '/api/crm/export').text)
+
+        # A legacy or default packet remains valid without the new optional field.
+        default = self.call('POST', f'/api/jobs/{self.job.id}/draft', {})
+        self.assertEqual(default.status_code, 200, default.text)
+        legacy = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        self.assertNotIn('baseline_fact_evidence', legacy)
+        validate_packet(legacy)
+
     def test_tailored_packet_survives_restart_and_rejects_changed_job(self):
         from fastapi.testclient import TestClient
         from career_agent.dashboard import DashboardConfig, create_app
