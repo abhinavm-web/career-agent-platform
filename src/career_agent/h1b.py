@@ -587,8 +587,8 @@ class H1BResearch:
     def search_employers(self, query, offset=0, *, name_mode='literal', include_location=True):
         """Search imported filing names without scanning saved jobs."""
         query = text(query, 'Company search', 200)
-        if len(query) < 2 or type(offset) is not int or offset < 0:
-            raise ValueError('Use at least two characters and a nonnegative offset')
+        if len(query) < 2 or type(offset) is not int or not 0 <= offset <= 9223372036854775807:
+            raise ValueError('Use at least two characters and a nonnegative supported offset')
         if name_mode not in ('literal', 'punctuation'):
             raise ValueError('Unknown employer name search mode')
         # instr treats SQL wildcard characters literally. Search suggestions never imply an entity match.

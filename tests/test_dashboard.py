@@ -726,6 +726,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(lookup.json()['companies'][0]['employer'], self.job.company)
         self.assertNotIn('jobs', lookup.json())
         self.assertEqual(self.call('GET', '/api/h1b/employers?q=x').status_code, 422)
+        self.assertEqual(self.call('GET', '/api/h1b/employers?q=Example&offset=9999999999999999999999').status_code, 422)
         self.assertEqual(response.json()['jobs'][0]['policy'], 'possible')
         self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['need'], 'new')
         self.assertEqual(self.call('GET', '/api/h1b/search?q=x').status_code, 422)
