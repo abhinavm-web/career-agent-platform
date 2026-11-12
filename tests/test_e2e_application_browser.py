@@ -17,6 +17,13 @@ class ApplicationJourneyTests(unittest.TestCase):
         from playwright.sync_api import sync_playwright, expect
         from career_agent.dashboard import DashboardConfig, create_app
         from career_agent.models import Job
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install the lca extra for workbook import coverage')
+        from docx import Document
+        from io import BytesIO
         from test_dashboard import fake_fact_bank
 
         job = Job.from_mapping({'company': 'Fictional Analytics', 'title': 'Data Analyst',
@@ -27,7 +34,12 @@ class ApplicationJourneyTests(unittest.TestCase):
             root = Path(directory); facts = root / 'facts.json'; facts.write_text(json.dumps(fake_fact_bank()))
             profile = root / 'profile.json'; profile.write_text(json.dumps({'target_titles': ['Data Analyst'],
                 'skills': ['Python'], 'preferred_locations': [], 'allow_remote': True}))
-            app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets', facts_path=facts, profile_path=profile))
+            book = Workbook()
+            book.active.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+            book.active.append(['I-200-25123-000099', 'Fictional Analytics LLC', 'H-1B', 'Certified', '2025-04-15'])
+            workbook = BytesIO(); book.save(workbook); book.close()
+            config = DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets', facts_path=facts, profile_path=profile)
+            app = create_app(config)
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
             thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
@@ -41,11 +53,32 @@ class ApplicationJourneyTests(unittest.TestCase):
                      patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page()
+                        external_requests = []
+                        def local_only(route):
+                            if route.request.url.startswith('http://127.0.0.1:'):
+                                route.continue_()
+                            else:
+                                external_requests.append(route.request.url)
+                                route.abort()
+                        page.route('**/*', local_only)
+                        page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-profile').click()
                         page.once('dialog', lambda dialog: dialog.accept())
                         page.locator('#import-career-data').click()
                         expect(page.locator('#notice')).to_contain_text('imported')
+                        page.get_by_text('Import and review résumé text', exact=True).click()
+                        page.locator('#resume-text').fill('Experience:\nBuilt a fictional data dashboard.')
+                        page.locator('#resume-extract').click()
+                        page.locator('#resume-use-line').click()
+                        expect(page.locator('#fact-statement')).to_have_value('Built a fictional data dashboard.')
+                        page.locator('#fact-source').fill('Private fictional résumé evidence')
+                        page.get_by_role('button', name='Save unverified fact').click()
+                        resume_fact = page.locator('.career-fact').filter(has_text='Built a fictional data dashboard.')
+                        expect(resume_fact).to_contain_text('Not verified')
+                        page.once('dialog', lambda dialog: dialog.accept())
+                        resume_fact.get_by_role('button', name='Verify this fact').click()
+                        expect(page.locator('.career-fact').filter(has_text='Built a fictional data dashboard.')).to_contain_text('Candidate verified')
                         page.locator('#nav-jobs').click()
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Data Analyst')
@@ -55,6 +88,24 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#job-list')).to_contain_text('Data Analyst')
                         self.assertEqual(discover.call_count, 1)
                         page.locator('#nav-h1b').click()
+                        expect(page.locator('#h1b-opportunities-results')).to_contain_text('H-1B sponsorship available.')
+                        page.get_by_text('Import public DOL LCA records', exact=True).click()
+                        page.locator('#h1b-captured').fill('2025-06-01')
+                        page.locator('#h1b-file').set_input_files({'name': 'fictional.xlsx',
+                            'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': workbook.getvalue()})
+                        page.locator('#h1b-consent').check()
+                        page.get_by_role('button', name='Import records locally', exact=True).click()
+                        expect(page.locator('#h1b-status')).to_contain_text('1 added')
+                        expect(page.locator('#h1b-coverage')).to_contain_text('1 imported H-1B cases')
+                        page.get_by_role('button', name='Find opportunities', exact=True).click()
+                        opportunity = page.locator('#h1b-opportunities-results .panel').filter(has_text='Data Analyst')
+                        opportunity.get_by_text('Associate an imported legal employer', exact=True).click()
+                        opportunity.get_by_label('Imported legal employer name').fill('Fictional Analytics LLC')
+                        opportunity.get_by_label('How you checked the association').fill('Fictional employer record checked')
+                        opportunity.get_by_label('I understand this association is not independently verified.').check()
+                        opportunity.get_by_role('button', name='Save association').click()
+                        expect(page.locator('#h1b-opportunities-results')).to_contain_text('Candidate-provided employer association, not independently verified')
+                        expect(page.locator('#h1b-opportunities-results')).to_contain_text('Fictional Analytics LLC')
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('H-1B sponsorship available.')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
@@ -90,6 +141,41 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#detail-panel')).to_contain_text('Application packet', timeout=20000)
                         page.get_by_text('Resume draft', exact=True).click()
                         expect(page.locator('#detail-panel')).to_contain_text('A fictional suggested rewrite.')
+                        expect(page.locator('#detail-panel')).not_to_contain_text('Private fictional résumé evidence')
+                        page.get_by_label('I have personally reviewed this draft and its claims.').check()
+                        page.get_by_role('button', name='Approve for manual submission').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('approved for manual submission', timeout=20000)
+                        with page.expect_download() as received:
+                            page.get_by_role('button', name='Download reviewed resume Word').click()
+                        exported = '\n'.join(paragraph.text for paragraph in Document(received.value.path()).paragraphs)
+                        self.assertIn('A fictional suggested rewrite.', exported)
+                        self.assertNotIn('Private fictional résumé evidence', exported)
+                        self.assertNotIn('Delivered a fictional AI program', exported)
+
+                        # Stop the application and create a fresh server with the same persisted files.
+                        server.should_exit = True; thread.join(timeout=10); self.assertFalse(thread.is_alive()); sock.close()
+                        app = create_app(config)
+                        sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+                        server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+                        thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+                        for _ in range(100):
+                            if server.started: break
+                            time.sleep(0.05)
+                        self.assertTrue(server.started)
+                        page.goto(f'http://127.0.0.1:{port}')
+                        page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('approved for manual submission', timeout=20000)
+                        expect(page.locator('#count-submitted')).to_have_text('0')
+                        page.get_by_label('Employer confirmation reference').fill('fictional-receipt-123')
+                        page.get_by_label('I personally submitted this application externally.').check()
+                        page.get_by_role('button', name='Record confirmed submission').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Submission recorded from your attestation', timeout=20000)
+                        expect(page.locator('#count-submitted')).to_have_text('1')
+                        page.locator('#nav-tracker').click()
+                        expect(page.locator('#tracker-screen')).to_contain_text('Data Analyst')
+                        page.locator('#nav-h1b').click()
+                        expect(page.locator('#h1b-opportunities-results')).to_contain_text('Fictional Analytics LLC')
+                        self.assertEqual(external_requests, [])
                     finally:
                         browser.close()
             finally:
