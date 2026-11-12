@@ -599,7 +599,10 @@ class H1BResearch:
             if len(candidate_key) < 2:
                 raise ValueError('Use at least two letters or digits for the broader employer search')
             self.conn.create_function('h1b_search_key', 1, employer_search_key, deterministic=True)
-            names = employers + ', names AS (SELECT employer_key,MIN(employer) AS employer FROM employers GROUP BY employer_key) '
+            # OFFSET 0 prevents SQLite from pushing the Python normalization
+            # predicate into the filing scan. Normalize distinct legal-name keys,
+            # not every individual case; never group by the broader search key.
+            names = employers + ', names AS (SELECT employer_key,MIN(employer) AS employer FROM employers GROUP BY employer_key LIMIT -1 OFFSET 0) '
             total = self.conn.execute(names + 'SELECT COUNT(*) FROM names WHERE instr(h1b_search_key(employer_key),?)>0', (candidate_key,)).fetchone()[0]
             companies = self.conn.execute(names + 'SELECT employer FROM names WHERE instr(h1b_search_key(employer_key),?)>0 ORDER BY employer_key LIMIT 25 OFFSET ?', (candidate_key, offset)).fetchall()
         else:
