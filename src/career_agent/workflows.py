@@ -14,7 +14,10 @@ from .models import Job
 
 
 def inputs(job, profile, bank, records, revision=None, job_description_revision=None, tailored_fact_ids=None, tailored_section_order=None):
-    state = {'job': asdict(job), 'preferences': asdict(profile),
+    job_state = asdict(job)
+    # Discovery observation metadata must not invalidate old application workflows.
+    job_state.pop('reported_posted_date', None); job_state.pop('posted_date_status', None)
+    state = {'job': job_state, 'preferences': asdict(profile),
             'fact_bank': {'name': bank.name, 'headline': bank.headline, 'facts': [
                 {'id': f.fact_id, 'section': f.section, 'statement': f.statement,
                  'keywords': list(f.keywords), 'source_note': f.source_note,

@@ -6,7 +6,7 @@ import sqlite3
 import re
 from pathlib import Path
 
-from .models import Job
+from .models import Job, merge_discovery_rows
 
 
 def _description_digest(description: str) -> str | None:
@@ -70,6 +70,11 @@ class Store:
                 description_sha256 TEXT, observed_at TEXT NOT NULL,
                 PRIMARY KEY(job_id, source)
             );
+            CREATE TABLE IF NOT EXISTS job_discovery_posting_dates(
+                job_id TEXT NOT NULL REFERENCES jobs(job_id), source TEXT NOT NULL,
+                reported_date TEXT, status TEXT NOT NULL, observed_at TEXT NOT NULL,
+                PRIMARY KEY(job_id, source)
+            );
         """)
 
     def __enter__(self) -> "Store":
@@ -96,13 +101,9 @@ class Store:
 
     def _record_discovery(self, jobs: list[Job]) -> int:
         """Record returned rows within the caller's transaction, once per job/source."""
-        seen = set()
         inserted = 0
-        for job in jobs:
+        for job in merge_discovery_rows(jobs):
             key = (job.id, job.source)
-            if key in seen:
-                continue
-            seen.add(key)
             result = self.connection.execute(
                 'INSERT OR IGNORE INTO jobs(job_id,company,title,location,url,description,source,remote) VALUES(?,?,?,?,?,?,?,?)',
                 (job.id, job.company, job.title, job.location, job.url, job.description, job.source, int(job.remote)))
@@ -119,6 +120,12 @@ class Store:
                 ON CONFLICT(job_id,source) DO UPDATE SET
                 description_sha256=excluded.description_sha256, observed_at=excluded.observed_at
             ''', (job.id, job.source, _description_digest(job.description)))
+            self.connection.execute('''
+                INSERT INTO job_discovery_posting_dates(job_id,source,reported_date,status,observed_at)
+                VALUES(?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                ON CONFLICT(job_id,source) DO UPDATE SET reported_date=excluded.reported_date,
+                    status=excluded.status, observed_at=excluded.observed_at
+            ''', (job.id, job.source, job.reported_posted_date, job.posted_date_status))
         return inserted
 
     def add_discovered_jobs(self, jobs: list[Job]) -> int:
@@ -132,9 +139,11 @@ class Store:
         placeholders = ','.join('?' for _ in job_ids)
         rows = self.connection.execute(
             f'''SELECT o.job_id,o.source,o.first_seen,o.last_seen,o.observation_count,
-                d.description_sha256,d.observed_at,j.description
+                d.description_sha256,d.observed_at,j.description,
+                p.reported_date,p.status AS posted_date_status,p.observed_at AS posted_date_observed_at
                 FROM job_discovery_observations o JOIN jobs j ON j.job_id=o.job_id
                 LEFT JOIN job_discovery_descriptions d ON d.job_id=o.job_id AND d.source=o.source
+                LEFT JOIN job_discovery_posting_dates p ON p.job_id=o.job_id AND p.source=o.source
                 WHERE o.job_id IN ({placeholders}) ORDER BY o.last_seen DESC,o.source''', job_ids)
         result: dict[str, list[dict]] = {}
         for row in rows:
@@ -142,6 +151,9 @@ class Store:
             item['description_comparison'] = ('unknown' if row['description_sha256'] is None else
                 'matches' if row['description_sha256'] == _description_digest(row['description']) else 'differs')
             item['description_observed_at'] = row['observed_at']
+            item['reported_posted_date'] = row['reported_date']
+            item['posted_date_status'] = row['posted_date_status'] or 'unknown'
+            item['posted_date_observed_at'] = row['posted_date_observed_at']
             result.setdefault(row['job_id'], []).append(item)
         return result
 

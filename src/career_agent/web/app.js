@@ -365,6 +365,17 @@
       discovery.append(node("p", "muted", "These are times your searches returned this URL, not proof that the posting is open, current, or unchanged."));
       for (const row of job.discovery_observations) {
         discovery.append(node("p", "", row.source + " · first returned " + row.first_seen + " · last returned " + row.last_seen + " · " + row.observation_count + " search(es)"));
+        if (row.posted_date_status === "reported" || row.posted_date_status === "partial") {
+          const future = row.reported_posted_date > new Date().toISOString().slice(0, 10);
+          discovery.append(node("p", "muted", "Source-reported posting date: " + row.reported_posted_date + " · observed " + row.posted_date_observed_at +
+            (row.posted_date_status === "partial" ? ". Other returned rows did not provide a consistent date." : ".") +
+            (future ? " The reported date is in the future (UTC); verify it with the source." : "") +
+            " This is not independently verified and does not establish that the role is open."));
+        } else if (row.posted_date_status === "conflicting") {
+          discovery.append(node("p", "muted", "The source returned conflicting posting dates in the latest observation; the date is unknown."));
+        } else if (row.posted_date_status === "missing") {
+          discovery.append(node("p", "muted", "The source did not provide a usable posting date in the latest observation."));
+        }
         if (row.description_comparison === "differs") {
           discovery.append(node("p", "", "Source text observed " + row.description_observed_at + " differs from the saved description. It may be partial or outdated; inspect the original posting before relying on the draft."));
         } else if (row.description_comparison === "matches") {
