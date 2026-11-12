@@ -22,7 +22,7 @@ class FitHeadingsBrowserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); db = root / 'fictional.sqlite3'
             job = Job.from_mapping({'title': 'Engineer', 'company': 'Fictional Co',
-                'job_url': 'https://example.invalid/engineer', 'description': '**Qualifications**\n- Python experience'})
+                'job_url': 'https://example.invalid/engineer', 'description': '**Qualifications**\n- Python experience\n**About You**\n- Python collaboration\n**Preferred** :\n- SQL experience'})
             with Store(db) as store:
                 store.add_jobs([job])
                 CandidateWorkspace(store).import_legacy(CandidateProfile(('Engineer',), ('Python',), (), True), FactBank.parse(fake_fact_bank()))
@@ -46,6 +46,9 @@ class FitHeadingsBrowserTests(unittest.TestCase):
                         expect(evidence).to_contain_text('Section heading: **Qualifications**')
                         expect(evidence).to_contain_text('- Python experience')
                         expect(evidence).to_contain_text('Potentially relevant verified fact experience-01')
+                        expect(evidence).to_contain_text('Candidate-related section; level unspecified')
+                        expect(evidence).to_contain_text('Section heading: **About You**')
+                        expect(evidence).to_contain_text('Labeled preferred')
                         expect(evidence).not_to_contain_text('Labeled required')
                         preparation = page.locator('#interview-preparation')
                         preparation.get_by_role('button', name='Build preparation guide').click()
@@ -53,6 +56,7 @@ class FitHeadingsBrowserTests(unittest.TestCase):
                         expect(preparation).to_contain_text('Posting section: **Qualifications**')
                         expect(preparation).to_contain_text('- Python experience')
                         expect(preparation).to_contain_text('Possible example to review · experience-01')
+                        expect(preparation).to_contain_text('Posting section: **About You**')
                         expect(preparation).not_to_contain_text('Private fictional evidence')
                     finally:
                         browser.close()

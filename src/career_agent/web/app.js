@@ -504,7 +504,7 @@
 
     const evidence = section("Review explicit requirements");
     evidence.id = "fit-evidence";
-    evidence.append(node("p", "", "Compare clearly labeled requirement bullets with your verified facts. Keyword links are suggestions, not qualification decisions."));
+    evidence.append(node("p", "", "Compare recognized posting sections with your verified facts. Keyword links are suggestions, not qualification decisions."));
     const evidenceResult = node("div");
     evidenceResult.setAttribute("role", "status");
     const evidenceButton = button("Compare requirements", "button", async () => {
@@ -522,7 +522,7 @@
         if (!result.requirements.length) evidenceResult.append(node("p", "", "No clearly labeled requirement bullets found; review the full posting manually."));
         for (const row of result.requirements) {
           const item = node("div", "fit-evidence-item");
-          const label = row.category === "required" ? "Labeled required" : row.category === "preferred" ? "Labeled preferred" : "Qualification level unspecified";
+          const label = row.category === "required" ? "Labeled required" : row.category === "preferred" ? "Labeled preferred" : row.category === "candidate_context" ? "Candidate-related section; level unspecified" : "Qualification level unspecified";
           item.append(node("strong", "", label));
           if (row.source_heading && row.source_heading !== row.quote) item.append(node("p", "muted", "Section heading: " + row.source_heading));
           item.append(node("blockquote", "", row.quote));
