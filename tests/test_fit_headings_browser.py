@@ -47,6 +47,13 @@ class FitHeadingsBrowserTests(unittest.TestCase):
                         expect(evidence).to_contain_text('- Python experience')
                         expect(evidence).to_contain_text('Potentially relevant verified fact experience-01')
                         expect(evidence).not_to_contain_text('Labeled required')
+                        preparation = page.locator('#interview-preparation')
+                        preparation.get_by_role('button', name='Build preparation guide').click()
+                        expect(preparation).to_contain_text('not actual employer interview questions')
+                        expect(preparation).to_contain_text('Posting section: **Qualifications**')
+                        expect(preparation).to_contain_text('- Python experience')
+                        expect(preparation).to_contain_text('Possible example to review · experience-01')
+                        expect(preparation).not_to_contain_text('Private fictional evidence')
                     finally:
                         browser.close()
             finally:

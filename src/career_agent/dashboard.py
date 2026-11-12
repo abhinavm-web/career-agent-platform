@@ -854,6 +854,11 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return {'job_id': job.id, 'description_revision': job_revision,
                 'workspace_revision': workspace['revision'], **requirement_evidence(job.description, facts)}
 
+    @app.get('/api/jobs/{job_id}/interview-preparation')
+    def interview_preparation(job_id: str):
+        from .interview_prep import preparation_guide
+        return preparation_guide(fit_evidence(job_id))
+
     @app.put("/api/jobs/{job_id}/description")
     async def correct_job_description(job_id: str, request: Request):
         data = await request.json()

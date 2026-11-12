@@ -537,6 +537,39 @@
     evidence.append(evidenceButton, evidenceResult);
     detail.append(evidence);
 
+    const preparation = section("Interview preparation");
+    preparation.id = "interview-preparation";
+    preparation.append(node("p", "muted", "Build local practice prompts from the saved posting and your verified facts. No AI request, message, or application is sent."));
+    const prepResult = node("div"); prepResult.setAttribute("role", "status");
+    const prepButton = button("Build preparation guide", "button", async () => {
+      if (prepButton.disabled) return;
+      prepButton.disabled = true; prepResult.textContent = "Preparing local prompts…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/interview-preparation");
+        if (!preparation.isConnected) return;
+        if (result.job_id !== job.id || result.description_revision !== (job.description_revision ?? 0)) {
+          throw new Error("The posting changed; refresh the board and prepare again.");
+        }
+        prepResult.replaceChildren(node("p", "muted", result.notice), node("p", "muted",
+          "Saved posting revision " + result.description_revision + " · profile revision " + result.workspace_revision + "."));
+        const general = node("ul");
+        for (const question of result.general_questions) general.append(node("li", "", question));
+        prepResult.append(node("h4", "", "Questions to prepare"), general);
+        if (!result.prompts.length) prepResult.append(node("p", "", "No recognized qualification bullets found. Review the full posting and choose topics yourself."));
+        for (const prompt of result.prompts) {
+          const item = node("section", "fit-evidence-item");
+          item.append(node("h4", "", prompt.question), node("p", "muted", "Posting section: " + prompt.source_heading), node("blockquote", "", prompt.quote));
+          if (!prompt.suggested_facts.length) item.append(node("p", "", "No verified fact was linked by keyword; consider what to clarify. This is not a qualification gap."));
+          for (const fact of prompt.suggested_facts) item.append(node("p", "", "Possible example to review · " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));
+          if (prompt.additional_fact_matches) item.append(node("p", "muted", prompt.additional_fact_matches + " additional keyword-linked facts are not shown; use Compare requirements to review them."));
+          prepResult.append(item);
+        }
+        if (result.truncated) prepResult.append(node("p", "muted", "Some posting excerpts are not shown; inspect the full posting."));
+      } catch (error) { if (preparation.isConnected) prepResult.textContent = "Unable to build preparation guide: " + error.message; }
+      finally { prepButton.disabled = false; }
+    });
+    preparation.append(prepButton, prepResult); detail.append(preparation);
+
     const desc = section("Job description");
     desc.append(node("p", "description", job.description || "No description saved."));
     if (job.description_correction) {
