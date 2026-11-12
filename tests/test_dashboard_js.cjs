@@ -168,6 +168,12 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       assert.equal(options.headers["X-Session-Token"], "testing-only");
       return Promise.resolve({ok: true, blob: async () => ({})});
     }
+    if (url.includes("/cover-note.txt?")) {
+      assert.equal(options.headers["X-Session-Token"], "testing-only");
+      assert.equal(options.cache, "no-store");
+      assert.equal(options.credentials, "same-origin");
+      return Promise.resolve({ok: true, blob: async () => ({})});
+    }
     if (url === "/api/discover") {
       discoveryRequests.push(JSON.parse(options.body));
       return discovery();
@@ -427,6 +433,26 @@ test("reviewed Word download appears only for an approved current packet", async
       assert.ok(control);
       await control.click();
       assert.equal(h.downloads[0], "resume-" + ID_A + "-" + "a".repeat(12) + ".docx");
+      assert.match(h.get("notice").textContent, /not tracked/);
+    }
+  }
+});
+
+test("cover note download requires a current approved packet", async () => {
+  const find = (el) => el.tagName === "button" && el.textContent === "Download reviewed cover note"
+    ? el : el.children.map(find).find(Boolean);
+  for (const scenario of [{approved: false}, {approved: true, stale: true}, {approved: true}]) {
+    const h = createHarness(); await flush();
+    h.get("job-list").children[0].click();
+    const packet = fakePacket(ID_A, "Fictional resume");
+    packet.stale = scenario.stale;
+    packet.review = scenario.approved ? {decision: "approved_for_manual_submission"} : null;
+    h.waiting.get(ID_A)(ok(packet)); await flush();
+    const control = find(h.get("detail-panel"));
+    if (!scenario.approved || scenario.stale) assert.equal(control, undefined);
+    else {
+      assert.ok(control); await control.click();
+      assert.equal(h.downloads[0], "cover-note-" + ID_A + "-" + "a".repeat(12) + ".txt");
       assert.match(h.get("notice").textContent, /not tracked/);
     }
   }
