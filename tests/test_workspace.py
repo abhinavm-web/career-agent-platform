@@ -53,6 +53,39 @@ class WorkspaceModelTests(unittest.TestCase):
         self.addCleanup(self.store.connection.close)
         self.ws = CandidateWorkspace(self.store)
 
+    def test_portable_profile_import_preserves_content_but_resets_verification(self):
+        with self.assertRaisesRegex(ValueError, 'Save a career profile'):
+            self.ws.portable_export()
+        saved = self.ws.save(0, preferences(), [fact()])
+        verified = self.ws.verify(saved['revision'], 'pilot-01', True, True)
+        document = self.ws.portable_export()
+        self.assertTrue(document['facts'][0]['verified_by_candidate'])
+        self.assertEqual(document['source_revision'], verified['revision'])
+        document['facts'][0]['derived_from'] = {'fact_id': 'source-01', 'statement': 'Fictional original statement.',
+            'job_id': 'fictional-job', 'job_quote': 'Fictional role excerpt.'}
+        target_path = Path(self.tmp.name) / 'target.sqlite3'
+        with Store(target_path) as target:
+            target_ws = CandidateWorkspace(target)
+            with self.assertRaises(ValueError): target_ws.import_portable(document, False)
+            self.assertEqual(target_ws.latest()['revision'], 0)
+            imported = target_ws.import_portable(document, True)
+            self.assertEqual(imported['profile']['name'], 'Fictional Candidate')
+            self.assertFalse(imported['facts'][0]['verified_by_candidate'])
+            self.assertEqual(imported['facts'][0]['source_note'], 'Private fictional project note')
+            self.assertEqual(imported['facts'][0]['derived_from'], document['facts'][0]['derived_from'])
+            with self.assertRaises(StaleRevision): target_ws.import_portable(document, True)
+            self.assertEqual(target_ws.latest(), imported)
+        self.assertTrue(self.ws.latest()['facts'][0]['verified_by_candidate'])
+
+    def test_invalid_portable_documents_do_not_write(self):
+        for document in (None, {}, {'format': 'career-agent-profile', 'version': True,
+                'source_revision': 1, 'profile': preferences(), 'facts': [fact()]},
+                {'format': 'career-agent-profile', 'version': 1, 'source_revision': 1,
+                 'profile': preferences(), 'facts': [fact(), fact()]}):
+            with self.subTest(document=document), self.assertRaises(ValueError):
+                self.ws.import_portable(document, True)
+            self.assertEqual(self.ws.latest()['revision'], 0)
+
     def test_resume_contact_persists_and_old_clients_do_not_erase_it(self):
         line = 'fictional@example.invalid · +1 555 0100'
         saved = self.ws.save(0, {**preferences(), 'resume_contact': line}, [fact()])
@@ -300,6 +333,45 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/workspace").status_code, 403)
         self.assertEqual(self.api("GET", "/api/workspace", token="bad").status_code, 403)
         self.assertEqual(self.api("GET", "/api/workspace").status_code, 200)
+
+    def test_portable_api_roundtrip_requires_consent_and_never_overwrites(self):
+        saved = self.api('PUT', '/api/workspace', {'expected_revision': 0, 'profile': preferences(), 'facts': [fact()]}).json()['workspace']
+        verified = self.api('POST', '/api/workspace/facts/pilot-01/verification', {
+            'expected_revision': saved['revision'], 'verified': True, 'acknowledged': True}).json()['workspace']
+        self.assertEqual(self.api('GET', '/api/workspace/export', token='bad').status_code, 403)
+        exported = self.api('GET', '/api/workspace/export')
+        self.assertEqual(exported.status_code, 200)
+        self.assertIn('attachment', exported.headers['content-disposition'])
+        self.assertEqual(exported.headers['cache-control'], 'no-store')
+        document = exported.json()
+        self.assertTrue(document['facts'][0]['verified_by_candidate'])
+        self.assertEqual(document['source_revision'], verified['revision'])
+        folder = Path(self.tmp.name) / 'new'; folder.mkdir()
+        target = TestClient(create_app(DashboardConfig(db_path=folder / 'new.sqlite3', packet_dir=folder / 'packets')), base_url='http://localhost')
+        target_token = re.search(r'data-session="([^"]+)"', target.get('/').text).group(1)
+        headers = {'X-Session-Token': target_token}
+        self.assertEqual(target.post('/api/workspace/import-portable', json={'document': document, 'acknowledged': False}, headers=headers).status_code, 422)
+        result = target.post('/api/workspace/import-portable', json={'document': document, 'acknowledged': True}, headers=headers)
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertFalse(result.json()['workspace']['facts'][0]['verified_by_candidate'])
+        self.assertEqual(target.post('/api/workspace/import-portable', json={'document': document, 'acknowledged': True}, headers=headers).status_code, 409)
+        self.assertTrue(self.api('GET', '/api/workspace').json()['workspace']['facts'][0]['verified_by_candidate'])
+
+    def test_portable_import_cannot_create_profile_too_large_to_edit(self):
+        rows = []
+        for i in range(100):
+            rows.append({'id': f'fact-{i:03}', 'section': 'experience', 'statement': '😀' * 1000,
+                'keywords': ['😀' * 80 for _ in range(20)], 'source_note': '😀' * 500, 'verified_by_candidate': True,
+                'derived_from': {'fact_id': 'source-01', 'statement': '😀' * 1000,
+                                 'job_id': 'fictional', 'job_quote': '😀' * 2000}})
+        document = {'format': 'career-agent-profile', 'version': 1, 'source_revision': 1,
+                    'profile': preferences(), 'facts': rows}
+        data = json.dumps({'document': document, 'acknowledged': True}, ensure_ascii=False).encode('utf-8')
+        result = self.client.post('/api/workspace/import-portable', content=data,
+            headers={'X-Session-Token': self.token, 'Content-Type': 'application/json'})
+        self.assertEqual(result.status_code, 422)
+        self.assertIn('workspace editing limit', result.json()['detail'])
+        self.assertEqual(self.api('GET', '/api/workspace').json()['workspace']['revision'], 0)
 
     def test_board_shows_saved_constraints_separately_from_score(self):
         profile = {**preferences(), "require_remote": True, "excluded_companies": ["Example Test Employer"]}

@@ -17,6 +17,8 @@ from .storage import Store
 PROFILE_LISTS = ("target_titles", "skills", "preferred_locations")
 FACT_FIELDS = {"id", "section", "statement", "keywords", "source_note", "verified_by_candidate", "derived_from"}
 MAX_FACTS = 100
+PORTABLE_FORMAT = 'career-agent-profile'
+PORTABLE_VERSION = 1
 
 
 class StaleRevision(ValueError):
@@ -163,6 +165,29 @@ class CandidateWorkspace:
             (max(0, min(limit, 100)),),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def portable_export(self) -> dict[str, Any]:
+        """Return the current profile only; this is not a workspace backup."""
+        current = self.latest()
+        if current['revision'] == 0:
+            raise ValueError('Save a career profile before exporting')
+        return {'format': PORTABLE_FORMAT, 'version': PORTABLE_VERSION,
+                'source_revision': current['revision'], 'profile': current['profile'], 'facts': current['facts']}
+
+    def import_portable(self, document, acknowledged):
+        """Import to an empty workspace; never trust imported verification."""
+        if acknowledged is not True:
+            raise ValueError('Confirm importing this profile and re-verifying its facts')
+        if (not isinstance(document, dict) or set(document) != {'format', 'version', 'source_revision', 'profile', 'facts'}
+                or document['format'] != PORTABLE_FORMAT or type(document['version']) is not int
+                or document['version'] != PORTABLE_VERSION or type(document['source_revision']) is not int
+                or document['source_revision'] < 0):
+            raise ValueError('Invalid or unsupported career profile export')
+        profile = _validate_profile(document['profile'])
+        facts = _validate_facts(document['facts'])
+        for fact in facts:
+            fact['verified_by_candidate'] = False
+        return self._write(0, lambda _current: {'profile': profile, 'facts': facts}, 'portable_import')
 
     def _write(self, expected_revision: int, transform, change_type: str) -> dict[str, Any]:
         if type(expected_revision) is not int or expected_revision < 0:

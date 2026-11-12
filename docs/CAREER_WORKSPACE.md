@@ -49,6 +49,12 @@ career-agent serve --profile examples/profile.example.json --facts examples/cand
 
 These examples are not real career claims.
 
+## Transfer a career profile
+
+In **Career profile → Export or import career profile**, download the current profile and facts as JSON. This file is **unencrypted** and includes contact details, private source notes, verification flags and any AI-wording source snapshots. Store and share it carefully. It excludes jobs, previous revisions, application history, packets and AI configuration; use the separate [workspace backup](BACKUP.md) for a complete supported offline recovery.
+
+Import a profile JSON file of up to 4 MB only into a workspace with no saved profile. The app asks before replacing unsaved editor text, validates the file, and refuses to overwrite an existing workspace. It also rejects a profile too large for the normal editor to save. It preserves statements, notes and stored provenance but marks **every imported fact unverified**, regardless of the file's prior flags. Review each fact and verify it again before drafting. References to a prior job in AI-wording provenance are historical context; the referenced job may not exist in the new workspace. For a complete restore that retains verification and supported workspace history, use a stopped-server backup and restore instead.
+
 ## Model and history
 
 - One local SQLite database stores the latest document plus append-only revisions. Revision 0 means "not initialized".
