@@ -264,7 +264,8 @@
       const editor = byId("detail-panel").querySelector?.("#job-description-editor");
       const description = editor?.querySelector?.("textarea");
       const source = editor?.querySelectorAll?.("textarea")?.[1];
-      if (editor?.open && description && (description.value !== description.defaultValue || source?.value) &&
+      const capture = editor?.querySelector?.("#description-capture-input");
+      if (editor?.open && description && (description.value !== description.defaultValue || source?.value || capture?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
     }
     state.selectedId = id;
@@ -607,7 +608,33 @@
       const confirmation = node("label", "check-label");
       const acknowledged = node("input"); acknowledged.type = "checkbox"; acknowledged.required = true;
       confirmation.append(acknowledged, document.createTextNode("I reviewed this corrected description."));
+      input.addEventListener("input", () => { acknowledged.checked = false; });
+      source.addEventListener("input", () => { acknowledged.checked = false; });
       form.append(confirmation);
+      const capturePanel = node("details");
+      capturePanel.append(node("summary", "", "Use a browser capture for this job"), node("p", "muted", "Paste a capture from the same job URL. The text fills the editor only; review and save it separately. Ambiguous or different URLs require manual review."));
+      const captureLabel = node("label", "block-label", "Browser capture JSON");
+      const captureInput = node("textarea"); captureInput.id = "description-capture-input"; captureInput.rows = 3; captureInput.maxLength = 60000;
+      captureLabel.append(captureInput); capturePanel.append(captureLabel);
+      const captureStatus = node("p", "muted"); captureStatus.setAttribute("role", "status");
+      const captureButton = button("Fill description from capture", "button", async () => {
+        if (captureButton.disabled) return;
+        const originalCapture = captureInput.value, originalDescription = input.value;
+        if (originalDescription.trim() && !window.confirm("Replace the description editor text with this capture?")) return;
+        captureButton.disabled = true; submit.disabled = true;
+        try {
+          const capture = JSON.parse(originalCapture);
+          if (!capture || Array.isArray(capture) || typeof capture !== "object") throw new Error("Invalid browser capture.");
+          const result = await api("/api/jobs/" + job.id + "/capture-preview", "POST", {format: capture.format, url: capture.url, selection: capture.selection});
+          if (!editor.isConnected || state.selectedId !== job.id) return;
+          if (captureInput.value !== originalCapture || input.value !== originalDescription) throw new Error("Editor changed while checking; review and try again.");
+          if (result.job_id !== job.id || typeof result.description !== "string") throw new Error("Capture did not match this job.");
+          input.value = result.description; acknowledged.checked = false;
+          captureStatus.textContent = "Text loaded into the editor only. Review it and confirm before saving.";
+        } catch (error) { captureStatus.textContent = error instanceof SyntaxError ? "Paste a valid browser capture." : error.message; }
+        finally { captureButton.disabled = false; submit.disabled = false; }
+      });
+      capturePanel.append(captureButton, captureStatus); form.append(capturePanel);
       const submit = button("Save corrected description", "button button-primary"); submit.type = "submit";
       const status = node("p", "muted"); status.setAttribute("role", "status");
       form.append(submit, status);
@@ -615,7 +642,7 @@
         event.preventDefault();
         if (submit.disabled || !acknowledged.checked) return;
         const description = input.value, sourceNote = source.value;
-        submit.disabled = true; input.disabled = true; source.disabled = true; acknowledged.disabled = true;
+        submit.disabled = true; input.disabled = true; source.disabled = true; acknowledged.disabled = true; captureButton.disabled = true; captureInput.disabled = true;
         try {
           const result = await api("/api/jobs/" + job.id + "/description", "PUT", {
             description, source_note: sourceNote, expected_revision: job.description_revision ?? 0, acknowledged: true
@@ -624,7 +651,7 @@
           editor.open = false;
           if (state.selectedId === job.id) await refresh(job.id);
         } catch (error) { status.textContent = error.message; }
-        finally { submit.disabled = false; input.disabled = false; source.disabled = false; acknowledged.disabled = false; }
+        finally { submit.disabled = false; input.disabled = false; source.disabled = false; acknowledged.disabled = false; captureButton.disabled = false; captureInput.disabled = false; }
       });
       editor.append(form); desc.append(editor);
     } else {
