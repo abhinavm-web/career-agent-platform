@@ -39,6 +39,49 @@ class CRMStoreTests(unittest.TestCase):
         self.store.add_jobs([self.job, self.second])
         self.crm = ApplicationCRM(self.store)
 
+    def test_summary_bulk_read_preserves_stages_and_query_count_at_scale(self):
+        jobs = [sample_job(f"bulk-{i}") for i in range(1200)]
+        self.store.add_jobs(jobs)
+        with self.store.connection:
+            self.store.connection.executemany(
+                "INSERT INTO applications(job_id,stage) VALUES(?,?)",
+                [(job.id, 'submitted' if i % 2 else 'ready_for_review')
+                 for i, job in enumerate(jobs) if i % 3],
+            )
+            self.store.connection.executemany(
+                "INSERT INTO crm_stage_events(job_id,stage) VALUES(?,?)",
+                [(job.id, ('saved', 'interview', 'unexpected')[i % 3])
+                 for i, job in enumerate(jobs)],
+            )
+            self.store.connection.executemany(
+                "INSERT INTO crm_priority_events(job_id,priority) VALUES(?,?)",
+                [(job.id, ('low', 'high')[i % 2]) for i, job in enumerate(jobs)],
+            )
+            self.store.connection.execute(
+                "INSERT INTO crm_stage_events(job_id,stage) VALUES(?,?)", (jobs[0].id, 'shortlisted')
+            )
+            self.store.connection.execute(
+                "INSERT INTO crm_priority_events(job_id,priority) VALUES(?,?)", (jobs[0].id, 'medium')
+            )
+        ordered_jobs = self.store.list_jobs(limit=-1)
+        expected = [{
+            'job_id': job.id, 'stage': self.crm._stage(job.id),
+            'title': job.title, 'company': job.company, 'location': job.location,
+            'application_stage': self.store.stage_of(job.id), 'priority': self.crm.priority(job.id),
+        } for job in ordered_jobs]
+        statements = []
+        self.store.connection.set_trace_callback(statements.append)
+        try:
+            summary = self.crm.summary()
+        finally:
+            self.store.connection.set_trace_callback(None)
+        self.assertEqual(summary['job_stages'], expected)
+        self.assertEqual(summary['stages'], {
+            stage: sum(item['stage'] == stage for item in expected)
+            for stage in {item['stage'] for item in expected}
+        })
+        self.assertLessEqual(len(statements), 3)
+
     def test_preapplication_stages_do_not_submit_applications(self):
         self.assertEqual(self.crm.details(self.job.id)["stage"], "discovered")
         self.assertEqual(self.crm.change_stage(self.job.id, "saved")["stage"], "saved")

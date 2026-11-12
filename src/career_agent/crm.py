@@ -454,16 +454,26 @@ class ApplicationCRM:
         }
 
     def summary(self) -> dict:
-        jobs = self.store.list_jobs(limit=-1)
+        jobs = self.conn.execute(
+            "SELECT j.job_id,j.title,j.company,j.location, "
+            "COALESCE(a.stage,'discovered') AS application_stage, "
+            "(SELECT stage FROM crm_stage_events WHERE job_id=j.job_id "
+            "ORDER BY event_id DESC LIMIT 1) AS crm_stage, "
+            "COALESCE((SELECT priority FROM crm_priority_events WHERE job_id=j.job_id "
+            "ORDER BY event_id DESC LIMIT 1),'none') AS priority "
+            "FROM jobs j LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY j.rowid DESC"
+        ).fetchall()
         counts: dict[str, int] = {}
         job_stages = []
         for job in jobs:
-            stage = self._stage(job.id)
+            submitted = job["application_stage"] == "submitted"
+            valid_stages = POST_APPLICATION if submitted else PRE_APPLICATION
+            stage = job["crm_stage"] if job["crm_stage"] in valid_stages else ("applied" if submitted else "discovered")
             job_stages.append({
-                "job_id": job.id, "stage": stage, "title": job.title,
-                "company": job.company, "location": job.location,
-                "application_stage": self.store.stage_of(job.id),
-                "priority": self.priority(job.id),
+                "job_id": job["job_id"], "stage": stage, "title": job["title"],
+                "company": job["company"], "location": job["location"],
+                "application_stage": job["application_stage"],
+                "priority": job["priority"],
             })
             counts[stage] = counts.get(stage, 0) + 1
         rows = self.conn.execute(
