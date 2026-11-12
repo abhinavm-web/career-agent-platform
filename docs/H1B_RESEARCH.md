@@ -49,7 +49,9 @@ Required columns are `CASE_NUMBER`, `EMPLOYER_NAME`, `VISA_CLASS`, `CASE_STATUS`
 - Posting interpretation is a deterministic English-language heuristic, not complete natural-language understanding. All stored job links require a fresh check: this feature does not verify that the vacancy remains open, that sponsorship applies to the location, or that an individual qualifies for transfer, cap exemption or a new petition. No legal screening answers are inferred.
 - Statements limiting sponsorship to a group or condition, or saying it cannot be guaranteed, are treated as conditional rather than general support. Explicitly denied H-1B transfers alongside a separate positive sponsorship claim are shown as conflicting. Other wording can still be missed; inspect the original posting.
 
-The existing packet evidence files remain a separate, manually curated input. Importing LCA records does not modify saved packets, approvals or candidate facts. [USCIS refresh/import and live ATS checks](USCIS_LIVE_CHECKS.md) are available as separate, explicit actions. Recruiter-confirmed policy records and checks for other job sites remain future work.
+For a saved job, expand **Recruiter or employer policy notes** to record the date, source, pathway, reported response and what was said, including conditions. These are candidate-entered research notes, not independently verified confirmations or legal advice. They apply only to that job and never change the automated posting assessment, filing history, matching, packets or approvals. Reload the section to see the latest 50 notes in recording order; add a new note to correct an earlier one. Notes are append-only in this version and can contain personal information; like the local database, they are unencrypted and included in full workspace backups.
+
+The existing packet evidence files remain a separate, manually curated input. Importing LCA records does not modify saved packets, approvals or candidate facts. [USCIS refresh/import and live ATS checks](USCIS_LIVE_CHECKS.md) are available as separate, explicit actions. Checks for other job sites remain future work.
 
 ## Validation
 

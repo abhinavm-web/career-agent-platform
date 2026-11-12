@@ -145,12 +145,76 @@
     }
     box.append(link("Checked source", result.source_url));
   }
+  function policyNotes(job) {
+    const details = node("details");
+    details.append(node("summary", "Recruiter or employer policy notes"), node("p", "Record what you were told about this specific role. Notes are candidate-entered, unverified and may become outdated; they do not change the posting assessment or establish eligibility. Stored locally without encryption. Corrections can be added as another note."));
+    const output = node("div"), status = node("p"); status.setAttribute("role", "status");
+    const path = "/api/jobs/" + job.id + "/h1b/policy-notes";
+    let sequence = 0;
+    function show(notes) {
+      output.replaceChildren();
+      if (!notes.length) output.append(node("p", "No notes recorded for this role."));
+      for (const note of notes) {
+        const entry = node("section");
+        entry.append(node("p", note.discussed_on + " · " + note.source + " · " + note.pathway.replaceAll("_", " ") + " · " + note.response.replaceAll("_", " ") + " · recorded " + note.recorded_at), node("blockquote", note.statement));
+        output.append(entry);
+      }
+      status.textContent = "Showing up to 50 most recently recorded notes.";
+    }
+    const load = node("button", "Load policy notes"); load.type = "button"; load.className = "button";
+    load.addEventListener("click", async () => {
+      if (load.disabled) return;
+      load.disabled = true; const request = ++sequence;
+      try { const data = await api(path); if (details.isConnected && request === sequence) show(data.notes); }
+      catch (error) { if (request === sequence) status.textContent = error.message; }
+      finally { load.disabled = save.disabled; }
+    });
+    const form = node("form"); form.className = "crm-form";
+    function input(label, type, limit) {
+      const wrapper = node("label", label); wrapper.className = "field";
+      const field = node("input"); field.type = type; field.required = true;
+      if (limit) field.maxLength = limit;
+      wrapper.append(field); form.append(wrapper); return field;
+    }
+    function select(label, choices) {
+      const wrapper = node("label", label); wrapper.className = "field";
+      const field = node("select");
+      for (const [value, description] of choices) { const option = node("option", description); option.value = value; field.append(option); }
+      wrapper.append(field); form.append(wrapper); return field;
+    }
+    const date = input("Discussion date", "date"), source = input("Who or what was the source?", "text", 300);
+    const pathway = select("H-1B pathway discussed", [["unspecified", "Unspecified"], ["new", "New sponsorship"], ["transfer", "Transfer"]]);
+    const response = select("Reported response", [["unclear", "Unclear"], ["supports", "Supports"], ["does_not_support", "Does not support"], ["conditional", "Conditional"]]);
+    const label = node("label", "What was said, including any conditions?"); label.className = "field";
+    const statement = node("textarea"); statement.required = true; statement.maxLength = 2000; label.append(statement); form.append(label);
+    const acknowledgement = node("label"); acknowledgement.className = "check-label";
+    const confirm = node("input"); confirm.type = "checkbox"; confirm.required = true;
+    acknowledgement.append(confirm, document.createTextNode(" I understand this is my unverified record, not a guarantee."));
+    const save = node("button", "Save policy note"); save.type = "submit"; save.className = "button";
+    form.append(acknowledgement, save);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault(); if (save.disabled || !confirm.checked) return;
+      const request = ++sequence;
+      const controls = [date, source, pathway, response, statement, confirm, save];
+      controls.forEach(control => { control.disabled = true; }); load.disabled = true;
+      try {
+        const data = await api(path, "POST", {discussed_on: date.value, source: source.value, pathway: pathway.value,
+          response: response.value, statement: statement.value, acknowledged: true});
+        if (!details.isConnected || request !== sequence) return;
+        form.reset(); show(data.notes); status.textContent = "Policy note saved. " + status.textContent;
+      } catch (error) { status.textContent = error.message; }
+      finally { controls.forEach(control => { control.disabled = false; }); load.disabled = false; }
+    });
+    details.append(load, status, output, form);
+    return details;
+  }
   function jobCard(job) {
     const card = node("section");
     card.className = "panel profile-editor";
     card.append(node("h3", job.title + " · " + job.company));
     if (job.location) card.append(node("p", job.location));
     card.append(node("p", job.policy.replaceAll("_", " ") + " · " + job.reason));
+    card.append(policyNotes(job));
     const association = job.employer_association;
     const reusable = job.company_association;
     card.append(node("p", "Recent certified LCA cases for " + job.history.employer + " in local imports: " + job.history.recent_certified_cases + ". Missing records do not mean no sponsorship. The assessment above uses the saved posting."));

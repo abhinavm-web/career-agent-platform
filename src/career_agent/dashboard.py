@@ -624,6 +624,17 @@ def create_app(config: DashboardConfig) -> FastAPI:
         with Store(config.db_path) as store:
             return H1BResearch(store).company_link_history(_get_job(store, job_id))
 
+    @app.get("/api/jobs/{job_id}/h1b/policy-notes")
+    def h1b_policy_notes(job_id: str):
+        with Store(config.db_path) as store:
+            return {"notes": H1BResearch(store).policy_notes(_get_job(store, job_id))}
+
+    @app.post("/api/jobs/{job_id}/h1b/policy-notes")
+    async def h1b_add_policy_note(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return {"notes": H1BResearch(store).add_policy_note(_get_job(store, job_id), data)}
+
     @app.put("/api/jobs/{job_id}/h1b/company-association")
     async def h1b_link_company(job_id: str, request: Request):
         data = await request.json()
