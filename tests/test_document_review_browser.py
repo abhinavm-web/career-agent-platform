@@ -125,7 +125,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
             data['facts'].append({**data['facts'][0], 'id': 'experience-02',
                 'statement': 'Led a fictional Python migration.', 'source_note': 'Private second note.'})
             data['facts'].append({**data['facts'][0], 'id': 'education-01', 'section': 'education',
-                'statement': 'Completed a fictional degree.', 'source_note': 'Private education note.'})
+                'statement': 'Completed a fictional degree.', 'keywords': ['Degree'], 'source_note': 'Private education note.'})
             data['facts'].append({**data['facts'][0], 'id': 'projects-01', 'section': 'projects',
                 'statement': 'Omitted fictional project for comparison.', 'source_note': 'Private project note.'})
             facts = root / 'facts.json'; facts.write_text(json.dumps(data))
@@ -146,6 +146,25 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#job-list button').first.click()
+                        page.get_by_text('Choose facts for a tailored draft', exact=True).click()
+                        page.get_by_role('button', name='Load verified facts').click()
+                        picker = page.locator('.tailoring-picker')
+                        python_fact = picker.locator('.tailoring-fact').filter(has_text='Delivered a fictional AI program')
+                        expect(python_fact).to_contain_text('Keyword mentions: Python, AWS')
+                        degree_fact = picker.locator('.tailoring-fact').filter(has_text='Completed a fictional degree')
+                        expect(degree_fact).to_contain_text('relevance is unknown')
+                        expect(picker.get_by_label('experience · Delivered a fictional AI program involving Python and AWS.')).not_to_be_checked()
+                        expect(picker).not_to_contain_text('Private education note')
+                        page.get_by_label('experience · Delivered a fictional AI program involving Python and AWS.').check()
+                        page.get_by_label('experience · Led a fictional Python migration.').check()
+                        page.get_by_label('education · Completed a fictional degree.').check()
+                        with Store(db) as store:
+                            store.correct_description(fake_job().id, 'Updated fictional role seeking Python and AWS.', 0, 'Fictional source')
+                        page.get_by_role('button', name='Create tailored draft').click()
+                        expect(picker).to_contain_text('Job description changed')
+                        expect(picker.get_by_label('education · Completed a fictional degree.')).to_be_checked()
+                        self.assertFalse((root / 'packets').exists())
+                        page.reload(); page.locator('#job-list button').first.click()
                         page.get_by_text('Choose facts for a tailored draft', exact=True).click()
                         page.get_by_role('button', name='Load verified facts').click()
                         page.get_by_label('experience · Delivered a fictional AI program involving Python and AWS.').check()

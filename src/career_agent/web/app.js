@@ -720,23 +720,26 @@
       choose.append(node("summary", "", "Choose facts for a tailored draft"));
       choose.append(node("p", "muted", "Select verified facts and arrange sections and facts. Statements are copied verbatim; changes create a new draft that needs a fresh review."));
       choose.append(node("p", "muted", "To change a statement, edit it in Career profile and verify the changed fact before including it."));
+      choose.append(node("p", "muted", "Keyword mentions compare each fact's saved keywords with the job title and description. They are suggestions, not proof of fit or a reason to omit other facts."));
       const choices = node("div");
       const status = node("p", "muted"); status.setAttribute("role", "status");
       const load = button("Load verified facts", "button", async () => {
         if (load.disabled) return;
         load.disabled = true;
         try {
-          const result = await api("/api/tailoring/facts");
+          const result = await api("/api/jobs/" + job.id + "/tailoring/facts");
           if (!Number.isInteger(result.max_facts) || result.max_facts < 1) throw new Error("Invalid selection limit; reload and try again.");
+          if (result.job_id !== job.id || result.description_revision !== (job.description_revision ?? 0)) throw new Error("The posting changed; refresh the board before choosing facts.");
           const limit = result.max_facts;
           const sections = ["experience", "projects", "skills", "education", "certifications"];
           const selected = [];
           let layoutBusy = false;
           for (const fact of result.facts) {
+            if (!Array.isArray(fact.matched_keywords) || !fact.matched_keywords.every(word => typeof word === "string")) throw new Error("Invalid fact evidence; reload and try again.");
             const label = node("label", "check-label");
             const box = document.createElement("input"); box.type = "checkbox";
             label.append(box, document.createTextNode(fact.section + " · " + fact.statement));
-            selected.push({box, label, id: fact.id, section: fact.section});
+            selected.push({box, label, id: fact.id, section: fact.section, matched: fact.matched_keywords});
           }
           const submit = button("Create tailored draft", "button button-primary", async () => {
             const fact_ids = selected.filter((item) => item.box.checked).map((item) => item.id);
@@ -745,7 +748,7 @@
             submit.disabled = true; load.disabled = true; layoutBusy = true; renderLayout();
             selected.forEach((item) => {item.box.disabled = true;});
             try {
-              await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, section_order: sections.slice(), workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256});
+              await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, section_order: sections.slice(), workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256, job_description_revision: result.description_revision});
               notice("Tailored draft created locally. Review it before using.");
               if (state.selectedId === job.id) await refresh(job.id);
             } catch (error) {status.textContent = error.message;}
@@ -770,6 +773,7 @@
               items.forEach((item, position) => {
                 const row = node("div", "tailoring-fact");
                 row.append(item.label);
+                row.append(node("p", "muted", item.matched.length ? "Keyword mentions: " + item.matched.join(", ") : "No fact keywords found in the saved title or description; relevance is unknown."));
                 const move = (delta) => {
                   const from = selected.indexOf(item), to = selected.indexOf(items[position + delta]);
                   [selected[from], selected[to]] = [selected[to], selected[from]];
@@ -785,7 +789,7 @@
             choices.append(submit);
           }
           renderLayout();
-          status.textContent = result.facts.length ? "Choose up to " + limit + " verified facts to include." : "No verified facts available.";
+          status.textContent = result.facts.length ? "Choose up to " + limit + " verified facts to include." + (result.description_missing ? " The description is missing, so keyword mentions use only the title." : "") : "No verified facts available.";
           submit.disabled = !result.facts.length;
         } catch (error) {status.textContent = error.message;}
         finally {load.disabled = false;}
