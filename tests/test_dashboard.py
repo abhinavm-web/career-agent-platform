@@ -176,6 +176,20 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
             self.assertFalse(self.packet_dir.exists())
 
+    def test_ai_tailoring_is_consent_gated_and_read_only(self):
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        output = {'suggestions': [{'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Fictional rewrite.'}]}
+        url = f'/api/jobs/{self.job.id}/ai-tailoring-suggestions'
+        before = self.call('GET', '/api/workspace').json()
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            self.assertEqual(self.call('POST', url, {'route': 'local'}).status_code, 422)
+            complete.assert_not_called()
+            response = self.call('POST', url, {'route': 'local', 'acknowledged': True})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['suggestions'][0]['fact_id'], 'experience-01')
+        self.assertEqual(self.call('GET', '/api/workspace').json(), before)
+        self.assertFalse(self.packet_dir.exists())
+
     def test_profile_chat_sends_only_opted_in_verified_statements(self):
         path = '/api/workspace/chat'
         request = {'route': 'local', 'message': 'What should I highlight?'}

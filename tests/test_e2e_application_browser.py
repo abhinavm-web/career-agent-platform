@@ -58,6 +58,13 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#ai-results')).to_contain_text('Python skills.')
                         expect(page.locator('#ai-results')).to_contain_text('Delivered a fictional AI program')
                         self.assertEqual(complete.call_count, 1)
+                        complete.return_value = json.dumps({'suggestions': [{'fact_id': 'experience-01',
+                            'job_quote': 'Python skills.', 'wording': 'A fictional suggested rewrite.'}]})
+                        page.locator('#ai-consent').check(); page.locator('#ai-tailor').click()
+                        expect(page.locator('#ai-results')).to_contain_text('Unverified suggested wording: A fictional suggested rewrite.')
+                        expect(page.locator('#ai-results')).to_contain_text('Delivered a fictional AI program')
+                        expect(page.locator('#ai-results')).to_contain_text('do not change your profile')
+                        self.assertEqual(complete.call_count, 2)
                     finally:
                         browser.close()
             finally:

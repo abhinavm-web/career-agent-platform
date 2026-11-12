@@ -40,7 +40,7 @@
   el("ai-job").addEventListener("change", changed);
   el("ai-load").addEventListener("click", async () => {
     if (busy) return;
-    busy = true; el("ai-load").disabled = true; el("ai-run").disabled = true;
+    busy = true; el("ai-load").disabled = true; el("ai-run").disabled = true; el("ai-tailor").disabled = true;
     try {
       const previousRoute = el("ai-route").value;
       const previousJob = el("ai-job").value;
@@ -61,6 +61,7 @@
       if (!ready) el("ai-results").replaceChildren();
       el("ai-open-profile").hidden = ready;
       el("ai-run").disabled = !routes.length || !jobs.jobs.length || !ready;
+      el("ai-tailor").disabled = el("ai-run").disabled;
       if (!sameSelection || !el("ai-results").children.length || !ready) {
         el("ai-status").textContent = !ready ? "Verify at least one career fact before analysis." :
           (routes.length ? "Choose a model and job, then confirm data sharing." : "No model routes configured. See docs/AI_MODELS.md for local setup.") +
@@ -73,15 +74,27 @@
     event.preventDefault();
     if (busy || !el("ai-consent").checked) return;
     busy = true;
-    const ids = ["ai-load", "ai-run", "ai-route", "ai-job", "ai-consent"];
+    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-job", "ai-consent"];
     ids.forEach((id) => { el(id).disabled = true; });
     el("ai-results").replaceChildren();
     el("ai-status").textContent = "Analyzing with the selected provider…";
     const jobId = el("ai-job").value;
+    const tailoring = event.submitter?.id === "ai-tailor";
     try {
-      const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/ai-analysis`, {route: el("ai-route").value, acknowledged: true});
+      const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/${tailoring ? "ai-tailoring-suggestions" : "ai-analysis"}`, {route: el("ai-route").value, acknowledged: true});
       if (el("ai-job").dataset.requestedJob && el("ai-job").dataset.requestedJob !== jobId) return;
       el("ai-status").textContent = `${r.notice} Model: ${r.model}. Checked: ${r.observed_at}.`;
+      if (tailoring) {
+        if (!r.suggestions.length) el("ai-results").append(text("p", "No wording suggestions returned."));
+        for (const row of r.suggestions) {
+          const section = document.createElement("section");
+          section.append(text("p", `Verified fact ${row.fact_id}: ${row.original_fact}`),
+            text("blockquote", row.job_quote), text("p", `Unverified suggested wording: ${row.wording}`));
+          el("ai-results").append(section);
+        }
+        el("ai-results").append(text("p", "These suggestions do not change your profile or application. Check them against your records; add and verify any accurate wording in Career profile before including it in a draft."));
+        return;
+      }
       if (!r.requirements.length) el("ai-results").append(text("p", "No requirements returned. This does not establish a match or absence of requirements."));
       for (const row of r.requirements) {
         const section = document.createElement("section");
