@@ -121,6 +121,36 @@ class Store:
             result.setdefault(row['job_id'], []).append({k: row[k] for k in ('source','first_seen','last_seen','observation_count')})
         return result
 
+    def possible_duplicates(self, job_id: str) -> dict:
+        """Find possible same-title postings without changing either record."""
+        job = self.get_job(job_id)
+        normalize = lambda value: ' '.join(value.casefold().split())
+        location = normalize(job.location)
+        if not location:
+            return {'jobs': [], 'scan_limited': False, 'results_truncated': False,
+                    'reason': 'Location is missing; compare other postings manually.'}
+        matches = []
+        scan_limited = False
+        results_truncated = False
+        rows = self.connection.execute('''SELECT job_id,company,title,location,url,source FROM jobs
+            WHERE job_id<>? ORDER BY rowid DESC LIMIT 10001''', (job.id,))
+        for index, row in enumerate(rows):
+            if index == 10000:
+                scan_limited = True
+                break
+            if (normalize(row['company']) != normalize(job.company) or
+                normalize(row['title']) != normalize(job.title) or
+                normalize(row['location']) != location):
+                continue
+            if len(matches) == 10:
+                results_truncated = True
+                break
+            item = dict(row)
+            item['submission_recorded'] = self.stage_of(row['job_id']) == 'submitted'
+            matches.append(item)
+        return {'jobs': matches, 'scan_limited': scan_limited, 'results_truncated': results_truncated,
+                'reason': 'Exact company, title and location after case and whitespace normalization only. Matching details can still represent different requisitions.'}
+
     def list_jobs(self, limit: int = 100) -> list[Job]:
         rows = self.connection.execute(
             "SELECT * FROM jobs ORDER BY rowid DESC LIMIT ?", (limit,)

@@ -708,6 +708,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
             inserted = store.add_jobs([job])
         return {"job_id": job.id, "created": inserted == 1}
 
+    @app.get("/api/jobs/{job_id}/possible-duplicates")
+    def possible_duplicates(job_id: str):
+        with Store(config.db_path) as store:
+            store.connection.execute('BEGIN')
+            _get_job(store, job_id)
+            return {'job_id': job_id, **store.possible_duplicates(job_id)}
+
     @app.get("/api/jobs/{job_id}/description-history")
     def description_history(job_id: str):
         with Store(config.db_path) as store:

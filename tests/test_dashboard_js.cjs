@@ -131,6 +131,12 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
   const chatRequests = [];
   const downloads = [];
   const fetch = (url, options = {}) => {
+    if (url === '/api/jobs/' + ID_A + '/possible-duplicates') return Promise.resolve(ok({
+      job_id: ID_A, reason: 'Matching details can still represent different requisitions.',
+      results_truncated: true, scan_limited: true,
+      jobs: [{job_id: ID_B, company: 'Example Corp', title: 'Role Alpha', location: 'Remote USA',
+        source: '<fictional source>', url: 'https://example.invalid/other', submission_recorded: true}]
+    }));
     if (url === '/api/jobs/' + ID_A + '/fit-evidence') return Promise.resolve(ok({
       job_id: ID_A, description_revision: 0, workspace_revision: 0,
       notice: 'Keyword links need review', truncated: false,
@@ -305,6 +311,20 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test('possible duplicates show source and recorded submission without merging', async () => {
+  const h = createHarness(); await flush();
+  h.get('job-list').children[0].click();
+  const find = (el) => el.tagName === 'button' && el.textContent === 'Find possible duplicates'
+    ? el : el.children.map(find).find(Boolean);
+  await find(h.get('detail-panel')).click();
+  const output = h.get('detail-panel').textContent;
+  assert.match(output, /different requisitions/);
+  assert.match(output, /<fictional source>/);
+  assert.match(output, /Submission recorded/);
+  assert.match(output, /Showing the first 10/);
+  assert.match(output, /10,000 most recent/);
+});
 
 test('discovery history is visible without claiming a job is current', async () => {
   const job = {...fakeJob(ID_A, 'Role Alpha'), discovery_observations: [{

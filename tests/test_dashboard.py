@@ -9,7 +9,7 @@ import re
 import tempfile
 import unittest
 from unittest.mock import patch
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from career_agent.application import load_packet
@@ -476,6 +476,24 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(snippet, response.text)
             self.assertEqual(response.headers["cache-control"], "no-store")
+
+    def test_possible_duplicates_api_is_private_and_read_only(self):
+        other = replace(self.job, url='https://example.invalid/jobs/another', source='linkedin')
+        with Store(self.db) as store:
+            store.add_jobs([other])
+            store.stage(other.id)
+            store.confirm(other.id, 'fictional-receipt', attested=True)
+        path = f'/api/jobs/{self.job.id}/possible-duplicates'
+        self.assertEqual(self.call('GET', path, token='bad').status_code, 403)
+        response = self.call('GET', path)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['jobs'][0]['job_id'], other.id)
+        self.assertTrue(response.json()['jobs'][0]['submission_recorded'])
+        self.assertNotIn('fictional-receipt', response.text)
+        self.assertEqual(self.call('GET', '/api/jobs/0000000000000000/possible-duplicates').status_code, 404)
+        with Store(self.db) as store:
+            self.assertEqual(len(store.list_jobs()), 2)
+            self.assertEqual(store.stage_of(other.id), 'submitted')
 
     def test_discovery_imports_deduplicated_jobs_without_sending_candidate_data(self):
         new_job = fake_job("https://example.invalid/jobs/new")
