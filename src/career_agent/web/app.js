@@ -8,7 +8,7 @@
   const token = root.dataset.session;
   const state = {
     jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
-    packet: null, packetRequestSequence: 0, filter: "all", search: "", screen: "jobs",
+    packet: null, packetRequestSequence: 0, filter: "all", search: "", sort: "score", screen: "jobs",
     workspace: null, editingFactId: null,
     crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0, refreshSequence: 0, boardTruncated: false,
     boardFilters: {location: "", source: "", remote: "all", sponsor: "all", freshness: "all"}
@@ -163,7 +163,7 @@
   function filteredJobs() {
     const needle = state.search.trim().toLocaleLowerCase();
     const filters = state.boardFilters;
-    return state.jobs.filter((job) => {
+    const jobs = state.jobs.filter((job) => {
       const searchable = [job.company, job.title, job.location, job.description].join(" ").toLocaleLowerCase();
       if (needle && !searchable.includes(needle)) return false;
       if (filters.location && !(job.location || "").toLocaleLowerCase().includes(filters.location.trim().toLocaleLowerCase())) return false;
@@ -179,7 +179,10 @@
       if (state.filter === "approved") return job.review_decision === "approved_for_manual_submission";
       if (state.filter === "submitted") return job.application_stage === "submitted";
       return true;
-    }).sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+    });
+    // The API loads jobs newest first; stable sorting preserves that order on ties.
+    if (state.sort === "score") jobs.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+    return jobs;
   }
 
   function renderJobs() {
@@ -207,7 +210,6 @@
       ? "The board reached its loading limit. Filters only search the " + state.jobs.length + " loaded opportunities; older jobs are not included."
       : truncated ? "The board may have changed while loading. Refresh to include newly added opportunities." : "";
     byId("visible-count").textContent = String(jobs.length) + (jobs.length === 1 ? " opportunity" : " opportunities");
-    byId("sort-label").textContent = jobs.some((job) => job.fit_score !== null) ? "Match score first" : "Recently added";
     const pageCount = Math.max(1, Math.ceil(jobs.length / 10));
     state.jobsPage = Math.min(state.jobsPage, pageCount - 1);
     byId("jobs-page").textContent = "Page " + (state.jobsPage + 1) + " of " + pageCount;
@@ -238,7 +240,8 @@
     }
     for (const job of jobs.slice(state.jobsPage * 10, (state.jobsPage + 1) * 10)) {
       const item = button("", "job-item" + (state.selectedId === job.id ? " selected" : ""), () => selectJob(job.id));
-      item.setAttribute("aria-label", "View " + job.title + " at " + job.company);
+      item.setAttribute("aria-label", "View " + job.title + " at " + job.company +
+        (job.fit_score !== null && !job.description?.trim() ? "; keyword score incomplete, description missing" : ""));
       item.setAttribute("aria-pressed", String(state.selectedId === job.id));
       const top = node("div", "job-item-top");
       const left = node("div");
@@ -261,7 +264,7 @@
         job.review_decision && !job.packet_stale ? "teal" : "amber"
       ));
       if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
-      if (job.fit_score !== null) lower.append(node("span", "score", String(job.fit_score) + "/100"));
+      if (job.fit_score !== null) lower.append(node("span", "score", (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
       item.append(top, lower);
       list.append(item);
     }
@@ -356,7 +359,7 @@
     const header = node("div", "detail-top");
     const heading = node("div");
     heading.append(node("span", "eyebrow", "OPPORTUNITY DETAILS"), node("h3", "", job.title), node("p", "", job.company));
-    header.append(heading, node("div", "detail-badge", job.fit_score === null ? "Unscored" : job.fit_score + "/100"));
+    header.append(heading, node("div", "detail-badge", job.fit_score === null ? "Unscored" : (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"));
     detail.append(header);
     const info = node("div", "info-grid");
     const facts = [
@@ -518,6 +521,7 @@
 
     if (job.fit_reasons && job.fit_reasons.length) {
       const fit = section("Why this role matched");
+      if (!job.description?.trim()) fit.append(node("p", "muted", "The keyword score is incomplete because the job description is missing. It uses available title and location information; review the posting before comparing this role."));
       const ul = node("ul");
       for (const reason of job.fit_reasons) ul.append(node("li", "", reason));
       fit.append(ul);
@@ -2270,6 +2274,7 @@
   byId("refresh").addEventListener("click", () => refresh());
   byId("search").addEventListener("input", (event) => {state.search = event.target.value; state.jobsPage = 0; renderJobs();});
   byId("filter").addEventListener("change", (event) => {state.filter = event.target.value; state.jobsPage = 0; renderJobs();});
+  byId("board-sort").addEventListener("change", (event) => {state.sort = event.target.value === "recent" ? "recent" : "score"; state.jobsPage = 0; renderJobs();});
   byId("jobs-prev").addEventListener("click", () => {state.jobsPage = Math.max(0, state.jobsPage - 1); renderJobs();});
   byId("jobs-next").addEventListener("click", () => {state.jobsPage += 1; renderJobs();});
   for (const key of ["location", "source", "remote", "sponsor", "freshness"]) {

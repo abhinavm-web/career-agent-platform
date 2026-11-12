@@ -12,6 +12,47 @@ from unittest.mock import patch
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class DescriptionCandidateBrowserTests(unittest.TestCase):
+    def test_newest_sort_and_incomplete_score(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        from career_agent.models import Job
+        from career_agent.storage import Store
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'fictional.sqlite3'
+            older = Job.from_mapping({'company': 'Fictional Co', 'title': 'AI Transformation Manager',
+                'job_url': 'https://example.invalid/older', 'description': 'AWS Python LangGraph AI governance', 'location': 'Tennessee'})
+            newer = Job.from_mapping({'company': 'Fictional Co', 'title': 'Recent role',
+                'job_url': 'https://example.invalid/newer', 'description': ''})
+            with Store(db) as store: store.add_jobs([older, newer])
+            profile = Path(__file__).resolve().parents[1] / 'examples' / 'profile.example.json'
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets', profile_path=profile))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#job-list button').first).to_contain_text('AI Transformation Manager')
+                        page.get_by_label('Sort opportunities', exact=True).select_option('recent')
+                        recent = page.locator('#job-list button').first
+                        expect(recent).to_contain_text('Recent role')
+                        expect(recent).to_contain_text('Incomplete')
+                        self.assertIn('score incomplete', recent.get_attribute('aria-label'))
+                        recent.click()
+                        expect(page.locator('#detail-panel')).to_contain_text('keyword score is incomplete')
+                        page.get_by_label('Sort opportunities', exact=True).select_option('score')
+                        expect(page.locator('#job-list button').first).to_contain_text('AI Transformation Manager')
+                    finally: browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_returned_description_requires_review_and_explicit_save(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
