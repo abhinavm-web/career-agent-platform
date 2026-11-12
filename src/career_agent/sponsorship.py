@@ -120,6 +120,13 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
             r'\bnot (?:currently|now) or in the (?:foreseeable )?future sponsoring (?:employment[- ]based |visa |h-?1b )?(?:visas?|sponsorship)\b', general_value))
         is_positive = any(re.search(pattern, value) for pattern in POSITIVES) or bool(re.search(
             r'\bh-?1b(?!1)(?: visa)? (?:sponsorship )?(?:is )?(?:available|provided|offered|supported|welcome)|\bsponsorship (?:is )?(?:available|provided|offered)\b', value))
+        # Sponsorship can describe conferences, events, or advertising. A bare
+        # claim such as "we can sponsor" does not identify immigration support.
+        immigration_context = bool(re.search(
+            r'\b(?:visa(?:s)?|h-?1b(?!1)|immigration|employment[- ]based|work authorization)\b', value))
+        if is_positive and not immigration_context:
+            is_positive = False
+            conditional.append(sentence)
         is_conditional = bool(re.search(r'\b(?:may|might|if|case.by.case|consider|considered|depending|eligible candidates|not guaranteed|cannot guarantee|can\x27t guarantee|no guarantee)\b|no (?:visa )?sponsorship (?:is )?(?:required|needed)', value))
         # "Only" can restrict support to a specific group, location, or role.
         # The recognized "H-1B transfers only" case retains its own category.

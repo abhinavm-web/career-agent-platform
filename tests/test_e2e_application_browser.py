@@ -28,6 +28,8 @@ class ApplicationJourneyTests(unittest.TestCase):
 
         job = Job.from_mapping({'company': 'Fictional Analytics', 'title': 'Data Analyst',
             'job_url': 'https://example.invalid/job/analytics', 'description': 'Python skills. H-1B sponsorship available.'})
+        event_job = Job.from_mapping({'company': 'Fictional Events', 'title': 'Event Analyst',
+            'job_url': 'https://example.invalid/job/events', 'description': 'We can sponsor events.'})
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
         output = {'requirements': [{'quote': 'Python skills.', 'fact_ids': ['experience-01'], 'reason': 'Review relevance.'}]}
         with tempfile.TemporaryDirectory() as directory:
@@ -48,7 +50,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                     if server.started: break
                     time.sleep(0.05)
                 self.assertTrue(server.started)
-                with patch('career_agent.dashboard.discover_isolated', return_value=[job]) as discover, \
+                with patch('career_agent.dashboard.discover_isolated', return_value=[job, event_job]) as discover, \
                      patch('career_agent.ai.routes', return_value=route), \
                      patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
@@ -84,11 +86,13 @@ class ApplicationJourneyTests(unittest.TestCase):
                         page.locator('#discover-query').fill('Data Analyst')
                         page.locator('#discover-consent').check()
                         page.locator('#discover-submit').click()
-                        expect(page.locator('#discover-status')).to_contain_text('1 returned', timeout=20000)
+                        expect(page.locator('#discover-status')).to_contain_text('2 returned', timeout=20000)
                         expect(page.locator('#job-list')).to_contain_text('Data Analyst')
                         self.assertEqual(discover.call_count, 1)
                         page.locator('#nav-h1b').click()
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('H-1B sponsorship available.')
+                        expect(page.locator('#h1b-opportunities-status')).to_contain_text('1 possible')
+                        expect(page.locator('#h1b-opportunities-status')).to_contain_text('1 need clarification')
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
                         page.locator('#h1b-captured').fill('2025-06-01')
                         page.locator('#h1b-file').set_input_files({'name': 'fictional.xlsx',
