@@ -295,6 +295,14 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(self.research.search("%' OR 1=1 --")['company_total'], 0)
         self.assertFalse(self.research.coverage()['complete'])
 
+    def test_dol_certified_withdrawn_spelling_with_spaces_is_supported(self):
+        self.ingest([{'CASE_STATUS': 'Certified - Withdrawn'}])
+        company = self.research.company('Example Inc.')
+        self.assertEqual(company['counts'][0]['case_status'], 'certified-withdrawn')
+        self.assertEqual(company['recent_certified_cases'], 0)
+        with self.assertRaisesRegex(ValueError, 'unsupported CASE_STATUS'):
+            self.ingest([{'CASE_STATUS': 'Certified - Pending'}], captured='2025-06-02')
+
     def test_deduplication_conflicts_and_older_decisions_are_atomic(self):
         self.ingest([{}])
         self.assertEqual(self.ingest([{}])['duplicates'], 1)

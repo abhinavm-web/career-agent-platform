@@ -185,7 +185,9 @@ class H1BResearch:
                 if not re.fullmatch(r'I-\d{3}-\d{5}-\d{6}', case):
                     raise ValueError(f'Row {line}: expected a public DOL LCA CASE_NUMBER')
                 employer = text(row['EMPLOYER_NAME'], f'Row {line} EMPLOYER_NAME')
-                status = text(row['CASE_STATUS'], f'Row {line} CASE_STATUS').casefold()
+                # DOL's FY2026 Q3 workbook spells this value "Certified - Withdrawn";
+                # its record-layout document uses "Certified-Withdrawn".
+                status = re.sub(r'\s*-\s*', '-', text(row['CASE_STATUS'], f'Row {line} CASE_STATUS').casefold())
                 if status not in STATUSES:
                     raise ValueError(f'Row {line}: unsupported CASE_STATUS')
                 decision = None
