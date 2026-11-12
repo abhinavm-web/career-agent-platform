@@ -332,7 +332,10 @@
     const keep = editor?.open && editor.dataset.jobId === state.selectedId;
     const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
     const keepPicker = picker?.open && picker.dataset.jobId === state.selectedId;
+    const duplicates = byId("detail-panel").querySelector?.("#possible-duplicates");
+    const keepDuplicates = duplicates?.dataset.started === "true" && duplicates.dataset.jobId === state.selectedId;
     renderDetail();
+    if (keepDuplicates) byId("detail-panel").querySelector?.("#possible-duplicates")?.replaceWith(duplicates);
     if (keepPicker) {
       const replacement = byId("detail-panel").querySelector?.(".tailoring-picker");
       if (replacement) replacement.replaceWith(picker);
@@ -420,12 +423,13 @@
     detail.append(actions);
 
     const duplicates = section("Possible duplicate postings");
-    duplicates.append(node("p", "muted", "Compare saved postings with the same company, title and location. Different requisitions can share these details; nothing will be merged or removed."));
+    duplicates.id = "possible-duplicates"; duplicates.dataset.jobId = job.id;
+    duplicates.append(node("p", "muted", "Compare saved postings with the same company, title and location. Results reflect the time of the search; search again after changes. Different requisitions can share these details; nothing will be merged or removed."));
     const duplicateResults = node("div");
     duplicateResults.setAttribute("role", "status");
     const duplicateButton = button("Find possible duplicates", "button", async () => {
       if (duplicateButton.disabled) return;
-      duplicateButton.disabled = true;
+      duplicateButton.disabled = true; duplicates.dataset.started = "true";
       duplicateResults.textContent = "Comparing saved opportunities…";
       try {
         const result = await api("/api/jobs/" + job.id + "/possible-duplicates");

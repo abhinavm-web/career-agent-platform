@@ -90,12 +90,20 @@ class DuplicateBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page()
+                        page.add_init_script("""const originalFetch = window.fetch;
+                          window.fetch = async (...args) => {
+                            if (String(args[0]).includes('/packet')) await new Promise(resolve => setTimeout(resolve, 1200));
+                            return originalFetch(...args);
+                          };""")
+                        page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#job-list button').first.click()
                         expect(page.locator('#detail-panel')).to_contain_text('second-board')
                         page.get_by_role('button', name='Find possible duplicates').click()
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
                         expect(page.locator('#detail-panel')).to_contain_text('Submission recorded')
+                        page.wait_for_timeout(1500)  # The delayed packet response must not erase the duplicate results.
+                        expect(page.locator('#detail-panel')).to_contain_text('first-board')
                         page.get_by_role('button', name='Open other saved opportunity').click()
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
                     finally:
