@@ -14,6 +14,7 @@ import io
 import csv
 import re
 import secrets
+import tempfile
 from threading import Lock
 from dataclasses import asdict, dataclass
 from contextlib import asynccontextmanager
@@ -34,7 +35,7 @@ from .workflows import Workflows, inputs as workflow_inputs, signature as workfl
 from .crm import ApplicationCRM
 from .discovery import DiscoveryUnavailable, discover_isolated
 from .models import CandidateProfile, Job
-from .h1b import H1BResearch
+from .h1b import H1BResearch, validate_lca_source
 from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
@@ -48,6 +49,7 @@ JOB_ID = re.compile(r"[a-f0-9]{16}\Z")
 API_BODY_LIMIT = 128 * 1024
 # Full workspace saves can contain 100 validated statements and private notes.
 WORKSPACE_BODY_LIMIT = 2 * 1024 * 1024
+LCA_WORKBOOK_LIMIT = 512 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -110,24 +112,30 @@ def create_app(config: DashboardConfig) -> FastAPI:
             if origin and origin != expected_origin:
                 return JSONResponse({"detail": "Cross-origin request denied"}, status_code=403)
             if request.method not in {"GET", "HEAD"}:
-                if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
-                    return JSONResponse({"detail": "Use application/json"}, status_code=415)
-                limit = (
-                    10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
-                    3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
-                    WORKSPACE_BODY_LIMIT
-                    if request.url.path == "/api/workspace" and request.method == "PUT"
-                    else API_BODY_LIMIT
-                )
-                chunks = []
-                size = 0
-                async for chunk in request.stream():
-                    size += len(chunk)
-                    if size > limit:
-                        return JSONResponse({"detail": "Request too large"}, status_code=413)
-                    chunks.append(chunk)
-                # Starlette replays the cached body to the endpoint after middleware.
-                request._body = b"".join(chunks)
+                workbook_upload = request.method == 'POST' and request.url.path == '/api/h1b/import-workbook'
+                if workbook_upload:
+                    if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'application/octet-stream':
+                        return JSONResponse({'detail': 'Use an XLSX file upload'}, status_code=415)
+                    # The endpoint streams this bounded body directly to a temporary file.
+                else:
+                    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+                        return JSONResponse({"detail": "Use application/json"}, status_code=415)
+                    limit = (
+                        10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
+                        3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
+                        WORKSPACE_BODY_LIMIT
+                        if request.url.path == "/api/workspace" and request.method == "PUT"
+                        else API_BODY_LIMIT
+                    )
+                    chunks = []
+                    size = 0
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > limit:
+                            return JSONResponse({"detail": "Request too large"}, status_code=413)
+                        chunks.append(chunk)
+                    # Starlette replays the cached body to the endpoint after middleware.
+                    request._body = b"".join(chunks)
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -408,6 +416,40 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise ValueError("Invalid CSV structure or field size") from error
         try:
             return await run_in_threadpool(import_records)
+        finally:
+            h1b_import_lock.release()
+
+    @app.post('/api/h1b/import-workbook')
+    async def h1b_import_workbook(request: Request):
+        if request.headers.get('x-lca-acknowledged') != 'true':
+            raise ValueError('Confirm the public DOL source and capture date')
+        source_url, captured = validate_lca_source(request.query_params.get('source_url'), request.query_params.get('captured_on'))
+        captured_on = captured.isoformat()
+        length = request.headers.get('content-length')
+        if length is not None and (len(length) > 12 or not length.isascii() or not length.isdecimal() or int(length) > LCA_WORKBOOK_LIMIT):
+            raise HTTPException(status_code=413, detail='Workbook exceeds the 512 MB upload limit')
+        if not h1b_import_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An H-1B import is already running; wait before retrying')
+        try:
+            with tempfile.TemporaryDirectory(prefix='career-lca-') as directory:
+                path = Path(directory) / 'disclosure.xlsx'
+                size = 0
+                with path.open('wb') as output:
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > LCA_WORKBOOK_LIMIT:
+                            raise HTTPException(status_code=413, detail='Workbook exceeds the 512 MB upload limit')
+                        await run_in_threadpool(output.write, chunk)
+                if length is not None and size != int(length):
+                    raise HTTPException(status_code=400, detail='Incomplete workbook upload; retry')
+                if not size:
+                    raise ValueError('Choose a nonempty XLSX workbook')
+                def import_workbook():
+                    with Store(config.db_path) as store:
+                        return H1BResearch(store).import_xlsx(path, source_url, captured_on)
+                return await run_in_threadpool(import_workbook)
+        except OSError:
+            raise HTTPException(status_code=507, detail='Unable to stage or read the workbook locally; check disk space and retry') from None
         finally:
             h1b_import_lock.release()
 

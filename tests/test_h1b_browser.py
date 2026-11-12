@@ -312,6 +312,23 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-coverage')).to_contain_text('observed decisions 2025-04-15–2025-04-15')
                         expect(page.locator('#h1b-coverage')).to_contain_text('selected-field SHA-256')
                         expect(page.locator('#h1b-coverage')).to_contain_text('not a verified reporting period')
+                        try:
+                            from openpyxl import Workbook
+                            import defusedxml  # noqa: F401
+                        except ImportError:
+                            pass  # Workbook support is an optional extra.
+                        else:
+                            from io import BytesIO
+                            book = Workbook()
+                            book.active.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+                            book.active.append(['I-200-25123-000099', 'Fictional Workbook', 'H-1B', 'Certified', '2025-04-15'])
+                            buffer = BytesIO(); book.save(buffer); book.close()
+                            page.locator('#h1b-file').set_input_files({'name': 'fictional.xlsx',
+                                'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': buffer.getvalue()})
+                            page.locator('#h1b-consent').check()
+                            page.get_by_role('button', name='Import records locally', exact=True).click()
+                            expect(page.locator('#h1b-status')).to_contain_text('1 added')
+                            expect(page.locator('#h1b-coverage')).to_contain_text('2 imported H-1B cases')
                         page.get_by_text('USCIS employer decisions: refresh or import', exact=True).click()
                         page.locator('#uscis-source').fill(URL)
                         page.locator('#uscis-year').fill('2025')

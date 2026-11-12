@@ -31,6 +31,9 @@
   async function api(url, method = "GET", data) {
     const response = await fetch(url, {method, headers: {"X-Session-Token": token, "Content-Type": "application/json"},
       cache: "no-store", credentials: "same-origin", ...(data === undefined ? {} : {body: JSON.stringify(data)})});
+    return responseBody(response);
+  }
+  async function responseBody(response) {
     const body = await response.json();
     if (!response.ok) {
       if (response.status === 403 && body.detail === "Session token required") {
@@ -310,13 +313,26 @@
     const control = get("h1b-import-submit");
     if (control.disabled) return;
     const file = get("h1b-file").files[0];
-    if (!get("h1b-consent").checked || !file) { status("Choose a public CSV and confirm its provenance."); return; }
-    if (file.size > 8 * 1024 * 1024) { status("Use the CLI to import files larger than 8 MB."); return; }
+    if (!get("h1b-consent").checked || !file) { status("Choose a public LCA file and confirm its provenance."); return; }
+    const workbook = file.name.toLowerCase().endsWith(".xlsx");
+    if (!workbook && !file.name.toLowerCase().endsWith(".csv")) { status("Choose a CSV or XLSX file."); return; }
+    if (!file.size || file.size > (workbook ? 512 : 8) * 1024 * 1024) {
+      status(workbook ? "Choose a nonempty XLSX workbook no larger than 512 MB." : "Choose a nonempty CSV up to 8 MB, or use the CLI for a larger CSV."); return;
+    }
     control.disabled = true;
     status("Importing local H-1B records…");
     try {
-      const result = await api("/api/h1b/import", "POST", {csv: await file.text(), source_url: get("h1b-source").value,
-        captured_on: get("h1b-captured").value, acknowledged: true});
+      let result;
+      if (workbook) {
+        const params = new URLSearchParams({source_url: get("h1b-source").value, captured_on: get("h1b-captured").value});
+        const response = await fetch("/api/h1b/import-workbook?" + params.toString(), {method: "POST", body: file,
+          headers: {"X-Session-Token": token, "Content-Type": "application/octet-stream", "X-LCA-Acknowledged": "true"},
+          cache: "no-store", credentials: "same-origin"});
+        result = await responseBody(response);
+      } else {
+        result = await api("/api/h1b/import", "POST", {csv: await file.text(), source_url: get("h1b-source").value,
+          captured_on: get("h1b-captured").value, acknowledged: true});
+      }
       get("h1b-consent").checked = false;
       const data = await api("/api/h1b");
       coverage(data.coverage);
