@@ -528,9 +528,26 @@ class H1BResearch:
         return self.job(job)
 
     def policy_notes(self, job):
+        return self.policy_notes_page(job)['notes']
+
+    def policy_notes_page(self, job, before=None):
+        if before is not None and (type(before) is not int or not 1 <= before <= 9223372036854775807):
+            raise ValueError('Invalid policy note cursor')
         rows = self.conn.execute('''SELECT id,discussed_on,source,pathway,response,statement,recorded_at
-            FROM h1b_policy_notes WHERE job_id=? ORDER BY id DESC LIMIT 50''', (job.id,)).fetchall()
-        return [dict(row) for row in rows]
+            FROM h1b_policy_notes WHERE job_id=? AND (? IS NULL OR id < ?)
+            ORDER BY id DESC LIMIT 51''', (job.id, before, before)).fetchall()
+        return {'notes': [dict(row) for row in rows[:50]],
+                'next_before': rows[49]['id'] if len(rows) > 50 else None}
+
+    def delete_policy_note(self, job, note_id, data):
+        if type(note_id) is not int or not 1 <= note_id <= 9223372036854775807:
+            raise ValueError('Invalid policy note ID')
+        if not isinstance(data, dict) or set(data) != {'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm deleting this policy note')
+        with self.conn:
+            deleted = self.conn.execute('DELETE FROM h1b_policy_notes WHERE job_id=? AND id=?',
+                                        (job.id, note_id)).rowcount
+        return bool(deleted)
 
     def add_policy_note(self, job, data):
         fields = {'discussed_on', 'source', 'pathway', 'response', 'statement', 'acknowledged'}

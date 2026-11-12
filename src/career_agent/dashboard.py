@@ -696,15 +696,28 @@ def create_app(config: DashboardConfig) -> FastAPI:
             return H1BResearch(store).company_link_history(_get_job(store, job_id))
 
     @app.get("/api/jobs/{job_id}/h1b/policy-notes")
-    def h1b_policy_notes(job_id: str):
+    def h1b_policy_notes(job_id: str, before: int | None = None):
         with Store(config.db_path) as store:
-            return {"notes": H1BResearch(store).policy_notes(_get_job(store, job_id))}
+            return H1BResearch(store).policy_notes_page(_get_job(store, job_id), before)
 
     @app.post("/api/jobs/{job_id}/h1b/policy-notes")
     async def h1b_add_policy_note(job_id: str, request: Request):
         data = await request.json()
         with Store(config.db_path) as store:
-            return {"notes": H1BResearch(store).add_policy_note(_get_job(store, job_id), data)}
+            research = H1BResearch(store)
+            job = _get_job(store, job_id)
+            research.add_policy_note(job, data)
+            return research.policy_notes_page(job)
+
+    @app.post("/api/jobs/{job_id}/h1b/policy-notes/{note_id}/delete")
+    async def h1b_delete_policy_note(job_id: str, note_id: int, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            research = H1BResearch(store)
+            job = _get_job(store, job_id)
+            if not research.delete_policy_note(job, note_id, data):
+                raise HTTPException(status_code=404, detail="Policy note not found")
+            return research.policy_notes_page(job)
 
     @app.put("/api/jobs/{job_id}/h1b/company-association")
     async def h1b_link_company(job_id: str, request: Request):
