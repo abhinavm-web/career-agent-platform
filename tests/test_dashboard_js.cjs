@@ -492,6 +492,31 @@ test("overlapping profile loads retain the newest revision and keep the editor l
   }
 });
 
+test("a board refresh started before profile navigation does not start a competing profile load", async () => {
+  let finishBoard;
+  const pending = [];
+  const h = createHarness({
+    jobsPage: () => new Promise(resolve => { finishBoard = resolve; }),
+    workspaceRead: () => new Promise(resolve => pending.push(resolve)),
+  });
+  await flush();
+  const opening = h.get("nav-profile").click();
+  await flush();
+  assert.equal(pending.length, 1);
+  assert.equal(h.get("profile-screen").inert, true);
+  finishBoard(ok({jobs: [fakeJob(ID_A, "Role")], next_before: null}));
+  await flush(); await flush();
+  assert.equal(pending.length, 1, "the older board refresh must not load the newly opened profile");
+  assert.equal(h.get("profile-screen").inert, true);
+  pending[0](ok({workspace: {revision: 1, profile: {name: "Candidate", headline: "", target_titles: [],
+    skills: [], preferred_locations: [], allow_remote: true}, facts: []}}));
+  await opening;
+  assert.equal(h.get("profile-screen").inert, false);
+  h.get("career-resume-contact").value = "fictional@example.invalid";
+  await flush();
+  assert.equal(h.get("career-resume-contact").value, "fictional@example.invalid");
+});
+
 test("an older server snapshot cannot replace an already loaded profile revision", async () => {
   let read = 0;
   const h = createHarness({workspaceRead: (workspace) => Promise.resolve(ok({workspace: {...workspace, revision: ++read === 1 ? 2 : 1}}))});

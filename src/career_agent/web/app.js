@@ -1677,6 +1677,7 @@
     const sequence = ++state.refreshSequence;
     const screenAtStart = state.screen;
     const trackerRequestAtStart = state.crmRequestSeq;
+    const profileNavigationAtStart = profileNavigationSequence;
     try {
       const results = await Promise.all([
         loadBoardJobs(sequence), api("/api/overview"), api("/api/settings"), api("/api/reviews")
@@ -1710,7 +1711,7 @@
           if (input) input.value = receipt;
         }
       }
-      if (state.screen === "profile") {
+      if (state.screen === "profile" && screenAtStart === "profile" && profileNavigationSequence === profileNavigationAtStart) {
         await loadWorkspace(preserveEditor);
       }
       // Navigation to the tracker starts its own load. A refresh that began on
