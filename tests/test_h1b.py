@@ -24,6 +24,24 @@ def lca_csv(rows):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_restriction_with_an_exception_requires_clarification(self):
+        cases = (
+            'Visa sponsorship is not available unless approved by leadership.',
+            'We cannot sponsor unless the candidate meets specific conditions.',
+            'H-1B transfers are not supported unless approved by legal.',
+        )
+        for text in cases:
+            for need in ('any', 'new', 'transfer'):
+                with self.subTest(text=text, need=need):
+                    result = h1b_policy(text, need)
+                    self.assertEqual(result['policy'], 'conditional')
+                    self.assertFalse(result['potential_match'])
+                    self.assertIn(text, result['quotes'])
+        self.assertEqual(h1b_policy(cases[0] + ' No visa sponsorship for this role.')['policy'], 'excluded')
+        self.assertEqual(h1b_policy('No visa sponsorship for this role; flexible scheduling unless otherwise noted.')['policy'], 'excluded')
+        self.assertEqual(h1b_policy('No visa sponsorship unless approved, but no sponsorship for this role.')['policy'], 'excluded')
+        self.assertEqual(h1b_policy('No visa sponsorship unless approved; no sponsorship for this role.')['policy'], 'excluded')
+
     def test_restrictions_scoped_to_other_roles_need_clarification(self):
         scoped = (
             'Visa sponsorship is not available for other roles.',
