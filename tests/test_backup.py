@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from contextlib import closing
+from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import patch
 
@@ -217,6 +218,52 @@ class BackupTests(unittest.TestCase):
         destination = self.root / 'restored'
         restore_backup(self.archive, destination, offline=True)
         self.assertTrue((destination / 'packets').is_dir())
+
+    def test_missing_discovery_checkpoints_warns_but_preserves_jobs_and_schedule(self):
+        from career_agent.automation import Automation
+        from career_agent.storage import Store
+        from test_dashboard import fake_job
+        auto = Automation(self.db)
+        auto.save({'query': 'Fictional role', 'location': 'United States', 'sites': ['indeed'],
+                   'interval_minutes': 60, 'results': 5, 'acknowledged': True})
+        with patch('career_agent.automation.fetch', return_value=[asdict(fake_job())]):
+            self.assertTrue(auto.tick())
+        # Simulate an already-missing history file, not a backup operation deleting it.
+        self.db.with_suffix('.discovery.sqlite3').unlink()
+        with patch('career_agent.automation.fetch') as fetch:
+            result = create_backup(self.db, self.packets, self.archive, offline=True)
+            self.assertTrue(any('checkpoint database is absent' in w for w in result['warnings']))
+            self.assertTrue(any('remain enabled' in w for w in result['warnings']))
+            verified = verify_backup(self.archive, temp_dir=self.root)
+            self.assertEqual(verified['warnings'], result['warnings'])
+            restored = restore_backup(self.archive, self.root / 'discovery-restore', offline=True)
+            self.assertEqual(restored['warnings'], result['warnings'])
+            fetch.assert_not_called()  # Backup, verification, and restore are offline.
+        with Store(restored['database']) as store:
+            self.assertEqual(store.get_job(fake_job().id).title, fake_job().title)
+        self.assertEqual(Automation(restored['database']).list()['schedules'][0]['enabled'], 1)
+        self.assertFalse((self.root / 'discovery-restore' / 'workspace.discovery.sqlite3').exists())
+
+    def test_unpublished_run_without_checkpoint_warns_without_blocking_salvage(self):
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.execute('CREATE TABLE workflow_runs (job_id TEXT, packet_sha256 TEXT, status TEXT)')
+            db.execute("INSERT INTO workflow_runs VALUES ('job-1', NULL, 'failed')")
+        self.db.with_suffix('.workflows.sqlite3').unlink()
+        result = create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertTrue(any('queued or failed runs' in w for w in result['warnings']))
+        self.assertEqual(verify_backup(self.archive, temp_dir=self.root)['warnings'], result['warnings'])
+
+    def test_empty_never_run_and_legacy_workspaces_do_not_warn_of_missing_checkpoints(self):
+        from career_agent.automation import Automation
+        self.db.with_suffix('.discovery.sqlite3').unlink()
+        self.db.with_suffix('.workflows.sqlite3').unlink()
+        auto = Automation(self.db)
+        schedule = auto.save({'query': 'Fictional role', 'location': 'United States', 'sites': ['indeed'],
+                              'interval_minutes': 60, 'results': 5, 'acknowledged': True})
+        auto.enable(schedule['id'], False)
+        result = create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertEqual(result['warnings'], [])
+        self.assertEqual(verify_backup(self.archive, temp_dir=self.root)['warnings'], [])
 
     def test_committed_wal_data_is_included_in_snapshot(self):
         connection = sqlite3.connect(self.db)

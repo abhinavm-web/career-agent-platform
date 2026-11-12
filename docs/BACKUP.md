@@ -49,6 +49,13 @@ graph checkpoint can be resumed; test a restored workspace before relying on it.
 If a legacy tool overwrote a workflow-managed packet, reconcile the packet or
 resume the current workflow before backup. Other legacy/custom packets are copied
 without interpreting their contents; their completeness cannot be established.
+Backup, verification, and restore return a `warnings` list. If committed saved-search
+imports exist but the discovery checkpoint database is missing, the backup remains
+usable for salvage and warns that graph checkpoint history cannot be restored;
+saved jobs, schedules, and import receipts remain in the main database. Unpublished
+queued or failed workflows without a checkpoint database also produce a warning,
+because retries may have to restart from stored inputs. An empty or never-run
+workspace does not require either optional checkpoint database.
 Check the path carefully. The archive is created atomically and an
 existing destination is never overwritten. The
 archive contains SHA-256 file checksums. Without `--encrypted` it is unencrypted. It excludes external
@@ -73,6 +80,12 @@ plaintext, and disk traces may remain. Verification does not prove that omitted
 external files were backed up or that the captured data is complete or current.
 
 To restore, keep the app stopped and choose a **new, non-existing** directory:
+
+Saved searches retain their enabled or paused state. **Starting a restored
+dashboard with enabled searches can immediately contact job boards.** Backup,
+verification, and restore warn when enabled searches are present; those operations
+themselves do not make discovery requests. Review and pause searches before backup
+if you do not want them enabled in the restored copy.
 
 ```powershell
 .\.venv\Scripts\python.exe -m career_agent.cli restore private/workspace-backup.zip private/restored-workspace --offline
