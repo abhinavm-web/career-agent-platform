@@ -79,6 +79,9 @@ class AvailabilityRaceBrowserTests(unittest.TestCase):
                         page.wait_for_function('typeof window.releaseCheck === "function"')
                         page.get_by_role('button', name='View Other role at Other Co').click()
                         expect(page.locator('#detail-panel')).to_contain_text('Other role')
+                        page.get_by_role('button', name='View Role at Fictional Co').click()
+                        expect(page.get_by_role('button', name='Check live availability')).to_be_disabled()
+                        page.get_by_role('button', name='View Other role at Other Co').click()
                         with page.expect_response(lambda response: response.url.endswith('/live-check')):
                             page.evaluate('window.releaseCheck()')
                         expect(page.locator('#detail-panel')).not_to_contain_text('Fictional check failed')

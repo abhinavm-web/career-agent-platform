@@ -15,7 +15,7 @@
   };
   let freshnessTimer = null;
   let selectedAvailabilityUpdater = null;
-  let availabilityInteraction = null;
+  const availabilityInteractions = new Map();
   let workspaceMutationBusy = false;
   let workspaceLoadSequence = 0;
   let profileNavigationSequence = 0;
@@ -265,7 +265,6 @@
       if (editor?.open && description && (description.value !== description.defaultValue || source?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
     }
-    if (state.selectedId !== id) availabilityInteraction = null;
     state.selectedId = id;
     state.packet = null;
     renderJobs();
@@ -421,10 +420,8 @@
     const availability = section("Posting availability");
     const availabilityStatus = node("div", "availability-status");
     availabilityStatus.setAttribute("role", "status");
-    if (!availabilityInteraction || availabilityInteraction.jobId !== job.id) {
-      availabilityInteraction = {jobId: job.id, pending: false, failure: null};
-    }
-    const interaction = availabilityInteraction;
+    if (!availabilityInteractions.has(job.id)) availabilityInteractions.set(job.id, {pending: false, failure: null});
+    const interaction = availabilityInteractions.get(job.id);
     let check = null;
     const showAvailability = () => {
       if (check) check.disabled = interaction.pending;
@@ -448,17 +445,13 @@
         if (selectedAvailabilityUpdater) selectedAvailabilityUpdater();
         try {
           const observation = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
-          if (availabilityInteraction === interaction && state.selectedId === job.id) {
-            const currentJob = state.jobs.find((value) => value.id === job.id);
-            if (currentJob) currentJob.live_check = observation;
-          }
+          const currentJob = state.jobs.find((value) => value.id === job.id);
+          if (currentJob) currentJob.live_check = observation;
         } catch (error) { interaction.failure = error.message; }
         finally {
           interaction.pending = false;
-          if (availabilityInteraction === interaction && state.selectedId === job.id) {
-            if (selectedAvailabilityUpdater) selectedAvailabilityUpdater();
-            renderJobs();
-          }
+          if (state.selectedId === job.id && selectedAvailabilityUpdater) selectedAvailabilityUpdater();
+          renderJobs();
         }
       });
       check.disabled = interaction.pending;
