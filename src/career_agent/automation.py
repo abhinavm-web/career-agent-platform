@@ -16,6 +16,7 @@ class DiscoveryState(TypedDict, total=False):
     settings: dict
     jobs: list[dict]
     counts: dict
+    source_status: dict
 
 
 class DiscoveryTimedOut(ValueError):
@@ -46,10 +47,33 @@ def fetch(settings, stop):
                 payload = None
         if child.returncode or len(output) > 10 * 1024 * 1024:
             raise ValueError('JobSpy failed; check installation or source availability')
-        rows = json.loads(output)
+        response = json.loads(output)
+        if not isinstance(response, dict) or set(response) != {'rows', 'source_status'}:
+            raise ValueError('Invalid discovery response')
+        rows, statuses = response['rows'], response['source_status']
         if not isinstance(rows, list) or len(rows) > 300:
             raise ValueError('Invalid discovery response')
-        return rows
+        if not isinstance(statuses, dict) or set(statuses) != set(settings['sites']):
+            raise ValueError('Invalid discovery source status')
+        for item in statuses.values():
+            if (not isinstance(item, dict) or set(item) != {'state', 'returned'} or
+                item['state'] not in {'returned', 'reported_error', 'reported_warning', 'inconclusive'} or
+                type(item['returned']) is not int or not 0 <= item['returned'] <= 300):
+                raise ValueError('Invalid discovery source status')
+        from .discovery import DiscoveryResults
+        return DiscoveryResults(rows, statuses)
+
+
+def _run_outcome(counts):
+    """Retain partial-source problems even when an import has usable rows."""
+    statuses = counts.get('source_status', {})
+    issues = any(item['state'] != 'returned' for item in statuses.values())
+    status = 'inconclusive' if not counts['found'] else 'partial' if issues else 'completed'
+    message = ('No usable rows returned; this may be an upstream failure, not zero vacancies' if not counts['found']
+               else 'Imported returned jobs; source coverage may be partial')
+    if statuses:
+        message += '. Sources: ' + ', '.join(f"{site}: {item['state']} ({item['returned']})" for site, item in sorted(statuses.items()))
+    return status, message
 
 
 class Automation:
@@ -126,8 +150,9 @@ class Automation:
                 return False
             for pending in store.connection.execute("SELECT r.id,i.counts FROM discovery_runs r JOIN discovery_imports i ON i.run_id=r.id WHERE r.status='running'").fetchall():
                 counts = json.loads(pending['counts'])
-                store.connection.execute("UPDATE discovery_runs SET status='completed',finished=?,found=?,added=?,message='Committed import recovered after worker interruption' WHERE id=?",
-                                         (now, counts['found'], counts['added'], pending['id']))
+                recovered_status, recovered_message = _run_outcome(counts)
+                store.connection.execute("UPDATE discovery_runs SET status=?,finished=?,found=?,added=?,message=? WHERE id=?",
+                                         (recovered_status, now, counts['found'], counts['added'], 'Committed import recovered. ' + recovered_message, pending['id']))
             row = store.connection.execute("SELECT * FROM discovery_schedules WHERE enabled=1 AND (next_run<=? OR id IN (SELECT schedule_id FROM discovery_runs WHERE status='running')) ORDER BY next_run LIMIT 1", (now,)).fetchone()
             if not row:
                 return False
@@ -138,14 +163,15 @@ class Automation:
             store.connection.execute('UPDATE discovery_schedules SET next_run=? WHERE id=?', (now + row['interval_minutes'] * 60, row['id']))
         try:
             counts = self._graph(token, row)
-            status = 'completed' if counts['found'] else 'inconclusive'
-            message = 'Imported returned jobs; source coverage may be partial' if counts['found'] else 'No usable rows returned; this may be an upstream failure, not zero vacancies'
+            status, message = _run_outcome(counts)
         except Exception:
             counts, status, message = {'found': 0, 'added': 0}, 'failed', 'Discovery failed, paused or timed out; existing jobs retained'
             with Store(self.db) as store:
                 receipt = store.connection.execute('SELECT counts FROM discovery_imports WHERE run_id=?', (token,)).fetchone()
             if receipt:
-                counts, status, message = json.loads(receipt['counts']), 'completed', 'Jobs imported; graph finalization failed after the committed import'
+                counts = json.loads(receipt['counts'])
+                status, message = _run_outcome(counts)
+                message = 'Jobs imported; graph finalization failed after the committed import. ' + message
         with Store(self.db) as store, store.connection:
             store.connection.execute('BEGIN IMMEDIATE')
             if store.connection.execute('SELECT token FROM discovery_lease WHERE id=1').fetchone()['token'] != token:
@@ -167,7 +193,8 @@ class Automation:
         checkpoint_path = self.db.with_suffix('.discovery.sqlite3')
         _reject_symlink_components(checkpoint_path)
         def discover(state):
-            return {'jobs': fetch(state['settings'], self.stop)}
+            rows = fetch(state['settings'], self.stop)
+            return {'jobs': list(rows), 'source_status': getattr(rows, 'source_status', {})}
         def normalize(state):
             normalized = {(j.id, j.source): j for j in (Job.from_mapping(r) for r in state['jobs'])}
             from dataclasses import asdict
@@ -183,7 +210,7 @@ class Automation:
                 if not enabled or not enabled['enabled'] or lease['token'] != run_id or lease['expires'] <= time.time() or self.stop.is_set():
                     raise ValueError('Discovery was paused or lease expired')
                 added = store._record_discovery([Job.from_mapping(raw) for raw in state['jobs']])
-                counts = {'found': len(state['jobs']), 'added': added}
+                counts = {'found': len(state['jobs']), 'added': added, 'source_status': state.get('source_status', {})}
                 store.connection.execute('INSERT INTO discovery_imports VALUES(?,?)', (run_id,json.dumps(counts)))
                 return {'counts': counts}
         builder = StateGraph(DiscoveryState)

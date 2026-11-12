@@ -648,7 +648,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
             with Store(config.db_path) as store:
                 added = store.add_discovered_jobs(jobs)
-            return {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
+            result = {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
+            if getattr(jobs, 'source_status', None):
+                result['source_status'] = jobs.source_status
+            return result
         finally:
             discovery_lock.release()
 

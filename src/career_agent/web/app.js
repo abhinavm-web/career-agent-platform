@@ -1462,7 +1462,12 @@
         results: Number(byId("discover-results").value), acknowledged: true
       });
       status.textContent = result.found + " returned · " + result.new + " added · " + result.duplicates +
-        " duplicates. Sources may return partial results.";
+        " duplicates. Sources may return partial results." + (result.found ? "" : " No usable rows is inconclusive and may indicate a source failure.");
+      if (result.source_status) {
+        const labels = {returned: "returned rows", reported_error: "reported an error", reported_warning: "reported a warning", inconclusive: "no usable rows; inconclusive"};
+        status.textContent += " " + Object.entries(result.source_status).map(([source, item]) =>
+          source + ": " + (labels[item.state] || "unknown") + " (" + item.returned + ")").join(" · ");
+      }
       byId("discover-consent").checked = false;
       await refresh(undefined, true);
     } catch (error) {

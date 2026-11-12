@@ -4,6 +4,8 @@ import tempfile
 import time
 import unittest
 import subprocess
+import sys
+from types import SimpleNamespace
 from contextlib import redirect_stdout
 from io import StringIO
 from dataclasses import asdict
@@ -12,6 +14,7 @@ from unittest.mock import patch
 
 from career_agent.automation import Automation
 from career_agent.candidate import FactBank
+from career_agent.discovery import DiscoveryResults
 from career_agent.models import CandidateProfile, Job
 from career_agent.storage import Store
 from career_agent.workflows import Workflows, inputs, signature
@@ -106,6 +109,53 @@ class AutomationTests(unittest.TestCase):
         self.assertNotIn('provider private detail', json.dumps(report))
         self.assertEqual(report['schedules'][0]['failures'], 2)
 
+    def test_partial_source_failure_survives_import_without_provider_details(self):
+        search = self.search | {'sites': ['indeed', 'linkedin']}
+        self.auto.save(search)
+        statuses = {'indeed': {'state': 'returned', 'returned': 1},
+                    'linkedin': {'state': 'reported_error', 'returned': 0}}
+        with patch('career_agent.automation.fetch', return_value=DiscoveryResults([asdict(fake_job())], statuses)):
+            self.assertTrue(self.auto.tick())
+        result = self.auto.list()
+        self.assertEqual(result['runs'][0]['status'], 'partial')
+        self.assertIn('linkedin: reported_error (0)', result['runs'][0]['message'])
+        self.assertEqual(result['schedules'][0]['failures'], 1)
+        with Store(self.db) as store:
+            self.assertEqual(len(store.list_jobs()), 1)
+            receipt = json.loads(store.connection.execute('SELECT counts FROM discovery_imports').fetchone()['counts'])
+        self.assertEqual(receipt['source_status'], statuses)
+
+    def test_recovery_preserves_partial_source_status(self):
+        sid = self.auto.save(self.search)['id']
+        self.auto.enable(sid, False)
+        counts = {'found': 1, 'added': 1, 'source_status': {
+            'indeed': {'state': 'reported_warning', 'returned': 1}}}
+        with Store(self.db) as store, store.connection:
+            store.connection.execute("INSERT INTO discovery_runs(id,schedule_id,status,started) VALUES('dead',?,'running',?)", (sid, time.time()-400))
+            store.connection.execute('INSERT INTO discovery_imports(run_id,counts) VALUES(?,?)', ('dead', json.dumps(counts)))
+        self.assertFalse(self.auto.tick())
+        recovered = self.auto.list()['runs'][0]
+        self.assertEqual(recovered['status'], 'partial')
+        self.assertIn('reported_warning', recovered['message'])
+
+    def test_jobspy_metadata_is_sanitized_and_empty_is_inconclusive(self):
+        from career_agent.discovery import discover_jobspy
+        class Frame:
+            attrs = {'errors': {'linkedin': 'fictional private provider detail'},
+                     'warnings': {'zip_recruiter': ['fictional private warning']}}
+            def to_dict(self, orient):
+                return [asdict(fake_job()) | {'source': 'indeed'}]
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=lambda **kwargs: Frame())}):
+            results = discover_jobspy('Fictional role', 'USA', 3, sites=['indeed', 'linkedin', 'zip_recruiter'])
+        self.assertEqual(results.source_status['indeed'], {'state': 'returned', 'returned': 1})
+        self.assertEqual(results.source_status['linkedin'], {'state': 'reported_error', 'returned': 0})
+        self.assertEqual(results.source_status['zip_recruiter'], {'state': 'reported_warning', 'returned': 0})
+        self.assertNotIn('fictional private', json.dumps(results.source_status))
+        Frame.attrs = {}
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=lambda **kwargs: Frame())}):
+            results = discover_jobspy('Fictional role', 'USA', 3, sites=['indeed', 'linkedin'])
+        self.assertEqual(results.source_status['linkedin']['state'], 'inconclusive')
+
     def test_expired_lease_records_interrupted_run(self):
         sid = self.auto.save(self.search)['id']
         with Store(self.db) as store, store.connection:
@@ -123,6 +173,20 @@ class AutomationTests(unittest.TestCase):
             with self.assertRaises(DiscoveryTimedOut):
                 fetch(self.search, self.auto.stop)
             child.kill.assert_called_once()
+
+    def test_worker_source_status_is_validated(self):
+        from career_agent.automation import fetch
+        payload = {'rows': [], 'source_status': {'indeed': {'state': 'inconclusive', 'returned': 0}}}
+        with patch('career_agent.automation.subprocess.Popen') as popen:
+            child = popen.return_value.__enter__.return_value
+            child.returncode = 0
+            child.communicate.return_value = (json.dumps(payload), None)
+            result = fetch(self.search, self.auto.stop)
+            self.assertEqual(result.source_status, payload['source_status'])
+            payload['source_status']['indeed']['raw_error'] = 'secret'
+            child.communicate.return_value = (json.dumps(payload), None)
+            with self.assertRaisesRegex(ValueError, 'Invalid discovery source status'):
+                fetch(self.search, self.auto.stop)
 
     def test_stop_kills_isolated_discovery_before_import(self):
         from career_agent.automation import fetch, DiscoveryStopped
