@@ -58,6 +58,22 @@ class BackupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'already exists'):
             restore_backup(self.archive, destination, offline=True)
 
+    def test_source_description_candidate_survives_backup_and_restore(self):
+        from dataclasses import replace
+        from career_agent.models import Job
+        from career_agent.storage import Store
+        job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer',
+                                'url': 'https://example.invalid/candidate', 'source': 'linkedin', 'description': ''})
+        with Store(self.db) as store:
+            store.add_jobs([job])
+            store.add_discovered_jobs([replace(job, description='Fictional source text.')], stage_descriptions=True)
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        destination = self.root / 'restored'
+        restore_backup(self.archive, destination, offline=True)
+        with Store(destination / 'workspace.sqlite3') as store:
+            self.assertEqual(store.get_job(job.id).description, '')
+            self.assertEqual(store.description_candidates(job.id)[0]['description'], 'Fictional source text.')
+
     @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
     def test_opt_in_ai_configuration_encrypted_roundtrip(self):
         config = self.root / 'ai.json'

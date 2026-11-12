@@ -838,6 +838,25 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call('POST', '/api/discover', payload).status_code, 200)
             self.assertIs(discover.call_args.kwargs['fetch_details'], True)
 
+    def test_opt_in_discovery_stages_blank_job_description_for_review(self):
+        blank = replace(self.job, url='https://example.invalid/blank', source='linkedin', description='')
+        with Store(self.db) as store:
+            store.add_jobs([blank])
+        observed = replace(blank, description='Unverified fictional source text.')
+        data = {'query': 'Fictional role', 'location': 'USA', 'results': 5,
+                'sites': ['linkedin'], 'fetch_details': True, 'acknowledged': True}
+        with patch('career_agent.dashboard.discover_isolated', return_value=[observed]):
+            response = self.call('POST', '/api/discover', data)
+        self.assertEqual(response.status_code, 200)
+        path = f'/api/jobs/{blank.id}/description-candidates'
+        self.assertEqual(self.call('GET', path, token='bad').status_code, 403)
+        result = self.call('GET', path)
+        self.assertEqual(result.json()['candidates'][0]['description'], observed.description)
+        self.assertEqual(result.headers['cache-control'], 'no-store')
+        with Store(self.db) as store:
+            self.assertEqual(store.get_job(blank.id).description, '')
+            self.assertEqual(store.description_revision(blank.id), 0)
+
     def test_manual_discovery_reports_sanitized_partial_source_status(self):
         from career_agent.discovery import DiscoveryResults
         statuses = {'indeed': {'state': 'returned', 'returned': 1},
