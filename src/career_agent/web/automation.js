@@ -49,7 +49,7 @@
     consentLabel.prepend(consent); form.append(consentLabel);
     const save = node("button", "Save paused search"); save.type = "submit";
     const cancel = node("button", "Cancel editing"); cancel.type = "button";
-    const message = node("p", "The search stays paused. Resume separately to allow future requests."); message.setAttribute("role", "status");
+    const message = node("p", "The search stays paused. Resume separately to allow future requests. Past run history does not retain the old query or all previous settings."); message.setAttribute("role", "status");
     form.append(save, cancel, message);
     cancel.addEventListener("click", () => { openEditors.delete(details); details.open = false; load(); });
     form.addEventListener("submit", async event => {
