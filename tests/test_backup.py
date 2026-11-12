@@ -300,6 +300,55 @@ class BackupTests(unittest.TestCase):
             self.assertEqual(store.stage_of(job.id), 'discovered')
             self.assertEqual(store.latest_review(job.id)['packet_sha256'], run['packet']['packet_sha256'])
 
+    @unittest.skipUnless(importlib.util.find_spec('langgraph'), 'Install durable graph support')
+    def test_missing_root_checkpoints_warn_on_backup_verify_and_restore(self):
+        from career_agent.candidate import FactBank
+        from career_agent.models import CandidateProfile
+        from career_agent.storage import Store
+        from career_agent.workflows import Workflows, inputs
+        from test_dashboard import fake_fact_bank, fake_job
+        job = fake_job()
+        with Store(self.db) as store: store.add_jobs([job])
+        state = inputs(job, CandidateProfile(('Engineer',), (), ()), FactBank.parse(fake_fact_bank()), ())
+        workflows = Workflows(self.db, self.packets)
+        first = workflows.start(state); second = workflows.start(state)
+        healthy = create_backup(self.db, self.packets, self.root / 'healthy.zip', offline=True)
+        self.assertFalse(any('checkpoint' in warning for warning in healthy['warnings']))
+        checkpoint = self.db.with_suffix('.workflows.sqlite3')
+        with closing(sqlite3.connect(checkpoint)) as connection, connection:
+            connection.execute("INSERT INTO checkpoints SELECT thread_id,'child',checkpoint_id,parent_checkpoint_id,type,checkpoint,metadata FROM checkpoints WHERE thread_id=? AND checkpoint_ns=''", (first['run_id'],))
+            connection.execute("DELETE FROM checkpoints WHERE thread_id=? AND checkpoint_ns=''", (first['run_id'],))
+        older = create_backup(self.db, self.packets, self.root / 'missing-history.zip', offline=True)
+        self.assertTrue(any('1 older published workflow' in warning for warning in older['warnings']))
+        self.assertFalse(any('latest published workflow' in warning for warning in older['warnings']))
+        with closing(sqlite3.connect(checkpoint)) as connection, connection:
+            connection.execute('DELETE FROM checkpoints WHERE thread_id=?', (second['run_id'],))
+        result = create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertTrue(any('1 latest published workflow' in warning for warning in result['warnings']))
+        self.assertTrue(any('1 older published workflow' in warning for warning in result['warnings']))
+        if importlib.util.find_spec('cryptography'):
+            encrypted_path = self.root / 'missing-checkpoint.enc'
+            encrypted = create_backup(self.db, self.packets, encrypted_path, offline=True, password='fictional-passphrase')
+            self.assertEqual(encrypted['warnings'], result['warnings'])
+            self.assertEqual(verify_backup(encrypted_path, password='fictional-passphrase', temp_dir=self.root)['warnings'], result['warnings'])
+        verified = verify_backup(self.archive, temp_dir=self.root)
+        restored = restore_backup(self.archive, self.root / 'missing-checkpoint-restored', offline=True)
+        self.assertEqual(verified['warnings'], result['warnings'])
+        self.assertEqual(restored['warnings'], result['warnings'])
+        packet = json.loads((Path(restored['packet_dir']) / (job.id + '.json')).read_text(encoding='utf-8'))
+        self.assertEqual(packet['packet_sha256'], second['packet']['packet_sha256'])
+
+    def test_unrecognized_checkpoint_schema_warns_without_preventing_salvage(self):
+        packet = {'version': 2, 'job_id': 'job-1', 'resume_markdown': 'Fictional draft'}
+        packet['packet_sha256'] = packet_fingerprint(packet)
+        (self.packets / 'job-1.json').write_text(json.dumps(packet), encoding='utf-8')
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.execute('CREATE TABLE workflow_runs (run_id TEXT, job_id TEXT, packet_sha256 TEXT)')
+            db.execute('INSERT INTO workflow_runs VALUES (?,?,?)', ('fictional-run', 'job-1', packet['packet_sha256']))
+        result = create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertTrue(any('unsupported schema' in warning for warning in result['warnings']))
+        self.assertEqual(verify_backup(self.archive, temp_dir=self.root)['warnings'], result['warnings'])
+
     def test_empty_packet_directory_restores_as_directory(self):
         (self.packets / 'abc.json').unlink()
         create_backup(self.db, self.packets, self.archive, offline=True)

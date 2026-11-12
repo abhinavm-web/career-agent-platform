@@ -65,6 +65,45 @@ def _workspace_warnings(db, available):
     return warnings
 
 
+def _checkpoint_warnings(db, checkpoint_path):
+    """Check root checkpoint membership without deserializing or running graphs."""
+    if not checkpoint_path.is_file():
+        return []  # Existing missing-database checks handle this case.
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_runs'").fetchone():
+        return []
+    columns = {row[1] for row in db.execute('PRAGMA table_info(workflow_runs)')}
+    if not {'run_id', 'job_id', 'packet_sha256'} <= columns:
+        if 'packet_sha256' in columns and db.execute('SELECT 1 FROM workflow_runs WHERE packet_sha256 IS NOT NULL LIMIT 1').fetchone():
+            return ['Published workflow checkpoint presence could not be checked because the workflow index has an unsupported schema.']
+        return []
+    runs = db.execute("""SELECT w.run_id, w.rowid = p.latest AS is_latest
+        FROM workflow_runs w JOIN (SELECT job_id, MAX(rowid) AS latest FROM workflow_runs
+            WHERE packet_sha256 IS NOT NULL GROUP BY job_id) p ON p.job_id=w.job_id
+        WHERE w.packet_sha256 IS NOT NULL""")
+    missing_latest = missing_history = 0
+    try:
+        with closing(sqlite3.connect(checkpoint_path.resolve().as_uri() + '?mode=ro', uri=True)) as checkpoints:
+            cols = {row[1] for row in checkpoints.execute('PRAGMA table_info(checkpoints)')}
+            if not {'thread_id', 'checkpoint_ns'} <= cols:
+                if db.execute('SELECT 1 FROM workflow_runs WHERE packet_sha256 IS NOT NULL LIMIT 1').fetchone():
+                    return ['Published workflow checkpoint presence could not be checked because the checkpoint database has an unsupported schema.']
+                return []
+            for run_id, is_latest in runs:
+                present = isinstance(run_id, str) and checkpoints.execute(
+                    "SELECT 1 FROM checkpoints WHERE thread_id=? AND checkpoint_ns='' LIMIT 1", (run_id,)).fetchone()
+                if not present:
+                    if is_latest: missing_latest += 1
+                    else: missing_history += 1
+    except sqlite3.Error:
+        return ['Published workflow checkpoint presence could not be checked; review the restored checkpoint database before relying on it.']
+    warnings = []
+    if missing_latest:
+        warnings.append(f'{missing_latest} latest published workflow(s) have no root checkpoint; their reviews may not resume. The saved packets remain in the archive.')
+    if missing_history:
+        warnings.append(f'{missing_history} older published workflow(s) have no root checkpoint; those historical drafts may not be recoverable.')
+    return warnings
+
+
 def _validate_published_packets(published, packet_names, read_packet):
     if not published.keys() <= packet_names.keys():
         raise ValueError('Published workflow packets are missing from --packet-dir; choose the correct directory')
@@ -147,6 +186,7 @@ def create_backup(db, packets, destination, *, offline=False, password=None, ai_
             raise ValueError('Published workflows require the sibling workflow checkpoint database; restore it or reconcile the workspace before backup')
         with closing(sqlite3.connect((temp_path / DATABASES[0]).resolve().as_uri() + '?mode=ro', uri=True)) as snapshot:
             warnings = _workspace_warnings(snapshot, {name for _, name in files})
+            warnings.extend(_checkpoint_warnings(snapshot, temp_path / DATABASES[1]))
         files.extend((path, 'packets/' + path.name) for path in packet_files)
         if any(path.stat().st_size > MAX_FILE for path, _ in files):
             raise ValueError('A workspace file exceeds the backup file size limit')
@@ -265,6 +305,7 @@ def restore_backup(archive_path, destination, *, offline=False, password=None):
                 with closing(sqlite3.connect((destination / DATABASES[0]).resolve().as_uri() + '?mode=ro', uri=True)) as db:
                     published = _published_packets(db)
                     warnings = _workspace_warnings(db, files)
+                    warnings.extend(_checkpoint_warnings(db, destination / DATABASES[1]))
                 if published and DATABASES[1] not in files:
                     raise ValueError('Published workflows require a workflow checkpoint database')
                 packet_names = {PurePosixPath(name).name[:-5]: name for name in files if name.startswith('packets/')}
