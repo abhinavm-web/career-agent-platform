@@ -13,12 +13,14 @@ test('manifest limits page access to the active tab', () => {
   assert.equal(manifest.content_scripts, undefined);
 });
 
-function harness(data) {
+function harness(data, scripts = null) {
   const button = {disabled: false, addEventListener: (_name, fn) => { button.click = fn; }};
   const status = {textContent: ''}; let copied = null, reads = 0;
-  const chrome = {tabs: {query: async () => [{id: 42}]}, scripting: {executeScript: async () => { reads++; return [{result: data}]; }}};
+  const chrome = {tabs: {query: async () => [{id: 42}]}, scripting: {executeScript: async options => { reads++; return [{result: scripts === null ? data : options.func()}]; }}};
   const navigator = {clipboard: {writeText: async value => { copied = value; }}};
-  vm.runInNewContext(source, {document: {getElementById: id => id === 'capture' ? button : status}, chrome, navigator, URL});
+  vm.runInNewContext(source, {document: {getElementById: id => id === 'capture' ? button : status,
+    title: data.title, querySelectorAll: () => scripts.map(textContent => ({textContent}))},
+    location: {href: data.url}, window: {getSelection: () => ({toString: () => data.selection})}, chrome, navigator, URL});
   return {button, status, value: () => copied, reads: () => reads};
 }
 
@@ -28,6 +30,23 @@ test('captures only after click and never sends or saves the page', async () => 
   await h.button.click();
   assert.deepEqual(JSON.parse(h.value()), {format: 'career-agent-job-capture-v1', title: 'Fictional role', url: 'https://example.invalid/job', selection: 'Fictional requirement'});
   assert.match(h.status.textContent, /Copied/); assert.equal(h.button.disabled, false);
+});
+
+test('captures only unambiguous structured title and employer hints', async () => {
+  const data = {title: 'Page title', url: 'https://example.invalid/job', selection: 'Fictional requirement'};
+  const posting = {'@type': 'JobPosting', title: 'Fictional Engineer',
+    hiringOrganization: {name: 'Fictional Co', secret: 'DO NOT COPY'}, description: 'DO NOT COPY'};
+  const h = harness(data, [JSON.stringify({'@graph': [posting]})]);
+  await h.button.click();
+  const capture = JSON.parse(h.value());
+  assert.deepEqual(capture.metadata, {job_title: 'Fictional Engineer', company: 'Fictional Co'});
+  assert.equal(JSON.stringify(capture).includes('DO NOT COPY'), false);
+  const ambiguous = harness(data, [JSON.stringify([posting, {...posting, title: 'Other role'}])]);
+  await ambiguous.button.click();
+  assert.equal(JSON.parse(ambiguous.value()).metadata, undefined);
+  const oversized = harness(data, ['x'.repeat(100001), JSON.stringify(posting)]);
+  await oversized.button.click();
+  assert.equal(JSON.parse(oversized.value()).metadata, undefined);
 });
 
 test('rejects empty, oversized and credential-bearing captures', async () => {

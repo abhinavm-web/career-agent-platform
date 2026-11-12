@@ -2191,11 +2191,18 @@
           typeof capture.selection !== "string" || capture.selection.length > 50000) throw new Error("Invalid browser capture.");
       const url = new URL(capture.url);
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Use an HTTP or HTTPS job URL without credentials.");
+      const metadata = capture.metadata;
+      if (metadata !== undefined && (!metadata || Array.isArray(metadata) || typeof metadata !== "object" ||
+          Object.keys(metadata).some(key => !["job_title", "company"].includes(key)) ||
+          [metadata.job_title, metadata.company].some(value => value !== undefined && (typeof value !== "string" || value.length > 200)))) {
+        throw new Error("Invalid browser capture metadata.");
+      }
       const title = form.querySelector('[name="title"]'), jobUrl = form.querySelector('[name="job_url"]'), description = form.querySelector('[name="description"]');
       const company = form.querySelector('[name="company"]'), location = form.querySelector('[name="location"]'), remote = form.querySelector('[name="is_remote"]');
-      if ((title.value || jobUrl.value || description.value || company.value || location.value || remote.checked) && !window.confirm("Replace the title, URL and description? Company, location and remote status will stay as entered; review them for this job.")) return;
-      title.value = capture.title; jobUrl.value = capture.url; description.value = capture.selection;
-      status.textContent = "Fields filled. Review all details, including company, location and remote status, before saving.";
+      if ((title.value || jobUrl.value || description.value || company.value || location.value || remote.checked) && !window.confirm("Replace the title, URL and description? Existing company, location and remote status stay as entered; a blank company may be filled from page metadata.")) return;
+      title.value = metadata?.job_title?.trim() || capture.title; jobUrl.value = capture.url; description.value = capture.selection;
+      if (!company.value && metadata?.company?.trim()) company.value = metadata.company.trim();
+      status.textContent = "Fields filled. Page-supplied details are unverified; review title, company, location, remote status and description before saving.";
     } catch (error) { status.textContent = error instanceof SyntaxError ? "Paste a valid browser capture." : error.message; }
   });
   byId("close-add-job").addEventListener("click", () => {
