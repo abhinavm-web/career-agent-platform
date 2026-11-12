@@ -11,8 +11,10 @@ HEADINGS = {
     'minimum requirements': 'required',
     'must have': 'required', 'must-have': 'required',
     'preferred qualifications': 'preferred', 'preferred skills': 'preferred',
+    'preferred': 'preferred',
     'nice to have': 'preferred', 'nice-to-have': 'preferred',
     'qualifications': 'unspecified', 'basic qualifications': 'unspecified',
+    'about you': 'candidate_context', "what you'll bring": 'candidate_context',
 }
 
 
@@ -33,8 +35,9 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
         if bold:
             heading_line = bold.group(1) + bold.group(2)
         heading, colon, remainder = heading_line.partition(':')
-        candidate = heading.strip().casefold()
-        if candidate in HEADINGS and (colon or heading_line.strip().casefold() in HEADINGS):
+        candidate = heading.strip().casefold().replace('’', "'")
+        normalized_line = heading_line.strip().casefold().replace('’', "'")
+        if candidate in HEADINGS and (colon or normalized_line in HEADINGS):
             section = HEADINGS[candidate]
             source_heading = line
             if not remainder.strip():
@@ -59,4 +62,4 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
             break
         rows.append({'category': section, 'source_heading': source_heading, 'quote': quote, 'suggested_facts': matches})
     return {'requirements': rows, 'truncated': truncated,
-            'notice': 'Literal section excerpts and keyword links only. Unspecified qualifications are not labeled required or preferred. Review relevance and confirm requirements with the employer; missing matches do not establish a qualification gap.'}
+            'notice': 'Literal section excerpts and keyword links only. Candidate-related sections and unspecified qualifications are not labeled required or preferred. Review relevance and confirm requirements with the employer; missing matches do not establish a qualification gap.'}

@@ -51,3 +51,22 @@ class FitEvidenceTests(unittest.TestCase):
                         '**Requirements vary**', 'Qualifications may be waived'):
             with self.subTest(heading=heading):
                 self.assertEqual(requirement_evidence(heading + '\n- Python work', self.facts)['requirements'], [])
+
+    def test_candidate_sections_and_preferred_heading_keep_explicit_boundaries(self):
+        text = ('**About You**\n* Python experience\n'
+                '**What You’ll Bring**\n- Python communication\n'
+                '**Preferred** :\n* SQL experience\n'
+                '**About Us**\n- Python services')
+        rows = requirement_evidence(text, self.facts)['requirements']
+        self.assertEqual([row['category'] for row in rows], ['candidate_context', 'candidate_context', 'preferred'])
+        self.assertEqual([row['source_heading'] for row in rows], ['**About You**', '**What You’ll Bring**', '**Preferred** :'])
+        self.assertEqual([row['quote'] for row in rows], ['* Python experience', '- Python communication', '* SQL experience'])
+        self.assertEqual(rows[0]['suggested_facts'][0]['id'], 'fact-01')
+        self.assertEqual(rows[2]['suggested_facts'], [])
+
+    def test_about_you_prose_does_not_become_a_candidate_section(self):
+        for text in ('Learn about you and your career.\n- Python tasks',
+                     '**About your employer**\n- Python services',
+                     'What you’ll bring to our customers\n- Python services'):
+            with self.subTest(text=text):
+                self.assertEqual(requirement_evidence(text, self.facts)['requirements'], [])
