@@ -332,6 +332,7 @@
         if (progress.phase === "opening") status("Opening workbook locally; large files can take several minutes…");
         if (progress.phase === "scanning") status("Checking workbook structure: through worksheet row " + progress.amount.toLocaleString() + " in the current sheet…");
         if (progress.phase === "reading") status("Reading " + progress.amount.toLocaleString() + " rows. Records are saved only after the entire import succeeds…");
+        if (progress.phase === "applying") status("Applying " + progress.amount.toLocaleString() + " validated rows atomically. Existing records remain unchanged until the import succeeds…");
       } catch (_) { /* The import request reports its own errors. */ }
       finally { progressPending = false; }
     };

@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import re
+import tempfile
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -103,6 +104,37 @@ def validate_lca_source(source_url, captured_on):
     return source_url, captured
 
 
+def _validate_lca_row(row, line, captured):
+    """Validate one disclosure row independently of existing workspace data."""
+    required = ('CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE')
+    if None in row or any(row.get(key) is None for key in required):
+        raise ValueError(f'Row {line}: malformed CSV row')
+    visa = text(row['VISA_CLASS'], f'Row {line} VISA_CLASS').upper()
+    if visa in ('E-3 AUSTRALIAN', 'H-1B1 CHILE', 'H-1B1 SINGAPORE'):
+        return None
+    if visa != 'H-1B':
+        raise ValueError(f'Row {line}: unsupported VISA_CLASS')
+    case = text(row['CASE_NUMBER'], f'Row {line} CASE_NUMBER', 80).upper()
+    if not re.fullmatch(r'I-\d{3}-\d{5}-\d{6}', case):
+        raise ValueError(f'Row {line}: expected a public DOL LCA CASE_NUMBER')
+    employer = text(row['EMPLOYER_NAME'], f'Row {line} EMPLOYER_NAME')
+    # DOL's FY2026 Q3 workbook uses "Certified - Withdrawn"; its layout omits spaces.
+    status = re.sub(r'\s*-\s*', '-', text(row['CASE_STATUS'], f'Row {line} CASE_STATUS').casefold())
+    if status not in STATUSES:
+        raise ValueError(f'Row {line}: unsupported CASE_STATUS')
+    decision = None
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%Y-%m-%d %H:%M:%S'):
+        try:
+            decision = datetime.strptime(row['DECISION_DATE'].strip(), fmt).date()
+            break
+        except ValueError:
+            pass
+    if decision is None or decision > captured or decision.year < 1990:
+        raise ValueError(f'Row {line}: invalid DECISION_DATE or later than capture date')
+    optional = [text((row.get(k) or '').strip() or 'Unknown', f'Row {line} {k}') for k in ('EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE')]
+    return case, employer, employer_key(employer), fiscal_year(decision), decision.isoformat(), status, *optional
+
+
 class H1BResearch:
     def __init__(self, store: Store):
         self.store = store
@@ -179,34 +211,15 @@ class H1BResearch:
                 row_count += 1
                 if progress and row_count % 2000 == 0:
                     progress('reading', row_count)
-                visa = text(row['VISA_CLASS'], f'Row {line} VISA_CLASS').upper()
-                if visa in ('E-3 AUSTRALIAN', 'H-1B1 CHILE', 'H-1B1 SINGAPORE'):
+                validated = _validate_lca_row(row, line, captured)
+                if validated is None:
                     counts['other_visas_skipped'] += 1
                     continue
-                if visa != 'H-1B':
-                    raise ValueError(f'Row {line}: unsupported VISA_CLASS')
-                case = text(row['CASE_NUMBER'], f'Row {line} CASE_NUMBER', 80).upper()
-                if not re.fullmatch(r'I-\d{3}-\d{5}-\d{6}', case):
-                    raise ValueError(f'Row {line}: expected a public DOL LCA CASE_NUMBER')
-                employer = text(row['EMPLOYER_NAME'], f'Row {line} EMPLOYER_NAME')
-                # DOL's FY2026 Q3 workbook spells this value "Certified - Withdrawn";
-                # its record-layout document uses "Certified-Withdrawn".
-                status = re.sub(r'\s*-\s*', '-', text(row['CASE_STATUS'], f'Row {line} CASE_STATUS').casefold())
-                if status not in STATUSES:
-                    raise ValueError(f'Row {line}: unsupported CASE_STATUS')
-                decision = None
-                for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%Y-%m-%d %H:%M:%S'):
-                    try:
-                        decision = datetime.strptime(row['DECISION_DATE'].strip(), fmt).date()
-                        break
-                    except ValueError:
-                        pass
-                if decision is None or decision > captured or decision.year < 1990:
-                    raise ValueError(f'Row {line}: invalid DECISION_DATE or later than capture date')
+                case = validated[0]
+                decision = date.fromisoformat(validated[4])
                 first_decision = min(first_decision, decision) if first_decision else decision
                 last_decision = max(last_decision, decision) if last_decision else decision
-                optional = [text((row.get(k) or '').strip() or 'Unknown', f'Row {line} {k}') for k in ('EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE')]
-                values = (case, employer, employer_key(employer), fiscal_year(decision), decision.isoformat(), status, *optional, source_url, captured_on, imported_at)
+                values = (*validated, source_url, captured_on, imported_at)
                 previous = self.conn.execute('SELECT * FROM h1b_lca WHERE case_number=?', (case,)).fetchone()
                 if previous:
                     if previous['captured_on'] > captured_on or previous['decision_date'] > decision.isoformat():
@@ -242,6 +255,7 @@ class H1BResearch:
             raise ValueError('Install workbook support: pip install -e ".[lca]"') from None
         if not DEFUSEDXML:
             raise ValueError('Workbook import requires openpyxl XML protections enabled')
+        source_url, captured = validate_lca_source(source_url, captured_on)
         path = Path(path)
         if path.suffix.casefold() != '.xlsx' or not path.is_file() or path.stat().st_size > 512 * 1024 * 1024:
             raise ValueError('Choose a local XLSX file no larger than 512 MB')
@@ -299,9 +313,32 @@ class H1BResearch:
                         continue
                     yield line([value.isoformat(' ') if isinstance(value, datetime) else value.isoformat() if isinstance(value, date)
                                 else '' if value is None else str(value) for value in values])
-            return self.import_csv(lines(), source_url, captured_on, progress=progress)
+            # Keep the long XLSX read and per-row validation outside the workspace
+            # write transaction. Only the selected public columns are staged.
+            with tempfile.TemporaryFile(mode='w+', encoding='utf-8', newline='') as staging:
+                def staged_lines():
+                    for item in lines():
+                        staging.write(item)
+                        yield item
+                reader = csv.DictReader(staged_lines(), strict=True)
+                for row_number, row in enumerate(reader, 2):
+                    _validate_lca_row(row, row_number, captured)
+                    if progress and (row_number - 1) % 2000 == 0:
+                        progress('reading', row_number - 1)
+                staging.flush()
+                staging.seek(0)
+                if progress:
+                    progress('applying', 0)
+                def apply_progress(_phase, amount):
+                    progress('applying', amount)
+                # Revalidation against the current workspace preserves identical
+                # duplicate, stale and conflict semantics under concurrent writes.
+                return self.import_csv(staging, source_url, captured_on,
+                                       progress=apply_progress if progress else None)
         except ValueError:
             raise
+        except OSError:
+            raise ValueError('Unable to stage or read this XLSX workbook; check available disk space') from None
         except Exception:
             raise ValueError('Unable to read this XLSX workbook; no records were imported') from None
         finally:

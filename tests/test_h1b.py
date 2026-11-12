@@ -4,6 +4,7 @@ import io
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
@@ -175,6 +176,85 @@ class ResearchTests(unittest.TestCase):
         self.research.import_csv(io.StringIO(lca_csv(rows)), DOL_URL, '2025-06-01', progress=progress)
         self.assertEqual(observed, [('reading', 2000)])
         self.assertEqual(self.research.coverage()['records'], 2000)
+
+    def test_workbook_staging_allows_writes_and_applies_against_latest_state(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'staged.xlsx'
+        book = Workbook(write_only=True); sheet = book.create_sheet()
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        for index in range(2000):
+            sheet.append([f'I-200-25123-{index:06d}', 'Example Inc.', 'H-1B', 'Certified', '2025-04-15'])
+        book.save(path); book.close()
+        phases = []
+        def progress(phase, amount):
+            phases.append((phase, amount))
+            if phase == 'reading' and amount == 2000:
+                with Store(Path(self.tmp.name) / 'test.sqlite3') as other:
+                    research = H1BResearch(other)
+                    self.assertEqual(research.coverage()['records'], 0)
+                    newer = lca_csv([{'CASE_STATUS': 'Denied'}])
+                    self.assertEqual(research.import_csv(io.StringIO(newer), DOL_URL, '2025-06-02')['added'], 1)
+        result = self.research.import_xlsx(path, DOL_URL, '2025-06-01', progress=progress)
+        self.assertEqual(result['added'], 1999)
+        self.assertEqual(result['older_skipped'], 1)
+        self.assertEqual(self.research.coverage()['records'], 2000)
+        self.assertIn(('applying', 0), phases)
+        self.assertEqual(self.store.connection.execute("SELECT case_status FROM h1b_lca WHERE case_number='I-200-25123-000000'").fetchone()[0], 'denied')
+
+    def test_workbook_conflict_during_apply_rolls_back_every_row(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'conflict.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        sheet.append(['I-200-25123-000001', 'Example Inc.', 'H-1B', 'Certified', '2025-04-15'])
+        sheet.append(['I-200-25123-000002', 'Example Inc.', 'H-1B', 'Certified', '2025-04-15'])
+        book.save(path); book.close()
+        def progress(phase, amount):
+            if phase == 'applying' and amount == 0:
+                with Store(Path(self.tmp.name) / 'test.sqlite3') as other:
+                    research = H1BResearch(other)
+                    self.assertEqual(research.coverage()['records'], 0)
+                    research.import_csv(io.StringIO(lca_csv([{'CASE_NUMBER': 'I-200-25123-000002', 'CASE_STATUS': 'Denied'}])), DOL_URL, '2025-06-01')
+        opened = []
+        real_tempfile = tempfile.TemporaryFile
+        def make_temporary(*args, **kwargs):
+            result = real_tempfile(*args, **kwargs)
+            opened.append(result)
+            return result
+        with patch('career_agent.h1b.tempfile.TemporaryFile', side_effect=make_temporary):
+            with self.assertRaisesRegex(ValueError, 'conflicting'):
+                self.research.import_xlsx(path, DOL_URL, '2025-06-01', progress=progress)
+        self.assertEqual(len(opened), 1)
+        self.assertTrue(opened[0].closed)
+        coverage = self.research.coverage()
+        self.assertEqual(coverage['records'], 1)
+        self.assertEqual(len(coverage['lca_imports']), 1)
+
+    def test_workbook_reimport_preserves_csv_duplicate_and_provenance_semantics(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        path = Path(self.tmp.name) / 'same.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE', 'EMPLOYER_CITY', 'EMPLOYER_STATE', 'JOB_TITLE'])
+        sheet.append(['I-200-25123-000000', 'Example Inc.', 'H-1B', 'Certified', '2025-04-15', 'Example City', 'NY', 'Engineer'])
+        book.save(path); book.close()
+        self.ingest([{}])
+        original = self.research.coverage()['lca_imports'][0]['selected_fields_sha256']
+        result = self.research.import_xlsx(path, DOL_URL, '2025-06-01')
+        self.assertEqual(result['duplicates'], 1)
+        self.assertEqual(result['added'], 0)
+        self.assertEqual(self.research.coverage()['lca_imports'][0]['selected_fields_sha256'], original)
 
     def test_workbook_requires_one_unambiguous_disclosure_sheet(self):
         try:
