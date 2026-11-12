@@ -1174,11 +1174,13 @@
       state.workspace = response.workspace;
       // A saved fact closes its editor. Saving preferences must not erase
       // a separate fact draft that the candidate was still typing.
-      if (actionLabel !== "Preferences") resetFactEditor();
+      if (actionLabel !== "Preferences" && actionLabel !== "Résumé selections") resetFactEditor();
       notice(actionLabel + " saved locally. Any added or changed career fact must be verified separately.");
       await refresh(undefined, true);
+      return true;
     } catch (error) {
       notice(error.status === 409 ? "Another edit was saved. Reload the profile before editing." : error.message, true);
+      return false;
     } finally {setWorkspaceMutationBusy(false);}
   }
 
@@ -1918,6 +1920,7 @@
       resumeSuggestions = [];
       byId("resume-lines").replaceChildren();
       byId("resume-use-line").disabled = true;
+      byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true;
       status.textContent = "Text extracted locally. Review it, then extract lines to choose a fact.";
     } catch (error) { status.textContent = error.message; }
     finally { control.disabled = false; }
@@ -1926,6 +1929,8 @@
     resumeSuggestions = [];
     byId("resume-lines").replaceChildren();
     byId("resume-use-line").disabled = true;
+    byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true;
+    byId("resume-bulk-status").textContent = "Find suggestions again after editing the résumé text.";
     byId("resume-status").textContent = "Extract suggestions again after editing the text.";
     byId("resume-ai-consent").checked = false;
     byId("resume-ai-results").replaceChildren();
@@ -2006,6 +2011,7 @@
     const lines = byId("resume-text").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const select = byId("resume-lines");
     select.replaceChildren();
+    const bulk = byId("resume-bulk-lines"); bulk.replaceChildren();
     resumeSuggestions = [];
     let section = null;
     for (const line of lines) {
@@ -2020,8 +2026,12 @@
       const option = node("option", "", prefix + " · " + (line.length > 120 ? line.slice(0, 117) + "…" : line));
       option.value = String(index);
       select.append(option);
+      const bulkOption = node("option", "", prefix + " · " + (line.length > 120 ? line.slice(0, 117) + "…" : line));
+      bulkOption.value = String(index); bulk.append(bulkOption);
     }
     byId("resume-use-line").disabled = !resumeSuggestions.length;
+    byId("resume-bulk-save").disabled = !resumeSuggestions.length;
+    byId("resume-bulk-status").textContent = "Select the statements you want to stage; nothing is saved yet.";
     byId("resume-status").textContent = (resumeSuggestions.length > 200 ? "Showing the first 200 suggestions. " : `${resumeSuggestions.length} suggestions found. `) +
       "Categories follow recognized section headings and may be wrong when headings are missed; review every statement and category. Nothing is saved or verified.";
   });
@@ -2045,6 +2055,33 @@
     byId("fact-statement").focus();
     byId("resume-status").textContent = (suggestion.section ? `Suggested category: ${suggestion.section}. ` : "No category was inferred; choose one. ") +
       "Review or edit the statement, add a private evidence note, and save it as an unverified fact. Statements need at least 8 characters.";
+  });
+  byId("resume-bulk-save").addEventListener("click", async () => {
+    if (!state.workspace || workspaceMutationBusy) return;
+    const status = byId("resume-bulk-status");
+    const indices = Array.from(byId("resume-bulk-lines").selectedOptions, option => Number(option.value));
+    if (!indices.length || indices.length > 30) { status.textContent = "Select between 1 and 30 statements."; return; }
+    const selected = indices.map(index => resumeSuggestions[index]);
+    if (selected.some((item, index) => !Number.isInteger(indices[index]) || indices[index] < 0 || indices[index] >= 200 || !item || item.statement.length < 8 || item.statement.length > 1000)) {
+      status.textContent = "Each selected line must contain 8–1,000 characters; edit the résumé text and find suggestions again if needed."; return;
+    }
+    const fallback = byId("resume-bulk-category").value;
+    if (selected.some(item => !item.section) && !fallback) { status.textContent = "Choose a category for unclassified lines."; return; }
+    const source = byId("resume-bulk-source").value.trim();
+    if (!source || source.length > 500) { status.textContent = "Enter a private source note of up to 500 characters."; return; }
+    const existing = new Set(state.workspace.facts.map(fact => fact.statement));
+    const unique = new Set(selected.map(item => item.statement));
+    if (unique.size !== selected.length || selected.some(item => existing.has(item.statement))) {
+      status.textContent = "A selected statement is duplicated or already exists. Select distinct new statements."; return;
+    }
+    if (state.workspace.facts.length + selected.length > 100) { status.textContent = "The career profile allows at most 100 facts."; return; }
+    const facts = selected.map(item => ({id: "fact-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12),
+      section: item.section || fallback, statement: item.statement, keywords: [], source_note: source, verified_by_candidate: false}));
+    const saved = await saveCareerWorkspace(state.workspace.profile, [...state.workspace.facts, ...facts], "Résumé selections");
+    if (saved) {
+      for (const option of Array.from(byId("resume-bulk-lines").selectedOptions)) option.selected = false;
+      status.textContent = `${facts.length} statements saved as unverified. Review and verify each separately.`;
+    }
   });
   byId("career-profile-form").addEventListener("submit", async (event) => {
     event.preventDefault();

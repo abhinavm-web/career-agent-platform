@@ -312,6 +312,15 @@
             <button id="resume-use-line" type="button" class="button" disabled>Review as a career fact</button>
             <p id="resume-status" role="status" aria-live="polite"></p>
             <details>
+              <summary>Stage several statements for review</summary>
+              <p class="muted">Select up to 30 distinct lines. Suggested categories follow headings and may be wrong. Statements remain unverified until you review and verify them individually. The same private source note is attached to each selected line.</p>
+              <label class="block-label">Statements to stage<select id="resume-bulk-lines" multiple size="8"></select></label>
+              <label class="block-label">Category for unclassified lines<select id="resume-bulk-category"><option value="">Choose only if needed</option><option value="experience">Experience</option><option value="projects">Projects</option><option value="skills">Skills</option><option value="education">Education</option><option value="certifications">Certifications</option></select></label>
+              <label class="block-label">Private source note for these statements<textarea id="resume-bulk-source" rows="2" maxlength="500" placeholder="Where you will check these statements"></textarea></label>
+              <button id="resume-bulk-save" type="button" class="button" disabled>Stage selected statements</button>
+              <p id="resume-bulk-status" role="status" aria-live="polite"></p>
+            </details>
+            <details>
               <summary>Suggest structured facts with AI</summary>
               <p class="muted">With your consent, the entire text above is sent to the selected provider, including any names, contact details or other sensitive information in it. Edit the text first to remove anything you do not want shared. Cloud requests may incur charges. A local server can forward requests; check its settings.</p>
               <button id="resume-ai-load" type="button" class="button">Load model routes</button>
