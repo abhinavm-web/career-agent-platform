@@ -180,7 +180,6 @@ class ApplicationJourneyTests(unittest.TestCase):
                         browser.close()
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
-
     def test_verified_facts_to_reviewed_application_survive_reload(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
@@ -297,3 +296,41 @@ class ApplicationJourneyTests(unittest.TestCase):
                         browser.close()
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
+            self.assertFalse(thread.is_alive(), 'Stop all workspace writers before backup')
+            import importlib.util
+            from career_agent.backup import create_backup, restore_backup
+            archive = root / 'fictional-backup.enc'
+            password = 'fictional passphrase' if importlib.util.find_spec('cryptography') else None
+            create_backup(root / 'fictional.sqlite3', root / 'packets', archive,
+                          offline=True, password=password)
+            restored = restore_backup(archive, root / 'restored', offline=True,
+                                      password=password)
+            restored_app = create_app(DashboardConfig(db_path=Path(restored['database']),
+                                                       packet_dir=Path(restored['packet_dir'])))
+            restored_sock = socket.socket(); restored_sock.bind(('127.0.0.1', 0))
+            restored_port = restored_sock.getsockname()[1]
+            restored_server = uvicorn.Server(uvicorn.Config(restored_app, log_level='error'))
+            restored_thread = threading.Thread(target=restored_server.run, kwargs={'sockets': [restored_sock]}, daemon=True)
+            restored_thread.start()
+            try:
+                for _ in range(100):
+                    if restored_server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(restored_server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{restored_port}')
+                        page.locator('#nav-profile').click()
+                        expect(page.locator('#career-facts-list')).to_contain_text('Built a fictional Python analytics dashboard.')
+                        expect(page.locator('#career-facts-list')).to_contain_text('Candidate verified')
+                        page.locator('#nav-tracker').click()
+                        expect(page.locator('#tracker-screen')).to_contain_text('Data Analyst')
+                        page.locator('#nav-jobs').click()
+                        page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Submission recorded from your attestation')
+                        expect(page.locator('#count-submitted')).to_have_text('1')
+                    finally:
+                        browser.close()
+            finally:
+                restored_server.should_exit = True; restored_thread.join(timeout=10); restored_sock.close()
