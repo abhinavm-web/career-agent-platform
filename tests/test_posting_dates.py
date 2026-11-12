@@ -1,8 +1,10 @@
 """Source-reported dates are observations, never availability claims."""
 import tempfile
+import sys
 import unittest
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from career_agent.candidate import FactBank
@@ -29,7 +31,7 @@ class PostingDateTests(unittest.TestCase):
         class Frame:
             attrs = {}
             def to_dict(self, orient): return [record(date(2025, 2, 3))]
-        with patch('jobspy.scrape_jobs', return_value=Frame()):
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=lambda **kwargs: Frame())}):
             jobs = discover_jobspy('fictional', 'United States', sites=['indeed'])
         self.assertEqual(jobs[0].reported_posted_date, '2025-02-03')
         self.assertEqual(jobs[0].posted_date_status, 'reported')
