@@ -113,11 +113,14 @@
     byId("count-reviews").textContent = state.overview.review_events_recent ?? 0;
     const s = state.settings;
     const el = byId("configuration-status");
-    const ready = s.profile_configured && s.facts_configured;
-    el.textContent = ready ? "Candidate profile configured" : "Profile / facts not configured";
+    const targets = s.target_titles_configured !== false, skills = s.skills_configured !== false;
+    const ready = s.profile_configured && s.facts_configured && targets && skills;
+    el.textContent = ready ? "Candidate profile configured" : "Profile setup incomplete";
     el.classList.toggle("warn", !ready);
     byId("profile-prompt").hidden = ready;
-    byId("setup-progress").textContent = (s.profile_configured ? "Goals configured" : "Add your goals for matching") +
+    byId("setup-progress").textContent = (s.profile_configured ? "Profile name saved" : "Add your name") +
+      " · " + (targets ? "Target roles saved" : "Add target roles for matching") +
+      " · " + (skills ? "Skills saved" : "Add skills for matching") +
       " · " + (s.facts_configured ? "Career facts verified" : "Verify a career fact for AI analysis and drafts") + ".";
   }
 

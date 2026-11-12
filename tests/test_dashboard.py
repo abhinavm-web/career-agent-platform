@@ -91,6 +91,29 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_setup_status_distinguishes_name_targets_and_skills(self):
+        legacy = self.call('GET', '/api/settings').json()
+        self.assertTrue(legacy['target_titles_configured'])
+        self.assertTrue(legacy['skills_configured'])
+        workspace = self.call('GET', '/api/workspace').json()['workspace']
+        workspace['profile']['name'] = 'Fictional Candidate'
+        saved = self.call('PUT', '/api/workspace', {'expected_revision': workspace['revision'],
+                          'profile': workspace['profile'], 'facts': workspace['facts']}).json()['workspace']
+        status = self.call('GET', '/api/settings').json()
+        self.assertTrue(status['profile_configured'])
+        self.assertFalse(status['target_titles_configured'])
+        self.assertFalse(status['skills_configured'])
+        saved['profile']['target_titles'] = ['Data Analyst']
+        updated = self.call('PUT', '/api/workspace', {'expected_revision': saved['revision'],
+                            'profile': saved['profile'], 'facts': saved['facts']}).json()['workspace']
+        status = self.call('GET', '/api/settings').json()
+        self.assertTrue(status['target_titles_configured'])
+        self.assertFalse(status['skills_configured'])
+        updated['profile']['skills'] = ['Python']
+        self.call('PUT', '/api/workspace', {'expected_revision': updated['revision'],
+                  'profile': updated['profile'], 'facts': updated['facts']})
+        self.assertTrue(self.call('GET', '/api/settings').json()['skills_configured'])
+
     def test_release_check_requires_exact_consent_and_does_not_import(self):
         path = '/api/h1b/check-dol-releases'
         with patch('career_agent.dol_releases.check_dol_releases', return_value={'fiscal_year': 2026}) as check:
