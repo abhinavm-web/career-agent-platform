@@ -24,6 +24,23 @@ def lca_csv(rows):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_scope_restrictions_and_denied_transfer_do_not_imply_general_support(self):
+        cases = {
+            'H-1B transfers are supported for existing employees only.': 'conditional',
+            'H-1B transfers only for existing employees.': 'conditional',
+            'H-1B sponsorship is available for Canadian citizens only.': 'conditional',
+            'H-1B sponsorship is available, but only for executives.': 'conditional',
+            'We cannot guarantee H-1B sponsorship is available.': 'conditional',
+            'H-1B transfers are not available, but visa sponsorship is available.': 'conflicting',
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                result = h1b_policy(text)
+                self.assertEqual(result['policy'], expected)
+                self.assertFalse(result['potential_match'])
+                self.assertIn(text, result['quotes'])
+        self.assertEqual(h1b_policy('H-1B transfers only.')['policy'], 'transfer_only')
+
     def test_posting_edge_cases(self):
         examples = {
             'Visa sponsorship is available.': 'possible',

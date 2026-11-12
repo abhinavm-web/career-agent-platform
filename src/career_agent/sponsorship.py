@@ -105,9 +105,15 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
             r'\b(?:not (?:currently )?(?:offering|providing) (?:visa |h-?1b )?sponsorship|(?:must|will|should) not (?:now or in the future )?(?:require|need) (?:visa )?sponsorship|(?:but|however)[, ]+not for (?:this|the) (?:role|position))\b', value))
         is_negative = is_negative or bool(re.search(
             r'\b(?:except|excluding|other than) h-?1b(?!1)\b|\bnot (?:currently )?sponsoring\b|\bnot able to (?:provide sponsorship|sponsor)\b', value))
+        is_negative = is_negative or bool(re.search(
+            r'\bh-?1b(?!1) transfers? (?:are )?(?:not (?:currently )?(?:accepted|supported|available)|unavailable)\b', value))
         is_positive = any(re.search(pattern, value) for pattern in POSITIVES) or bool(re.search(
             r'\bh-?1b(?!1)(?: visa)? (?:sponsorship )?(?:is )?(?:available|provided|offered|supported|welcome)|\bsponsorship (?:is )?(?:available|provided|offered)\b', value))
-        is_conditional = bool(re.search(r'\b(?:may|might|if|case.by.case|consider|considered|depending|eligible candidates|not guaranteed)\b|no (?:visa )?sponsorship (?:is )?(?:required|needed)', value))
+        is_conditional = bool(re.search(r'\b(?:may|might|if|case.by.case|consider|considered|depending|eligible candidates|not guaranteed|cannot guarantee|can\x27t guarantee|no guarantee)\b|no (?:visa )?sponsorship (?:is )?(?:required|needed)', value))
+        # "Only" can restrict support to a specific group, location, or role.
+        # The recognized "H-1B transfers only" case retains its own category.
+        is_conditional = is_conditional or bool(re.search(r'\bonly (?:for|if|when|to)\b|\bfor\b[^.!?]{1,120}\bonly\b', value))
+        is_conditional = is_conditional or (not transfer_only and bool(re.search(r'\bonly\b', value)))
         no_requirement = bool(re.search(r'no (?:visa )?sponsorship (?:is )?(?:required|needed|restrictions)', value))
         if is_negative and not no_requirement:
             negative.append(sentence)
