@@ -159,11 +159,26 @@ class AITests(unittest.TestCase):
         self.assertEqual(row['properties']['quote']['enum'], [self.job.description])
         self.assertEqual(set(row['required']), {'quote', 'fact_ids', 'reason'})
         self.assertFalse(row['additionalProperties'])
+        self.assertIn('1 preselected posting excerpt(s)', result['notice'])
+        self.assertIn('not a complete requirements list', result['notice'])
         self.assertNotIn(self.bank.facts[0].source_note, prompt)
         self.assertNotIn(self.job.url, prompt)
         self.assertEqual(result['requirements'][0]['facts'], self.bank.public_claims())
         self.assertEqual(len(result['input_sha256']), 64)
         self.assertEqual(result['requirements'][0]['status'], 'suggested_evidence_needs_review')
+
+    def test_ollama_scope_notice_discloses_long_posting_limit(self):
+        from dataclasses import replace
+        description = '\n'.join('Fictional requirement ' + str(i) for i in range(105))
+        job = replace(self.job, description=description)
+        with patch('career_agent.ai.complete', return_value='{"requirements":[]}') as complete:
+            result = ai.analyze(job, self.bank, 'local', True)
+        self.assertEqual(len(complete.call_args.kwargs['json_schema']['properties']['requirements']['items']['properties']['quote']['enum']), 100)
+        self.assertIn('100 preselected posting excerpt(s)', result['notice'])
+        self.assertIn('lines beyond the limit', result['notice'])
+        with patch('career_agent.ai.complete', return_value='{"suggestions":[]}'):
+            result = ai.tailoring_suggestions(job, self.bank, 'local', True)
+        self.assertIn('100 preselected posting excerpt(s)', result['notice'])
 
     def test_invalid_or_fabricated_evidence_is_rejected(self):
         invalid = ['not JSON', '```json\n{}\n```', '[]', '{}', '{"requirements":null}',
