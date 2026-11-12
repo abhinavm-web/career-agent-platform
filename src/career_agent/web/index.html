@@ -83,6 +83,11 @@
 
         <form id="add-job-form" class="add-job-form panel" hidden>
           <div class="form-header"><h3>Track a job posting</h3><button type="button" id="close-add-job" class="plain-button">Close</button></div>
+          <details><summary>Paste a browser capture</summary>
+            <p>Paste a capture from the Career Agent browser companion. Review the URL and text, remove private information, and enter the company before saving. Nothing is saved automatically.</p>
+            <label>Captured job data<textarea id="job-capture-input" rows="3" maxlength="60000"></textarea></label>
+            <button type="button" id="job-capture-apply" class="button">Fill job fields</button><p id="job-capture-status" role="status"></p>
+          </details>
           <div class="form-grid">
             <label>Job title<input name="title" required maxlength="200" autocomplete="off" placeholder="AI Transformation Manager"></label>
             <label>Company<input name="company" required maxlength="200" autocomplete="organization" placeholder="Company name"></label>

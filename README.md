@@ -8,6 +8,7 @@ Working name only. Final product branding awaits trademark clearance.
 
 - Imports CSV job listings and deduplicates them by stable normalized URLs.
 - Optionally discovers US jobs via JobSpy through an explicit CLI command or the dashboard search form.
+- Offers an optional [browser companion](docs/BROWSER_COMPANION.md) to capture a selected job page for review before saving locally.
 - Runs [saved JobSpy searches automatically and persists LangGraph draft/review workflows](docs/AUTOMATION.md), with restart recovery, run history and pause/resume controls.
 - Scores title, verified profile skills, and location against job descriptions, with an explanation and candidate skills not mentioned in the posting; this is not a qualification-gap assessment.
 - Flags apparent sponsorship exclusions, sponsorship claims and source-backed historical employer records separately. A past LCA is **not** an H-1B sponsorship offer.

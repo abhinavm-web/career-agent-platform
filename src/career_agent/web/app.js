@@ -1951,6 +1951,26 @@
     byId("add-job-form").hidden = false;
     byId("add-job-form").querySelector?.('[name="title"]')?.focus();
   });
+  byId("job-capture-apply").addEventListener("click", () => {
+    const status = byId("job-capture-status"), form = byId("add-job-form");
+    try {
+      const raw = byId("job-capture-input").value;
+      if (raw.length > 60000) throw new Error("Capture is too large.");
+      const capture = JSON.parse(raw);
+      if (!capture || Array.isArray(capture) || typeof capture !== "object" ||
+          capture.format !== "career-agent-job-capture-v1" ||
+          typeof capture.title !== "string" || !capture.title.trim() || capture.title.length > 200 ||
+          typeof capture.url !== "string" || capture.url.length > 2048 ||
+          typeof capture.selection !== "string" || capture.selection.length > 50000) throw new Error("Invalid browser capture.");
+      const url = new URL(capture.url);
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Use an HTTP or HTTPS job URL without credentials.");
+      const title = form.querySelector('[name="title"]'), jobUrl = form.querySelector('[name="job_url"]'), description = form.querySelector('[name="description"]');
+      const company = form.querySelector('[name="company"]'), location = form.querySelector('[name="location"]'), remote = form.querySelector('[name="is_remote"]');
+      if ((title.value || jobUrl.value || description.value || company.value || location.value || remote.checked) && !window.confirm("Replace the title, URL and description? Company, location and remote status will stay as entered; review them for this job.")) return;
+      title.value = capture.title; jobUrl.value = capture.url; description.value = capture.selection;
+      status.textContent = "Fields filled. Review all details, including company, location and remote status, before saving.";
+    } catch (error) { status.textContent = error instanceof SyntaxError ? "Paste a valid browser capture." : error.message; }
+  });
   byId("close-add-job").addEventListener("click", () => {
     byId("add-job-form").hidden = true;
     byId("show-add-job").focus();
