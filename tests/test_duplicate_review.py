@@ -106,4 +106,3 @@ class DuplicateBrowserTests(unittest.TestCase):
                     self.assertEqual(store.stage_of(second.id), 'discovered')
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
-
