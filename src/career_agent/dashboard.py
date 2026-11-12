@@ -529,6 +529,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
             set_h1b_progress('idle', 0)
             h1b_import_lock.release()
 
+    @app.post('/api/h1b/check-dol-releases')
+    async def h1b_check_dol_releases(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm the public DOL release check')
+        from .dol_releases import check_dol_releases
+        return await run_in_threadpool(check_dol_releases)
+
     @app.post('/api/h1b/refresh-dol')
     async def h1b_refresh_dol(request: Request):
         data = await request.json()

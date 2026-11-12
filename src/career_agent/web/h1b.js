@@ -395,6 +395,30 @@
     } catch (error) { status(error.message); }
     finally { control.disabled = false; get("h1b-search-submit").disabled = false; }
   });
+  get("h1b-release-check").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const control = get("h1b-release-submit"), output = get("h1b-release-status");
+    if (control.disabled || !get("h1b-release-consent").checked) return;
+    control.disabled = true;
+    output.textContent = "Checking DOL release links… No records are being imported.";
+    try {
+      const result = await api("/api/h1b/check-dol-releases", "POST", {acknowledged: true});
+      output.replaceChildren();
+      output.append(node("span", "Latest recognized link: FY " + result.fiscal_year + " Q" + result.quarter +
+        " · checked " + result.checked_at + ". " + result.notice + " "));
+      output.append(link("Official release page", result.source_url), document.createTextNode(" "));
+      const use = node("button", "Use this workbook URL");
+      use.type = "button"; use.className = "button";
+      use.addEventListener("click", () => {
+        get("h1b-refresh-url").value = result.workbook_url;
+        get("h1b-refresh-dol").parentElement.open = true;
+        get("h1b-refresh-url").focus();
+      });
+      output.append(use);
+    } catch (error) { output.textContent = error.message; }
+    finally { control.disabled = false; get("h1b-release-consent").checked = false; }
+  });
+
   get("h1b-refresh-dol").addEventListener("submit", async (event) => {
     event.preventDefault();
     const control = get("h1b-refresh-submit");

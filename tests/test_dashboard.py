@@ -91,6 +91,18 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_release_check_requires_exact_consent_and_does_not_import(self):
+        path = '/api/h1b/check-dol-releases'
+        with patch('career_agent.dol_releases.check_dol_releases', return_value={'fiscal_year': 2026}) as check:
+            for payload in ({}, {'acknowledged': False}, {'acknowledged': 1}, {'acknowledged': True, 'url': 'https://evil.invalid'}):
+                self.assertEqual(self.call('POST', path, payload).status_code, 422)
+            self.assertEqual(self.call('POST', path, {'acknowledged': True}, token='bad').status_code, 403)
+            check.assert_not_called()
+            before = self.call('GET', '/api/h1b').json()['coverage']
+            self.assertEqual(self.call('POST', path, {'acknowledged': True}).json(), {'fiscal_year': 2026})
+            check.assert_called_once_with()
+            self.assertEqual(self.call('GET', '/api/h1b').json()['coverage'], before)
+
     def test_oversized_request_is_rejected(self):
         from career_agent.dashboard import API_BODY_LIMIT
 
