@@ -117,11 +117,17 @@
     const ready = s.profile_configured && s.facts_configured && targets && skills;
     el.textContent = ready ? "Candidate profile configured" : "Profile setup incomplete";
     el.classList.toggle("warn", !ready);
-    byId("profile-prompt").hidden = ready;
+    const hasJobs = (state.overview.total_jobs ?? 0) > 0;
+    byId("profile-prompt").hidden = ready && hasJobs;
     byId("setup-progress").textContent = (s.profile_configured ? "Profile name saved" : "Add your name") +
       " · " + (targets ? "Target roles saved" : "Add target roles for matching") +
       " · " + (skills ? "Skills saved" : "Add skills for matching") +
       " · " + (s.facts_configured ? "Career facts verified" : "Verify a career fact for AI analysis and drafts") + ".";
+    byId("setup-jobs-progress").textContent = hasJobs ? "A saved opportunity is available to review." :
+      "Find or add a first opportunity. External searches require your consent.";
+    byId("open-profile").hidden = ready;
+    byId("setup-find-jobs").hidden = hasJobs;
+    byId("setup-add-job").hidden = hasJobs;
   }
 
   function postingDeadline(value) {
@@ -1528,6 +1534,8 @@
 
   async function refresh(keepSelected, preserveEditor = true) {
     const sequence = ++state.refreshSequence;
+    const screenAtStart = state.screen;
+    const trackerRequestAtStart = state.crmRequestSeq;
     try {
       const results = await Promise.all([
         loadBoardJobs(sequence), api("/api/overview"), api("/api/settings"), api("/api/reviews")
@@ -1564,7 +1572,9 @@
       if (state.screen === "profile") {
         await loadWorkspace(preserveEditor);
       }
-      if (state.screen === "tracker") await loadCRM();
+      // Navigation to the tracker starts its own load. A refresh that began on
+      // another screen must not reload it again and overwrite an active form.
+      if (state.screen === "tracker" && screenAtStart === "tracker" && state.crmRequestSeq === trackerRequestAtStart) await loadCRM();
     } catch (error) {
       if (sequence === state.refreshSequence) notice("Unable to load local workspace: " + error.message, true);
     }
@@ -1575,6 +1585,11 @@
   byId("nav-automation").addEventListener("click", () => {showScreen("automation"); byId("automation-panel").open = true; byId("automation-refresh").click();});
   byId("nav-ai").addEventListener("click", () => {showScreen("ai"); byId("ai-panel").open = true; byId("ai-load").click();});
   byId("open-profile").addEventListener("click", () => byId("nav-profile").click());
+  byId("setup-find-jobs").addEventListener("click", () => {
+    byId("discovery-panel").open = true;
+    byId("discover-query").focus();
+  });
+  byId("setup-add-job").addEventListener("click", () => byId("show-add-job").click());
   byId("ai-open-profile").addEventListener("click", () => byId("nav-profile").click());
   byId("discover-form").addEventListener("submit", async (event) => {
     event.preventDefault();

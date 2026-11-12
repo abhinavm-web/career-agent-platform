@@ -250,6 +250,7 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .setup-banner strong {color:#ffe0a7;font-size:14px;}
 .setup-banner p {color:#e0d1b9;font-size:12px;margin:4px 0 0;}
 .setup-banner .button {white-space:nowrap;}
+.setup-actions {display:flex;flex-wrap:wrap;gap:8px;}
 .discovery-quick {margin:0 0 16px;padding:17px 20px;}
 .board {grid-template-columns:minmax(285px, 0.9fr) minmax(0, 1.4fr);gap:18px;}
 .job-list {max-height:none;overflow:visible;}

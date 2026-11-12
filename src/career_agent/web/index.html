@@ -65,7 +65,18 @@
           <button id="show-add-job" class="button button-primary" type="button">+ Add opportunity</button>
         </div>
 
-        <div id="profile-prompt" class="setup-banner" hidden><div><strong>Set up your workspace</strong><p id="setup-progress">Add your goals for matching. Verify a career fact to enable AI analysis and application drafts.</p><p>Next: find or add a role, review sponsorship evidence, then review a draft before applying yourself.</p></div><button type="button" class="button" id="open-profile">Continue setup</button></div>
+        <section id="profile-prompt" class="setup-banner" aria-labelledby="setup-heading" hidden>
+          <div><strong id="setup-heading">Get started</strong>
+            <p id="setup-progress">Checking profile setup…</p>
+            <p id="setup-jobs-progress">Checking opportunities…</p>
+            <p>Review sponsorship evidence and application materials before applying yourself.</p>
+          </div>
+          <div class="setup-actions">
+            <button type="button" class="button" id="open-profile">Continue profile setup</button>
+            <button type="button" class="button" id="setup-find-jobs">Search job boards</button>
+            <button type="button" class="button" id="setup-add-job">Add a job manually</button>
+          </div>
+        </section>
 
         <details id="discovery-panel" class="panel profile-editor discovery-quick">
           <summary>Find jobs with JobSpy</summary>
