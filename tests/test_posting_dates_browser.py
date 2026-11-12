@@ -34,6 +34,7 @@ class PostingDatesBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Fictional engineer')
                         page.locator('#discover-site-linkedin').uncheck()
@@ -48,6 +49,7 @@ class PostingDatesBrowserTests(unittest.TestCase):
                         self.assertIs(discover.call_args.kwargs['fetch_details'], True)
                         expect(page.locator('#job-list')).to_contain_text('Description missing')
                         page.reload()
+                        page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         detail = page.locator('#detail-panel')
                         expect(detail).to_contain_text('Source-reported posting date: 2025-02-03')

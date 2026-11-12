@@ -62,7 +62,9 @@ class CaptureBrowserTests(unittest.TestCase):
                         page.wait_for_timeout(100)
                         self.assertEqual(attempted, [])
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
+                        page.get_by_role('tab', name='Overview').click()
                         page.get_by_text('Correct saved description', exact=True).click()
                         page.get_by_text('Use a browser capture for this job', exact=True).click()
                         editor = page.locator('#job-description-editor')
@@ -79,6 +81,7 @@ class CaptureBrowserTests(unittest.TestCase):
                             self.assertEqual(store.get_job(job.id).description, json.loads(captured)['selection'])
                             self.assertIn('Structured JobPosting', store.description_latest(job.id)['source_note'])
                         evidence = page.locator('#fit-evidence')
+                        page.get_by_role('tab', name='Fit').click()
                         evidence.get_by_role('button', name='Compare requirements').click()
                         expect(evidence).to_contain_text('Labeled required')
                         expect(evidence).to_contain_text('- Python experience')
@@ -145,6 +148,7 @@ class CaptureBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='+ Add opportunity').click()
                         page.get_by_text('Paste a browser capture', exact=True).click()
                         capture = {'format':'career-agent-job-capture-v1', 'title':'Fictional Analyst',
@@ -185,6 +189,7 @@ class CaptureBrowserTests(unittest.TestCase):
                             jobs = store.list_jobs(); self.assertEqual(len(jobs), 1)
                             self.assertEqual(jobs[0].description, capture['selection'])
                         page.get_by_role('button', name='View Fictional Analyst at Fictional Co').click()
+                        page.get_by_role('tab', name='Overview').click()
                         page.get_by_text('Correct saved description', exact=True).click()
                         page.get_by_text('Use a browser capture for this job', exact=True).click()
                         editor = page.locator('#job-description-editor')

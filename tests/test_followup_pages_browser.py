@@ -37,6 +37,7 @@ class FollowupPagesBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.on('dialog', lambda dialog: dialog.accept())
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Engineer')
                         page.get_by_role('button', name='Application tracker', exact=True).click()
                         summary = page.locator('#crm-summary')

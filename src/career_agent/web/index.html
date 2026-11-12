@@ -22,13 +22,17 @@
       </div>
       <div class="rail-divider"></div>
       <nav class="navigation" aria-label="Main">
-        <button class="nav-item active" id="nav-jobs" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
+        <button class="nav-item active" id="nav-home" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">⌂</span> Home</button>
+        <span class="nav-group-label">YOUR SEARCH</span>
+        <button class="nav-item" id="nav-jobs" type="button"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
         <button class="nav-item" id="nav-tracker" type="button"><span class="nav-glyph" aria-hidden="true">▤</span> Application tracker</button>
         <button class="nav-item" id="nav-h1b" type="button"><span class="nav-glyph" aria-hidden="true">◇</span> H-1B research</button>
+        <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
+        <span class="nav-group-label">TOOLS &amp; SETTINGS</span>
+        <button class="nav-item" id="nav-settings" type="button"><span class="nav-glyph" aria-hidden="true">⚙</span> Settings &amp; data</button>
         <button class="nav-item" id="nav-automation" type="button"><span class="nav-glyph" aria-hidden="true">◷</span> Saved searches</button>
         <button class="nav-item" id="nav-ai" type="button"><span class="nav-glyph" aria-hidden="true">✦</span> AI analysis</button>
         <button class="nav-item" id="nav-activity" type="button"><span class="nav-glyph" aria-hidden="true">☷</span> Review history</button>
-        <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
       </nav>
       <div class="rail-bottom">
         <div class="privacy-note">
@@ -42,7 +46,7 @@
 
     <main id="workspace" class="workspace" tabindex="-1">
       <header class="topbar">
-        <div class="breadcrumbs"><span>Workspace</span><span class="slash">/</span><strong id="section-name">Opportunity board</strong></div>
+        <div class="breadcrumbs"><span>Workspace</span><span class="slash">/</span><strong id="section-name">Home</strong></div>
         <div class="top-actions">
           <span id="configuration-status" class="config-pill">Checking profile…</span>
           <button id="refresh" type="button" class="icon-action" title="Refresh data" aria-label="Refresh data">↻</button>
@@ -59,7 +63,30 @@
         <div class="metric"><small>REVIEW EVENTS</small><strong id="count-reviews">—</strong><span>Decisions recorded locally</span></div>
       </section>
 
-      <section id="jobs-screen" class="screen">
+      <section id="home-screen" class="screen">
+        <div class="section-heading home-heading"><div><span class="eyebrow">YOUR WORKSPACE</span><h2>Your next move, in focus.</h2><p class="section-description">Find the right roles, prepare with evidence, and keep your search moving.</p></div></div>
+        <div class="home-grid">
+          <section class="home-feature panel"><span class="eyebrow">START HERE</span><h3 id="home-next-title">Review your career profile</h3><p id="home-next-description">Add your goals and verify your experience to prepare application drafts.</p><button id="home-next" type="button" class="button button-primary">Open career profile</button></section>
+          <section class="home-card panel"><span class="eyebrow">OPPORTUNITIES</span><strong id="home-jobs-count">—</strong><p id="home-jobs-copy">Saved roles in your workspace</p><button id="home-jobs" type="button" class="button">Explore opportunities</button></section>
+          <section class="home-card panel"><span class="eyebrow">APPLICATIONS</span><strong id="home-submitted-count">—</strong><p>Manually recorded submissions</p><button id="home-tracker" type="button" class="button">Open application tracker</button></section>
+          <section class="home-card panel"><span class="eyebrow">SPONSORSHIP</span><h3>Research with context</h3><p>Review posting language and historical employer records side by side.</p><button id="home-h1b" type="button" class="button">Research employers</button></section>
+        </div>
+        <section class="home-followups panel"><div><span class="eyebrow">KEEP MOVING</span><h3>Upcoming follow-ups</h3></div><div id="home-followups" role="status">Open Home to load your local reminders.</div></section>
+        <section class="home-followups panel"><div><span class="eyebrow">YOUR OPPORTUNITIES</span><h3>Roles to review</h3><p class="muted">A starting point from your saved roles, not a hiring prediction.</p></div><div id="home-recommendations"></div></section>
+        <p class="home-privacy">Your workspace stays on this device. AI requests go only to the provider you select and require your consent.</p>
+      </section>
+
+      <section id="settings-screen" class="screen" hidden>
+        <div class="section-heading"><div><span class="eyebrow">WORKSPACE</span><h2>Settings &amp; data</h2><p class="section-description">Manage the tools and records that support your search.</p></div></div>
+        <div class="settings-grid">
+          <section class="panel home-card"><h3>Model routes</h3><p>Review configured providers, test a connection, and manage request history. Route configuration is stored locally.</p><button id="settings-models" class="button" type="button">Open AI tools</button></section>
+          <section class="panel home-card"><h3>Saved searches</h3><p>Manage explicitly enabled recurring discovery and inspect workflow runs.</p><button id="settings-searches" class="button" type="button">Manage searches</button></section>
+          <section class="panel home-card"><h3>Government data</h3><p>Check official release links and import historical employer records into your local database.</p><button id="settings-records" class="button" type="button">Open data administration</button></section>
+          <section class="panel home-card"><h3>Backup &amp; privacy</h3><p>The database is not encrypted. Full workspace backups are available through the local CLI; career profile export is a separate, unencrypted file.</p><button id="settings-profile-export" class="button" type="button">Open profile export</button></section>
+        </div>
+      </section>
+
+      <section id="jobs-screen" class="screen" hidden>
         <div class="section-heading">
           <div><span class="eyebrow">DISCOVER</span><h2>Opportunity board</h2><p class="section-description">Find, evaluate and prepare for roles that fit your goals.</p></div>
           <button id="show-add-job" class="button button-primary" type="button">+ Add opportunity</button>
@@ -269,6 +296,7 @@
           <span id="profile-revision" class="config-pill">Not saved yet</span>
         </div>
         <p class="muted">These details are stored in your local SQLite database, not in Git. Storage is not encrypted. Only individually verified facts can appear in generated application drafts.</p>
+        <section class="profile-guide panel" aria-label="Profile setup steps"><div><span class="eyebrow">YOUR FOUNDATION</span><h3>Build a profile you can trust</h3><p>Start with a résumé or preferences, then review and verify each career fact before using it in a draft.</p></div><div class="button-row"><button id="profile-start-resume" class="button button-primary" type="button">Import a résumé</button><button id="profile-start-preferences" class="button" type="button">Set preferences</button></div></section>
         <details class="panel profile-editor">
           <summary>Export or import career profile</summary>
           <p class="muted">Export the current profile and facts, including contact details, private source notes and any AI wording source excerpts, to an unencrypted JSON file. This is not a full backup: jobs, application history, previous revisions and documents are excluded. Keep the file private.</p>

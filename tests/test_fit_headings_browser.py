@@ -39,8 +39,10 @@ class FitHeadingsBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         evidence = page.locator('#fit-evidence')
+                        page.get_by_role('tab', name='Fit').click()
                         evidence.get_by_role('button', name='Compare requirements').click()
                         expect(evidence).to_contain_text('Qualification level unspecified')
                         expect(evidence).to_contain_text('Section heading: **Qualifications**')
@@ -52,6 +54,7 @@ class FitHeadingsBrowserTests(unittest.TestCase):
                         expect(evidence).to_contain_text('Labeled preferred')
                         expect(evidence).not_to_contain_text('Labeled required')
                         preparation = page.locator('#interview-preparation')
+                        page.get_by_role('tab', name='Application').click()
                         preparation.get_by_role('button', name='Build preparation guide').click()
                         expect(preparation).to_contain_text('not actual employer interview questions')
                         expect(preparation).to_contain_text('Posting section: **Qualifications**')
