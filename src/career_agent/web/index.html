@@ -157,6 +157,7 @@
             <label>Direct DOL quarterly workbook URL<input id="h1b-refresh-url" type="url" required placeholder="https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx"></label>
             <label class="check-label"><input id="h1b-refresh-consent" type="checkbox" required> Download and import this public DOL workbook. A large download uses network and disk space.</label>
             <button id="h1b-refresh-submit" type="submit" class="button">Download and import DOL workbook</button>
+            <p id="h1b-refresh-status" aria-live="off" tabindex="-1"></p><span id="h1b-refresh-announcement" class="sr-only" role="status" aria-live="polite"></span>
           </form>
           <form id="h1b-import" class="crm-form">
             <label>DOL source URL<input id="h1b-source" type="url" required value="https://www.dol.gov/agencies/eta/foreign-labor/performance"></label>
@@ -164,6 +165,7 @@
             <label>Public LCA workbook or CSV<input id="h1b-file" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
             <label class="check-label"><input id="h1b-consent" type="checkbox" required> This is public DOL disclosure data, and I checked the source URL and capture date.</label>
             <button id="h1b-import-submit" type="submit" class="button">Import records locally</button>
+            <p id="h1b-import-status" aria-live="off" tabindex="-1"></p><span id="h1b-import-announcement" class="sr-only" role="status" aria-live="polite"></span>
           </form>
         </details>
         <details class="panel profile-editor">
@@ -176,6 +178,7 @@
             <label class="field">CSV file (for local import, up to 8 MB)<input id="uscis-file" type="file" accept=".csv,text/csv"></label>
             <label class="check-label"><input id="uscis-consent" type="checkbox" required> I checked the source and reporting date. This is the full fiscal-year file, not a filtered company export, and replaces that year's snapshot. Refresh may contact USCIS; no candidate data is sent.</label>
             <div class="button-row"><button id="uscis-refresh" type="submit" class="button">Refresh from USCIS</button><button id="uscis-import" type="button" class="button">Import official CSV locally</button></div>
+            <p id="uscis-status" aria-live="off" tabindex="-1"></p><span id="uscis-announcement" class="sr-only" role="status" aria-live="polite"></span>
           </form>
         </details>
         <p id="h1b-coverage" class="muted"></p>
@@ -239,8 +242,8 @@
           <p class="muted">Each request sends your question, this session's conversation and any selected verified facts to the selected provider. Answers are unverified suggestions and do not change your profile. Conversations are not saved; cloud providers may charge for use.</p>
           <button id="profile-chat-load" type="button" class="button">Load model routes</button>
           <form id="profile-chat-form">
-            <label class="block-label">Model route<select id="profile-chat-route" required></select></label>
-            <p id="profile-chat-destination" class="muted">Load model routes to see the destination.</p>
+            <label class="block-label">Model route<select id="profile-chat-route" aria-describedby="profile-chat-destination" required></select></label>
+            <p id="profile-chat-destination" class="muted" role="status" aria-live="polite">Load model routes to see the destination.</p>
             <label class="block-label">Your question<textarea id="profile-chat-question" rows="3" maxlength="4000" required placeholder="How should I describe my career goals?"></textarea></label>
             <label class="check-label"><input id="profile-chat-facts" type="checkbox"> Also send my saved, verified career fact statements (these may contain personal information)</label>
             <label class="check-label"><input id="profile-chat-consent" type="checkbox" required> I consent to sending this conversation and any selected facts to the provider shown above.</label>
@@ -285,8 +288,8 @@
               <summary>Suggest structured facts with AI</summary>
               <p class="muted">With your consent, the entire text above is sent to the selected provider, including any names, contact details or other sensitive information in it. Edit the text first to remove anything you do not want shared. Cloud requests may incur charges. A local server can forward requests; check its settings.</p>
               <button id="resume-ai-load" type="button" class="button">Load model routes</button>
-              <label class="block-label">Model route<select id="resume-ai-route"></select></label>
-              <p id="resume-ai-destination" class="muted">Load model routes to see the destination.</p>
+              <label class="block-label">Model route<select id="resume-ai-route" aria-describedby="resume-ai-destination"></select></label>
+              <p id="resume-ai-destination" class="muted" role="status" aria-live="polite">Load model routes to see the destination.</p>
               <label class="check-label"><input id="resume-ai-consent" type="checkbox"> I consent to sending the complete résumé text above to the selected provider.</label>
               <button id="resume-ai-submit" type="button" class="button" disabled>Suggest résumé facts</button>
               <p id="resume-ai-status" role="status" aria-live="polite">No request has been made.</p>
@@ -362,9 +365,9 @@
         <p>Read-only suggestions from a model you choose. Sends the selected posting and verified fact statements; excludes your name and private evidence notes as separate fields. Statements themselves may contain personal information. No application changes.</p>
         <button type="button" class="button" id="ai-load">Refresh models and jobs</button>
         <form id="ai-form">
-          <label>Model route<select id="ai-route" required></select></label>
+          <label>Model route<select id="ai-route" aria-describedby="ai-destination ai-route-readiness" required></select></label>
           <label>Job (up to 10,000 saved jobs)<select id="ai-job" required></select></label>
-          <p id="ai-destination"></p>
+          <p id="ai-destination" role="status" aria-live="polite"></p>
           <p id="ai-route-readiness"></p>
           <label class="check-label"><input type="checkbox" id="ai-test-consent"> I agree to a test request to the selected provider. It sends a fixed test message, no job or profile; cloud requests may incur charges.</label>
           <button type="button" class="button" id="ai-test-route" disabled>Test model connection</button>

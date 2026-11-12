@@ -33,6 +33,8 @@ class AIHistoryBrowserTests(unittest.TestCase):
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-ai').click()
                         expect(page.locator('#ai-test-route')).to_be_enabled()
+                        expect(page.locator('#ai-route')).to_have_attribute('aria-describedby', 'ai-destination ai-route-readiness')
+                        expect(page.locator('#ai-destination')).to_have_attribute('role', 'status')
                         expect(page.locator('#ai-destination')).to_contain_text('daily local request limit 1')
                         page.locator('#ai-test-consent').check(); page.locator('#ai-test-route').click()
                         expect(page.locator('#ai-test-status')).to_contain_text('provider returned a response')

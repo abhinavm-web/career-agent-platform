@@ -95,7 +95,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                             'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': workbook.getvalue()})
                         page.locator('#h1b-consent').check()
                         page.get_by_role('button', name='Import records locally', exact=True).click()
-                        expect(page.locator('#h1b-status')).to_contain_text('1 added')
+                        expect(page.locator('#h1b-import-status')).to_contain_text('1 added')
                         expect(page.locator('#h1b-coverage')).to_contain_text('1 imported H-1B cases')
                         page.get_by_role('button', name='Find opportunities', exact=True).click()
                         opportunity = page.locator('#h1b-opportunities-results .panel').filter(has_text='Data Analyst')

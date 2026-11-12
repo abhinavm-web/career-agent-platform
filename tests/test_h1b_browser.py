@@ -16,6 +16,53 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_dol_progress_is_local_visible_and_announced_by_phase(self):
+        import uvicorn
+        from unittest.mock import patch
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        advance, applying, finish = threading.Event(), threading.Event(), threading.Event()
+        def fake_refresh(_research, _url, *, progress):
+            progress('reading', 2000); advance.wait(15)
+            progress('reading', 4000); applying.wait(15)
+            progress('applying', 0); finish.wait(15)
+            return {'added': 1, 'updated': 0, 'duplicates': 0, 'older_skipped': 0, 'other_visas_skipped': 0}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                with patch('career_agent.h1b.H1BResearch.refresh_dol', new=fake_refresh), sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-h1b').click()
+                        page.get_by_text('Import public DOL LCA records', exact=True).click()
+                        page.locator('#h1b-refresh-url').fill('https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx')
+                        page.locator('#h1b-refresh-consent').check()
+                        page.locator('#h1b-refresh-submit').click()
+                        expect(page.locator('#h1b-refresh-status')).to_be_focused()
+                        expect(page.locator('#h1b-refresh-status')).to_contain_text('2,000', timeout=8000)
+                        expect(page.locator('#h1b-refresh-announcement')).to_contain_text('2,000')
+                        advance.set()
+                        expect(page.locator('#h1b-refresh-status')).to_contain_text('4,000', timeout=8000)
+                        expect(page.locator('#h1b-refresh-announcement')).to_contain_text('2,000')
+                        applying.set()
+                        expect(page.locator('#h1b-refresh-announcement')).to_contain_text('Applying', timeout=8000)
+                        finish.set()
+                        expect(page.locator('#h1b-refresh-status')).to_contain_text('1 added')
+                        expect(page.locator('#h1b-refresh-announcement')).to_contain_text('1 added')
+                    finally:
+                        advance.set(); applying.set(); finish.set(); browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_description_editor_survives_packet_delay_and_job_falling_out_of_loaded_board(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
@@ -307,7 +354,7 @@ class H1BBrowserTests(unittest.TestCase):
                             'buffer': lca_csv([{'JOB_TITLE': '<script>throw new Error("unsafe")</script>'}]).encode()})
                         page.locator('#h1b-consent').check()
                         page.get_by_role('button', name='Import records locally', exact=True).click()
-                        expect(page.locator('#h1b-status')).to_contain_text('1 added')
+                        expect(page.locator('#h1b-import-status')).to_contain_text('1 added')
                         page.get_by_text('Recent DOL import history (up to 10)').click()
                         expect(page.locator('#h1b-coverage')).to_contain_text('observed decisions 2025-04-15–2025-04-15')
                         expect(page.locator('#h1b-coverage')).to_contain_text('selected-field SHA-256')
@@ -327,7 +374,7 @@ class H1BBrowserTests(unittest.TestCase):
                                 'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': buffer.getvalue()})
                             page.locator('#h1b-consent').check()
                             page.get_by_role('button', name='Import records locally', exact=True).click()
-                            expect(page.locator('#h1b-status')).to_contain_text('1 added')
+                            expect(page.locator('#h1b-import-status')).to_contain_text('1 added')
                             expect(page.locator('#h1b-coverage')).to_contain_text('2 imported H-1B cases')
                             import hashlib
                             content = buffer.getvalue()
@@ -338,7 +385,7 @@ class H1BBrowserTests(unittest.TestCase):
                                 page.locator('#h1b-refresh-url').fill('https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx')
                                 page.locator('#h1b-refresh-consent').check()
                                 page.get_by_role('button', name='Download and import DOL workbook').click()
-                                expect(page.locator('#h1b-status')).to_contain_text('1 updated')
+                                expect(page.locator('#h1b-refresh-status')).to_contain_text('1 updated')
                                 page.get_by_text('Recent DOL import history (up to 10)').click()
                                 expect(page.locator('#h1b-coverage')).to_contain_text('downloaded over DOL HTTPS')
                                 expect(page.locator('#h1b-coverage')).to_contain_text('original-file SHA-256')
@@ -350,17 +397,17 @@ class H1BBrowserTests(unittest.TestCase):
                             'buffer': hub_csv([{'Employer': 'Example Inc.'}])})
                         page.locator('#uscis-consent').check()
                         page.get_by_role('button', name='Import official CSV locally').click()
-                        expect(page.locator('#h1b-status')).to_contain_text('1 employer groups')
+                        expect(page.locator('#uscis-status')).to_contain_text('1 employer groups')
                         with patch('career_agent.uscis.public_get', return_value=(403, b'', 'text/html')):
                             page.locator('#uscis-consent').check()
                             page.get_by_role('button', name='Refresh from USCIS').click()
-                            expect(page.locator('#h1b-status')).to_contain_text('HTTP 403')
-                            expect(page.locator('#h1b-status')).to_contain_text('No USCIS API token is needed')
+                            expect(page.locator('#uscis-status')).to_contain_text('HTTP 403')
+                            expect(page.locator('#uscis-status')).to_contain_text('No USCIS API token is needed')
                         page.route('**/api/h1b/uscis/refresh', lambda route: route.fulfill(
                             status=403, content_type='application/json', body='{"detail":"Session token required"}'))
                         page.get_by_role('button', name='Refresh from USCIS').click()
-                        expect(page.locator('#h1b-status')).to_contain_text('refresh this page')
-                        expect(page.locator('#h1b-status')).to_contain_text('no USCIS token is required')
+                        expect(page.locator('#uscis-status')).to_contain_text('refresh this page')
+                        expect(page.locator('#uscis-status')).to_contain_text('no USCIS token is required')
                         page.unroute('**/api/h1b/uscis/refresh')
                         page.locator('#h1b-query').fill('Example')
                         page.get_by_role('button', name='Search company records and jobs').click()
