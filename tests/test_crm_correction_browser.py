@@ -36,12 +36,30 @@ class CRMCorrectionBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page()
+                        page.add_init_script('''
+                            const realFetch = window.fetch.bind(window);
+                            window.fetch = (url, options) => {
+                              if (String(url) === '/api/overview' && !window.overviewHeld) {
+                                window.overviewHeld = true;
+                                return new Promise((resolve, reject) => {
+                                  window.releaseOverview = () => realFetch(url, options).then(resolve, reject);
+                                });
+                              }
+                              return realFetch(url, options);
+                            };
+                        ''')
+                        page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-tracker').click()
                         page.locator('#crm-jobs button').first.click()
                         detail = page.locator('#crm-detail')
                         expect(detail).to_contain_text('restore interview')
                         page.get_by_label('Reason for correction (private)').fill('Selected outcome by mistake')
+                        page.wait_for_function('typeof window.releaseOverview === "function"')
+                        page.evaluate('window.releaseOverview()')
+                        expect(page.locator('#count-jobs')).to_have_text('1')
+                        page.wait_for_timeout(300)
+                        expect(page.get_by_label('Reason for correction (private)')).to_have_value('Selected outcome by mistake')
                         page.get_by_label('I confirm this outcome was recorded in error.').check()
                         page.get_by_role('button', name='Correct mistaken outcome').click()
                         expect(detail).to_contain_text('Correction of event')

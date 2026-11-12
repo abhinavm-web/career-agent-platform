@@ -1534,6 +1534,8 @@
 
   async function refresh(keepSelected, preserveEditor = true) {
     const sequence = ++state.refreshSequence;
+    const screenAtStart = state.screen;
+    const trackerRequestAtStart = state.crmRequestSeq;
     try {
       const results = await Promise.all([
         loadBoardJobs(sequence), api("/api/overview"), api("/api/settings"), api("/api/reviews")
@@ -1570,7 +1572,9 @@
       if (state.screen === "profile") {
         await loadWorkspace(preserveEditor);
       }
-      if (state.screen === "tracker") await loadCRM();
+      // Navigation to the tracker starts its own load. A refresh that began on
+      // another screen must not reload it again and overwrite an active form.
+      if (state.screen === "tracker" && screenAtStart === "tracker" && state.crmRequestSeq === trackerRequestAtStart) await loadCRM();
     } catch (error) {
       if (sequence === state.refreshSequence) notice("Unable to load local workspace: " + error.message, true);
     }
