@@ -454,6 +454,17 @@
       detail.append(constraints);
     }
 
+    if (job.title_level_evidence) {
+      const preference = section("Title-level preference");
+      const evidence = job.title_level_evidence;
+      preference.append(node("p", "", "Saved title: " + evidence.title));
+      preference.append(node("p", "", evidence.status === "matched"
+        ? "Preferred title phrase found: " + evidence.matched_phrases.join(", ")
+        : "No preferred title phrase found; level remains unknown."));
+      preference.append(node("p", "muted", evidence.notice));
+      detail.append(preference);
+    }
+
     if (job.fit_reasons && job.fit_reasons.length) {
       const fit = section("Why this role matched");
       const ul = node("ul");
@@ -846,6 +857,7 @@
       target_titles: linesFromText(byId("career-targets").value),
       skills: linesFromText(byId("career-skills").value),
       preferred_locations: linesFromText(byId("career-locations").value),
+      preferred_title_levels: linesFromText(byId("career-title-levels").value),
       allow_remote: byId("career-remote").checked,
       require_remote: byId("career-require-remote").checked,
       excluded_companies: linesFromText(byId("career-excluded-companies").value),
@@ -872,6 +884,7 @@
     byId("career-targets").value = p.target_titles.join("\n");
     byId("career-skills").value = p.skills.join("\n");
     byId("career-locations").value = p.preferred_locations.join("\n");
+    byId("career-title-levels").value = (p.preferred_title_levels || []).join("\n");
     byId("career-remote").checked = p.allow_remote;
     byId("career-require-remote").checked = p.require_remote;
     byId("career-excluded-companies").value = p.excluded_companies.join("\n");
@@ -931,6 +944,7 @@
     byId("career-targets").value = profile.target_titles.join("\n");
     byId("career-skills").value = profile.skills.join("\n");
     byId("career-locations").value = profile.preferred_locations.join("\n");
+    byId("career-title-levels").value = (profile.preferred_title_levels || []).join("\n");
     byId("career-remote").checked = profile.allow_remote;
     byId("career-require-remote").checked = profile.require_remote || false;
     byId("career-excluded-companies").value = (profile.excluded_companies || []).join("\n");

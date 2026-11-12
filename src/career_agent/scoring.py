@@ -67,6 +67,17 @@ def contains_location(location: str, preference: str) -> bool:
     return bool(phrase and re.search(r"(?<!\w)" + phrase + r"(?!\w)", location, re.IGNORECASE))
 
 
+def title_level_evidence(job: Job, profile: dict) -> dict | None:
+    """Compare candidate-supplied level phrases literally; never infer seniority."""
+    phrases = profile.get("preferred_title_levels", [])
+    if not phrases:
+        return None
+    matches = [phrase for phrase in phrases if contains_phrase(job.title, phrase)]
+    return {"status": "matched" if matches else "unknown", "title": job.title,
+            "matched_phrases": matches,
+            "notice": "Literal title-phrase comparison only; titles and levels vary. No match does not establish seniority or suitability."}
+
+
 def constraint_evidence(job: Job, profile: dict) -> list[dict[str, str]]:
     """Show explicit candidate constraints without inferring a rejection from absent data."""
     results = []

@@ -21,6 +21,8 @@ Optionally mark fully remote work as required and list exact employer names to e
 
 Optionally set a minimum annual base salary in USD. The app compares it only with a single, clearly labeled annual USD base salary line in the saved posting and quotes that line. Other formats, currencies, multiple pay amounts and missing data remain unknown. A range reaching your minimum does not promise an offer or establish eligibility for a particular pay band. Verify all compensation with the employer; pay observations do not change the match score or automatically hide jobs.
 
+You can also enter preferred title-level phrases such as `Director`, `VP`, or `Head of`. The opportunity detail shows the saved job title and which exact phrases occur, ignoring case. A missing phrase remains unknown: titles and organizations use different labels, and a phrase match does not establish seniority, eligibility, or suitability. This preference is displayed separately and does not change the score or hide jobs.
+
 New or modified facts are *not verified*. A separate explicit acknowledgement is necessary to mark each statement verified. **Only verified facts can enter generated résumés or cover notes.** Modifying a statement, category, keywords, or private evidence note revokes that verification until you acknowledge the revised statement again.
 
 The current source note is only returned inside the local authenticated workspace. It is never inserted into the outward-facing draft.

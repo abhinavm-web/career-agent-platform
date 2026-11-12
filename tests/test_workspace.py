@@ -10,7 +10,7 @@ from pathlib import Path
 from career_agent.candidate import FactBank
 from career_agent.models import CandidateProfile, Job
 from career_agent.storage import Store
-from career_agent.scoring import constraint_evidence, score_job
+from career_agent.scoring import constraint_evidence, score_job, title_level_evidence
 from career_agent.workspace import CandidateWorkspace, StaleRevision, blank_workspace
 
 try:
@@ -93,6 +93,32 @@ class WorkspaceModelTests(unittest.TestCase):
                 self.ws.save(saved['revision'], {**preferences(), 'minimum_annual_base_usd': minimum}, [])
         cleared = self.ws.save(saved['revision'], {**preferences(), 'minimum_annual_base_usd': None}, [])
         self.assertIsNone(cleared['profile']['minimum_annual_base_usd'])
+
+    def test_title_level_phrases_persist_and_do_not_change_score(self):
+        saved = self.ws.save(0, {**preferences(), 'preferred_title_levels': [' Director ', 'VP', 'Director']}, [])
+        self.assertEqual(saved['profile']['preferred_title_levels'], ['Director', 'VP'])
+        self.assertEqual(self.ws.latest()['profile']['preferred_title_levels'], ['Director', 'VP'])
+        job = Job.from_mapping({'title': 'Senior Director, Engineering', 'company': 'Fictional',
+                                'job_url': 'https://example.invalid/director'})
+        evidence = title_level_evidence(job, saved['profile'])
+        self.assertEqual(evidence['status'], 'matched')
+        self.assertEqual(evidence['title'], job.title)
+        self.assertEqual(evidence['matched_phrases'], ['Director'])
+        self.assertIn('does not establish seniority', evidence['notice'])
+        self.assertEqual(score_job(job, CandidateWorkspace.scoring_profile(saved)),
+                         score_job(job, CandidateWorkspace.scoring_profile({'profile': preferences()})))
+        for invalid in (True, '', [''], ['x' * 81], ['a'] * 21):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'title-level phrases'):
+                self.ws.save(saved['revision'], {**preferences(), 'preferred_title_levels': invalid}, [])
+        cleared = self.ws.save(saved['revision'], {**preferences(), 'preferred_title_levels': []}, [])
+        self.assertIsNone(title_level_evidence(job, cleared['profile']))
+
+    def test_title_level_unknown_does_not_infer_a_lower_level(self):
+        job = Job.from_mapping({'title': 'VP Engineering', 'company': 'Fictional',
+                                'job_url': 'https://example.invalid/vp'})
+        self.assertEqual(title_level_evidence(job, {'preferred_title_levels': ['Vice President']})['status'], 'unknown')
+        self.assertEqual(title_level_evidence(job, {'preferred_title_levels': ['VP']})['status'], 'matched')
+        self.assertEqual(title_level_evidence(job, {'preferred_title_levels': ['P']})['status'], 'unknown')
 
     def test_fact_must_be_verified_in_separate_action(self):
         saved = self.ws.save(0, preferences(), [fact()])
@@ -283,6 +309,20 @@ class WorkspaceDashboardTests(unittest.TestCase):
         evidence = row['constraint_evidence'][0]
         self.assertEqual(evidence['status'], 'flagged')
         self.assertIn('Base salary: USD $100,000 - $140,000 per year', evidence['detail'])
+
+    def test_board_shows_title_level_evidence_separately_from_score(self):
+        initial = self.api('GET', '/api/jobs').json()['jobs'][0]
+        self.assertIsNone(initial['title_level_evidence'])
+        profile = preferences()
+        self.assertEqual(self.api('PUT', '/api/workspace', {'expected_revision': 0, 'profile': profile, 'facts': []}).status_code, 200)
+        baseline = self.api('GET', '/api/jobs').json()['jobs'][0]['fit_score']
+        profile['preferred_title_levels'] = ['Director', 'Lead']
+        self.assertEqual(self.api('PUT', '/api/workspace', {'expected_revision': 1, 'profile': profile, 'facts': []}).status_code, 200)
+        row = self.api('GET', '/api/jobs').json()['jobs'][0]
+        self.assertEqual(row['title_level_evidence']['status'], 'matched')
+        self.assertEqual(row['title_level_evidence']['title'], 'AI Lead')
+        self.assertEqual(row['title_level_evidence']['matched_phrases'], ['Lead'])
+        self.assertEqual(row['fit_score'], baseline)
 
     def test_legacy_import_only_when_explicit_and_does_not_edit_source(self):
         data = self.api("GET", "/api/workspace").json()["workspace"]
