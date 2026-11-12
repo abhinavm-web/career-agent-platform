@@ -56,7 +56,8 @@
           " · observed decisions " + (item.first_decision ?? "none") + "–" + (item.last_decision ?? "none") +
           " · added " + item.counts.added + ", updated " + item.counts.updated + ", duplicates " + item.counts.duplicates +
           ", older skipped " + item.counts.older_skipped + ", other visas skipped " + item.counts.other_visas_skipped +
-          " · selected-field SHA-256 " + item.selected_fields_sha256 + " · source: " + item.source_url);
+          " · selected-field SHA-256 " + item.selected_fields_sha256 + " · source: " + item.source_url +
+          (item.transport ? " · downloaded over DOL HTTPS · original-file SHA-256 " + item.raw_sha256 + " · " + item.bytes + " bytes" : " · user-supplied file; not independently verified"));
         history.append(details);
       }
       get("h1b-coverage").append(history);
@@ -307,6 +308,38 @@
       if (get("h1b-query").value.trim()) await search();
     } catch (error) { status(error.message); }
     finally { control.disabled = false; get("h1b-search-submit").disabled = false; }
+  });
+  get("h1b-refresh-dol").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const control = get("h1b-refresh-submit");
+    if (control.disabled || !get("h1b-refresh-consent").checked) return;
+    control.disabled = true;
+    status("Downloading the selected DOL workbook. Existing records remain unchanged until import succeeds…");
+    let active = true, pending = false;
+    const timer = setInterval(async () => {
+      if (!active || pending) return;
+      pending = true;
+      try {
+        const p = await api('/api/h1b/import-progress');
+        if (!active) return;
+        if (p.phase === 'downloading') status('Downloading from DOL: ' + (p.amount / 1048576).toFixed(1) + ' MB received…');
+        if (p.phase === 'opening') status('Opening workbook; large files can take several minutes…');
+        if (p.phase === 'scanning') status('Checking workbook structure through worksheet row ' + p.amount.toLocaleString() + '…');
+        if (p.phase === 'reading') status('Validating ' + p.amount.toLocaleString() + ' rows; no records committed yet…');
+        if (p.phase === 'applying') status('Applying ' + p.amount.toLocaleString() + ' validated rows atomically…');
+      } catch (_) { /* The refresh request reports its own errors. */ }
+      finally { pending = false; }
+    }, 2000);
+    try {
+      const result = await api('/api/h1b/refresh-dol', 'POST', {source_url: get('h1b-refresh-url').value, acknowledged: true});
+      get('h1b-refresh-consent').checked = false;
+      coverage((await api('/api/h1b')).coverage);
+      sequence++;
+      clearResults('h1b-results');
+      get('h1b-next').hidden = true;
+      status(result.added + ' added · ' + result.updated + ' updated · ' + result.duplicates + ' duplicates · ' + result.older_skipped + ' older records skipped · ' + result.other_visas_skipped + ' other visa records skipped. Search again to update results.');
+    } catch (error) { status(error.message); }
+    finally { active = false; clearInterval(timer); control.disabled = false; }
   });
   get("h1b-import").addEventListener("submit", async (event) => {
     event.preventDefault();

@@ -104,6 +104,16 @@ def validate_lca_source(source_url, captured_on):
     return source_url, captured
 
 
+def validate_dol_download_url(url):
+    """Only explicitly named DOL quarterly disclosure workbooks are fetchable."""
+    url, _ = validate_lca_source(url, date.today().isoformat())
+    parts = urlsplit(url)
+    if (parts.query or parts.fragment or not re.fullmatch(
+            r'/media/LCA_Disclosure_Data_FY20\d{2}_Q[1-4]\.xlsx', parts.path)):
+        raise ValueError('Use an official DOL quarterly workbook URL under /media/LCA_Disclosure_Data_FYyyyy_Qn.xlsx')
+    return url
+
+
 def _validate_lca_row(row, line, captured):
     """Validate one disclosure row independently of existing workspace data."""
     required = ('CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE')
@@ -156,6 +166,10 @@ class H1BResearch:
                 imported_at TEXT NOT NULL, selected_fields_sha256 TEXT NOT NULL,
                 first_decision TEXT, last_decision TEXT, counts_json TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS h1b_lca_acquisitions (
+                import_id INTEGER PRIMARY KEY REFERENCES h1b_lca_imports(id),
+                transport TEXT NOT NULL, raw_sha256 TEXT NOT NULL, bytes INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS h1b_employer_links (
                 job_id TEXT NOT NULL REFERENCES jobs(job_id), revision INTEGER NOT NULL,
                 employer TEXT NOT NULL, source_note TEXT NOT NULL,
@@ -187,7 +201,7 @@ class H1BResearch:
                               (data['need'], data['min_year'], int(data['include_unknown'])))
         return self.settings()
 
-    def import_csv(self, stream, source_url, captured_on, *, progress=None):
+    def import_csv(self, stream, source_url, captured_on, *, progress=None, acquisition=None):
         source_url, captured = validate_lca_source(source_url, captured_on)
         reader = csv.DictReader(stream, strict=True)
         required = {'CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'}
@@ -235,13 +249,16 @@ class H1BResearch:
                 counts['updated' if previous else 'added'] += 1
             if not row_count:
                 raise ValueError('The LCA disclosure file contains no data rows')
-            self.conn.execute('INSERT INTO h1b_lca_imports (source_url,captured_on,imported_at,selected_fields_sha256,first_decision,last_decision,counts_json) VALUES(?,?,?,?,?,?,?)',
+            imported = self.conn.execute('INSERT INTO h1b_lca_imports (source_url,captured_on,imported_at,selected_fields_sha256,first_decision,last_decision,counts_json) VALUES(?,?,?,?,?,?,?)',
                               (source_url, captured_on, imported_at, digest.hexdigest(),
                                first_decision.isoformat() if first_decision else None,
                                last_decision.isoformat() if last_decision else None, json.dumps(counts)))
+            if acquisition is not None:
+                self.conn.execute('INSERT INTO h1b_lca_acquisitions VALUES(?,?,?,?)',
+                                  (imported.lastrowid, 'downloaded_from_dol_https', acquisition['sha256'], acquisition['bytes']))
         return counts
 
-    def import_xlsx(self, path, source_url, captured_on, *, progress=None):
+    def import_xlsx(self, path, source_url, captured_on, *, progress=None, acquisition=None):
         """Stream the relevant cells from a local DOL LCA disclosure workbook.
 
         This retains the existing CSV import's one-transaction validation and
@@ -334,7 +351,7 @@ class H1BResearch:
                 # Revalidation against the current workspace preserves identical
                 # duplicate, stale and conflict semantics under concurrent writes.
                 return self.import_csv(staging, source_url, captured_on,
-                                       progress=apply_progress if progress else None)
+                                       progress=apply_progress if progress else None, acquisition=acquisition)
         except ValueError:
             raise
         except OSError:
@@ -345,9 +362,25 @@ class H1BResearch:
             workbook.close()
             workbook_file.close()
 
+    def refresh_dol(self, url, *, progress=None):
+        """Fetch a selected public DOL release; never infer freshness/completeness."""
+        from .public_sources import public_download
+        url = validate_dol_download_url(url)
+        with tempfile.TemporaryDirectory(prefix='career-dol-download-') as directory:
+            path = Path(directory) / 'disclosure.xlsx'
+            acquisition = public_download(url, {'www.dol.gov', 'dol.gov'}, path,
+                                          maximum=512 * 1024 * 1024, progress=progress)
+            if progress:
+                progress('opening', 0)
+            return self.import_xlsx(path, url, date.today().isoformat(),
+                                    progress=progress, acquisition=acquisition)
+
     def coverage(self):
         row = self.conn.execute('SELECT COUNT(*) AS records,MIN(fiscal_year) AS first_year,MAX(fiscal_year) AS last_year,MAX(captured_on) AS latest_capture FROM h1b_lca').fetchone()
-        imports = self.conn.execute('SELECT source_url,captured_on,imported_at,selected_fields_sha256,first_decision,last_decision,counts_json FROM h1b_lca_imports ORDER BY id DESC LIMIT 10').fetchall()
+        imports = self.conn.execute('''SELECT i.source_url,i.captured_on,i.imported_at,i.selected_fields_sha256,
+            i.first_decision,i.last_decision,i.counts_json,a.transport,a.raw_sha256,a.bytes
+            FROM h1b_lca_imports i LEFT JOIN h1b_lca_acquisitions a ON a.import_id=i.id
+            ORDER BY i.id DESC LIMIT 10''').fetchall()
         history = [{**{k: item[k] for k in item.keys() if k != 'counts_json'}, 'counts': json.loads(item['counts_json'])} for item in imports]
         return {**dict(row), 'verification': 'user_imported_not_independently_verified',
                 'complete': False, 'source_url': DOL_URL, 'lca_imports': history, 'uscis_snapshots': self.uscis.coverage()}

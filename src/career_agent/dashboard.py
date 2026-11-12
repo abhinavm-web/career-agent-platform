@@ -501,6 +501,23 @@ def create_app(config: DashboardConfig) -> FastAPI:
             set_h1b_progress('idle', 0)
             h1b_import_lock.release()
 
+    @app.post('/api/h1b/refresh-dol')
+    async def h1b_refresh_dol(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'source_url', 'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm the selected public DOL download')
+        if not h1b_import_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An H-1B import is already running; wait before retrying')
+        try:
+            set_h1b_progress('downloading', 0)
+            def refresh():
+                with Store(config.db_path) as store:
+                    return H1BResearch(store).refresh_dol(data['source_url'], progress=set_h1b_progress)
+            return await run_in_threadpool(refresh)
+        finally:
+            set_h1b_progress('idle', 0)
+            h1b_import_lock.release()
+
     @app.get('/api/h1b/import-progress')
     def h1b_import_progress():
         with h1b_progress_lock:

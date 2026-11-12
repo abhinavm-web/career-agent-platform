@@ -8,7 +8,7 @@ from unittest.mock import patch
 from datetime import date
 from pathlib import Path
 
-from career_agent.h1b import DOL_URL, H1BResearch, fiscal_year
+from career_agent.h1b import DOL_URL, H1BResearch, fiscal_year, validate_dol_download_url
 from career_agent.models import Job
 from career_agent.sponsorship import h1b_policy
 from career_agent.storage import Store
@@ -83,6 +83,43 @@ class ResearchTests(unittest.TestCase):
 
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
+
+    def test_dol_refresh_downloads_only_allowed_url_and_records_atomic_provenance(self):
+        try:
+            from openpyxl import Workbook
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        url = 'https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx'
+        path = Path(self.tmp.name) / 'fictional.xlsx'
+        book = Workbook(); sheet = book.active
+        sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+        sheet.append(['I-200-25123-000001', 'Example Inc.', 'H-1B', 'Certified', '2025-04-15'])
+        book.save(path); book.close()
+        raw = path.read_bytes()
+        import hashlib
+        def fake_download(source, hosts, destination, **kwargs):
+            self.assertEqual(source, url)
+            self.assertEqual(hosts, {'www.dol.gov', 'dol.gov'})
+            Path(destination).write_bytes(raw)
+            return {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
+        with patch('career_agent.public_sources.public_download', side_effect=fake_download):
+            self.assertEqual(self.research.refresh_dol(url)['added'], 1)
+        entry = self.research.coverage()['lca_imports'][0]
+        self.assertEqual(entry['transport'], 'downloaded_from_dol_https')
+        self.assertEqual(entry['raw_sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(entry['bytes'], len(raw))
+        for bad in ('https://evil.invalid/media/LCA_Disclosure_Data_FY2026_Q3.xlsx',
+                    url + '?redirect=https://evil.invalid', url.replace('/media/', '/other/'),
+                    url.replace('Q3.xlsx', 'Q5.xlsx'), url + '#fragment'):
+            with self.subTest(url=bad), patch('career_agent.public_sources.public_download') as download:
+                with self.assertRaises(ValueError):
+                    self.research.refresh_dol(bad)
+                download.assert_not_called()
+        with patch('career_agent.public_sources.public_download', side_effect=ValueError('blocked')):
+            with self.assertRaisesRegex(ValueError, 'blocked'):
+                self.research.refresh_dol(url)
+        self.assertEqual(self.research.coverage()['records'], 1)
+        self.assertEqual(len(self.research.coverage()['lca_imports']), 1)
 
     def test_import_history_is_atomic_persistent_and_distinguishes_observed_dates(self):
         rows = [{}, {'CASE_STATUS': 'Denied', 'DECISION_DATE': '2025-05-01'},

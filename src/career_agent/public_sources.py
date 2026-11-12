@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import http.client
+import hashlib
 import ipaddress
 import socket
 import ssl
@@ -106,3 +107,85 @@ def public_get(url, allowed_hosts, maximum=2 * 1024 * 1024):
             connection.close()
     except (OSError, http.client.HTTPException) as error:
         raise SourceUnavailable('Source could not be reached securely; retry later') from error
+
+
+def public_download(url, allowed_hosts, destination, *, maximum, progress=None, deadline_seconds=1200):
+    """Stream a bounded public HTTPS response to a caller-owned temporary file.
+
+    No redirects, proxies, credentials or caller headers are used. TLS verifies
+    the requested hostname, and the socket connects only to a pinned public IP.
+    """
+    parts = urlsplit(url)
+    try:
+        valid = (parts.scheme == 'https' and parts.hostname in allowed_hosts and parts.port in (None, 443)
+                 and not parts.username and not parts.password and not parts.fragment and not parts.query
+                 and not any(ord(c) < 33 for c in url))
+    except ValueError:
+        valid = False
+    if not valid:
+        raise SourceUnavailable('Unsupported source URL')
+    try:
+        addresses = sorted({row[4][0] for row in socket.getaddrinfo(parts.hostname, 443, type=socket.SOCK_STREAM)},
+                           key=lambda value: (ipaddress.ip_address(value).version, value))
+        if not addresses or any(not ipaddress.ip_address(a).is_global for a in addresses):
+            raise SourceUnavailable('Source did not resolve exclusively to public addresses')
+        deadline = time.monotonic() + deadline_seconds
+        connection = _PinnedHTTPS(parts.hostname, addresses[0], timeout=15)
+        timer = None
+        response = None
+        expired = Event()
+        try:
+            connection.connect()
+            transport = connection.sock
+            def abort():
+                expired.set()
+                try:
+                    transport.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+            timer = Timer(max(0, deadline - time.monotonic()), abort)
+            timer.daemon = True
+            timer.start()
+            connection.request('GET', parts.path or '/', headers={
+                'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/octet-stream',
+                'User-Agent': 'CareerAgent/0.5 public-source-check', 'Accept-Encoding': 'identity'})
+            response = connection.getresponse()
+            if expired.is_set():
+                raise SourceUnavailable('Source response timed out')
+            if response.status != 200:
+                raise SourceUnavailable(f'DOL returned HTTP {response.status}; no records were changed. Download the workbook manually and import it locally if available.')
+            size = response.getheader('Content-Length')
+            if size and (not size.isdigit() or int(size) > maximum):
+                raise SourceUnavailable('Source response exceeds the download limit')
+            digest, count = hashlib.sha256(), 0
+            with open(destination, 'xb') as target:
+                while True:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise SourceUnavailable('Source response timed out')
+                    if connection.sock:
+                        connection.sock.settimeout(min(15, remaining))
+                    chunk = response.read1(min(65536, maximum + 1 - count))
+                    if expired.is_set():
+                        raise SourceUnavailable('Source response timed out')
+                    if not chunk:
+                        break
+                    count += len(chunk)
+                    if count > maximum:
+                        raise SourceUnavailable('Source response exceeds the download limit')
+                    digest.update(chunk)
+                    target.write(chunk)
+                    if progress:
+                        progress('downloading', count)
+            if not count or (size and count != int(size)):
+                raise SourceUnavailable('Source response was incomplete; existing records retained')
+            return {'bytes': count, 'sha256': digest.hexdigest()}
+        finally:
+            if timer:
+                timer.cancel()
+                timer.join()
+            if response is not None:
+                response.close()
+            connection.close()
+    except (OSError, http.client.HTTPException) as error:
+        raise SourceUnavailable('DOL download or local staging failed; check connectivity and disk space, then retry') from error
