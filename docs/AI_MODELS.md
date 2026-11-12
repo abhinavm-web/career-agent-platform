@@ -59,7 +59,7 @@ Use `CAREER_AGENT_AI_CONFIG` to point to another private JSON file. Unknown fiel
 - Malformed JSON, invented quotes/IDs, excess fields, incomplete generation and tool calls are rejected. Prompt injection cannot invoke tools; it can still corrupt interpretations, which need human review.
 - Keys and raw provider errors are not returned to the dashboard. No app prompt logging, telemetry or remote tracing is added. Provider-side retention/logging depends on your account; do not enable SDK debug logging with real candidate data.
 - SDK contract tests use simulated transports and fictional credentials; they are not live model quality benchmarks. No paid cloud calls or installed local model inference were validated during this increment.
-- Still needed for model calls: durable AI jobs/cancellation, persistent model-run provenance and usage/cost budgets, provider health diagnostics, semantic-quality evaluation fixtures and role-specific model-assisted drafting with claim verification. Deterministic workflow persistence and opted-in scheduled JobSpy discovery are implemented separately.
+- Still needed for model calls: durable AI jobs/cancellation, complete model-run history and usage/cost budgets, broader provider health diagnostics, and semantic-quality evaluation fixtures. Wording suggestions retain their cited source when saved for review, but need explicit candidate verification. Deterministic workflow persistence and opted-in scheduled JobSpy discovery are implemented separately.
 
 ## API references
 

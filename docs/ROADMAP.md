@@ -5,7 +5,7 @@
 - [x] Local CSV ingestion, URL normalization and deduplication
 - [x] Optional JobSpy discovery
 - [x] Explicit dashboard JobSpy search, import counts and duplicate handling
-- [x] Explainable matching and skills-gap report
+- [x] Explainable heuristic matching and literal requirement-to-fact suggestions (not a verified skills-gap assessment)
 - [x] Conservative sponsorship evidence assessment
 - [x] Manual review and attested submission tracking
 - [x] Offline regression tests and public-safe sample data
@@ -21,27 +21,27 @@
 - [x] Configurable H-1B company research, DOL CSV index and separate job-policy assessments
 - [x] Explicit USCIS annual CSV refresh/import with separate decision counts and provenance
 - [x] Dated live Greenhouse/Lever posting observations, with stale and inconclusive checks marked unknown
-- [x] LangGraph analyze → draft → human-review interrupt (in-memory prototype)
+- [x] LangGraph analyze → draft → human-review interrupt with durable SQLite checkpoints
 
 - [ ] Encrypted verified candidate profile
 - [ ] Seniority, location, compensation and work-authorization constraints
-- [ ] Direct employer posting checks and provenance timestamps
+- [ ] Broader employer posting checks beyond supported Greenhouse and Lever URLs
 - [ ] Truthful, user-reviewed ATS résumé tailoring
-- [ ] DOL/USCIS-based historical sponsorship analysis with documented limitations
+- [ ] Independently verified DOL/USCIS coverage and automated source acquisition where supported
 
 ## Phase 3 — Agent orchestration
 
 - [x] Optional explicit model routes: Anthropic, Azure OpenAI, AWS Bedrock, Ollama and LM Studio
 - [x] Read-only AI requirement analysis with exact quotes, verified fact references and per-request sharing consent
 - [ ] Live provider qualification and model-quality evaluation dataset
-- [ ] Durable AI run history, cancellation, token/cost budgets and health diagnostics
+- [ ] Durable AI run history, cancellation, token/cost budgets and broader provider health diagnostics (a consented connection test exists)
 
 - [x] LangGraph typed state, synchronous SQLite checkpoints and durable draft/review recovery
 - [x] Saved JobSpy schedules, isolated deadline-bound fetching, import receipts and failure backoff
 - [ ] Human interrupt before application transmission
 - [ ] Multi-source discovery, retry and duplicate clustering
 - [ ] Supervised ATS connectors for Greenhouse, Lever and Ashby
-- [ ] Submission receipt audit trail and funnel analytics
+- [ ] Independently verified submission receipts and expanded source-specific funnel analytics (manual attestations and recorded counts exist)
 
 ## Phase 3.5 — Single-user local dashboard
 
@@ -52,7 +52,7 @@
 - [x] Contract/security tests for local HTTP endpoints
 - [ ] Client-side accessibility audit, usability sessions and cross-browser testing
 - [x] Local candidate-profile editor, explicit fact verification and SQLite revision history (unencrypted)
-- [ ] Encrypted private vault, backups and safe data migration
+- [ ] Encrypted private vault and safe data migration (optional encrypted offline archives exist)
 
 ## R1 — Application CRM increment (F07)
 

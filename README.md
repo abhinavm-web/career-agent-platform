@@ -16,39 +16,48 @@ Working name only. Final product branding awaits trademark clearance.
 - Requires manual review and a user-attested employer confirmation reference before recording an application as submitted.
 - Sends no applications, performs no browser automation, and uses no telemetry.
 
-## Setup (Python 3.11+)
+## Start your local workspace (Windows, Python 3.11+)
 
-For Windows setup, a separate fictional demo, test commands and a browser smoke-test checklist, see [Local development](docs/LOCAL_DEVELOPMENT.md).
+From the repository root in PowerShell, install the dashboard and start it:
 
-Clone this repo, open its root folder, then run:
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[web,jobspy,resume,lca]"
+.\.venv\Scripts\python.exe -m career_agent.cli serve
+```
 
-    python -m pip install -e .
-    career-agent ingest examples/jobs.sample.csv
-    career-agent rank --profile examples/profile.example.json
-    career-agent list
+Open http://127.0.0.1:8765/ on this computer. If the port is occupied, add
+`--port 8766` and open that port instead. Stop the server with Ctrl+C; keep it
+running for scheduled searches. Your workspace uses `.local/career_agent.sqlite3`
+and `.local/packets`, separate from the fictional demo in
+[Local development](docs/LOCAL_DEVELOPMENT.md). These local files are plaintext;
+never commit them, your résumé, or credentials to Git.
 
-Application review:
+1. Open **Career profile**, enter your goals and review extracted résumé lines.
+   Save each accurate statement and then explicitly verify it. AI-suggested wording
+   also needs your review and separate verification.
+2. On **Opportunity board**, use **Find jobs with JobSpy** or add a job manually.
+   **Saved searches** can run while the server is running after you opt in. Source
+   results can be incomplete. Review constraints and the original posting.
+3. In **H-1B research**, import and inspect DOL or USCIS CSV records and associate
+   an employer when needed. The CLI also accepts DOL workbooks. Historical filings
+   are not a job-specific sponsorship commitment; unknowns require employer confirmation.
+4. Create and review a draft from verified facts. Approve the current version before
+   exporting. Apply yourself on the employer site, then record your actual
+   submission in the tracker. The app does not submit applications.
 
-    career-agent stage JOB_ID
+For PDF export, install the optional renderer and its browser:
 
-Review the role, your actual experience, every application field, and your resume. Submit yourself on the employer site. Only after an actual employer confirmation:
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[pdf]"
+.\.venv\Scripts\python.exe -m playwright install chromium
+```
 
-    career-agent confirm JOB_ID --receipt YOUR_CONFIRMATION_REFERENCE --attest-confirmed
-
-A user-entered receipt is an attestation, not independent validation.
-
-Optional live job discovery:
-
-    python -m pip install -e ".[jobspy]"
-    career-agent discover --query "AI Transformation Manager" --location "United States" --results 20
-
-This performs network access only when you run it. Respect job-board rules and rate limits.
-
-Testing:
-
-    python -m unittest discover -s tests -v
-
-Local state defaults to .local/career_agent.sqlite3 and is gitignored. See [backup and restore](docs/BACKUP.md) for optional passphrase-protected archives. Sample jobs and candidate preferences are fictional; don't commit real resumes, profiles or credentials.
+AI is optional. Set up a local or cloud route and test it with a synthetic prompt
+as described in [AI models](docs/AI_MODELS.md); provider requests require consent
+and may send the selected job and verified facts to that provider. For restorable,
+passphrase-protected archives, see [backup and restore](docs/BACKUP.md). For a
+separate fictional demo and test commands, see [Local development](docs/LOCAL_DEVELOPMENT.md).
 
 ## Design and future direction
 
@@ -58,27 +67,30 @@ See the [Product Requirements Document](docs/PRD.md) for the complete vision, fe
 
 Install the optional LangGraph runtime:
 
-    python -m pip install -e ".[graph]"
+    .\.venv\Scripts\python.exe -m pip install -e ".[graph]"
 
-After importing example jobs, use `career-agent list` to copy a job ID.
+For a separate fictional CLI demo, import examples and list their IDs:
+
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 ingest examples/jobs.sample.csv
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 list
 
 Create a fact-grounded resume and cover-note draft:
 
-    career-agent draft JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 draft JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json --output .local/demo-packets/JOB_ID.json
 
-Review the private packet under `.local/packets/JOB_ID.json` using an actual LangGraph human interrupt:
+Review the private demo packet using an actual LangGraph human interrupt:
 
-    career-agent review .local/packets/JOB_ID.json
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 review .local/demo-packets/JOB_ID.json
 
 Or run the full `analyze → draft → human_review` graph in one command:
 
-    career-agent workflow JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 workflow JOB_ID --profile examples/profile.example.json --facts examples/candidate-facts.example.json --output .local/demo-packets/JOB_ID.json
 
 The CLI prints the draft and requires you to type `APPROVE JOB_ID` before marking the packet approved **for manual submission only**. It does not apply to any jobs. The `workflow` command now persists SQLite checkpoints and accepts `--resume-run RUN_ID`; Enter leaves review pending. The standalone `review` utility remains in-memory. See [durable workflows](docs/AUTOMATION.md).
 
 Optional source-backed sponsorship history:
 
-    career-agent sponsorship JOB_ID --filings my-private-filings.csv
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 sponsorship JOB_ID --filings my-private-filings.csv
 
 Find format, limitations, and privacy guidance in [Candidate workflow](docs/WORKFLOWS.md) and [Sponsorship methodology](docs/SPONSORSHIP.md). This pipeline uses deterministic keyword heuristics, not an external LLM. The dashboard supports reviewed résumé DOCX and [PDF export](docs/RESUME_PDF.md); PDF export requires optional dependencies. DOL workbooks can be imported locally; direct DOL downloads, ATS form operations and application submission are not implemented.
 
@@ -91,9 +103,9 @@ A responsive local dashboard now provides a searchable opportunity board, transp
 
 Install the optional dependencies and start the local server:
 
-    python -m pip install -e ".[web]"
-    career-agent ingest examples/jobs.sample.csv
-    career-agent serve --profile examples/profile.example.json --facts examples/candidate-facts.example.json
+    .\.venv\Scripts\python.exe -m pip install -e ".[web]"
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 ingest examples/jobs.sample.csv
+    .\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 serve --packet-dir .local/demo-packets --profile examples/profile.example.json --facts examples/candidate-facts.example.json
 
 Open http://127.0.0.1:8765/ on the same computer. The demo candidate is fictional. The web app only binds to the local loopback address and requires a temporary session token for API calls. It has no user accounts or external submissions.
 
@@ -106,8 +118,8 @@ To run the local workspace in a container with persistent storage, see [Docker s
 
 Run the local dashboard without personal JSON files:
 
-    python -m pip install -e ".[web]"
-    career-agent serve
+    .\.venv\Scripts\python.exe -m pip install -e ".[web]"
+    .\.venv\Scripts\python.exe -m career_agent.cli serve
 
 Open http://127.0.0.1:8765/ and select **Career profile**. Edit your preferences and save career facts. New or changed facts are **unverified** until you explicitly confirm them. Only verified facts can enter new application drafts. Changes are versioned in the local SQLite database; stale edits are rejected.
 
@@ -122,8 +134,8 @@ The **H-1B research** tab supports new/transfer preferences, a fiscal-year windo
 
 Use the new **Application tracker** tab in the loopback dashboard to record interview stages, recruiter contacts, follow-up dates, and outcomes. Pre-application organizer stages never imply submission. The CRM does not send emails, reminders or applications.
 
-    python -m pip install -e ".[web]"
-    career-agent serve
+    .\.venv\Scripts\python.exe -m pip install -e ".[web]"
+    .\.venv\Scripts\python.exe -m career_agent.cli serve
 
 See [Application CRM](docs/CRM.md) for the status model, available operations and privacy limitations.
 

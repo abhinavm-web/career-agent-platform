@@ -1,7 +1,7 @@
 # Product Requirements Document: Career Agent Platform
 
 **Document version:** 1.0 (product intent and implementation baseline)
-**Last updated:** November 10, 2026
+**Last updated:** November 11, 2026
 **Product name:** Career Agent Platform (working name only; final brand requires trademark/domain clearance)
 **Audience:** Product owners, design, engineers, QA, coding agents, security reviewers, and potential contributors
 **Status:** Living PRD. This is the destination and scope reference, **not authorization to implement every feature in one change**.
@@ -83,17 +83,17 @@ Career coaches, placement organizations, university career centers, and recruite
 
 ## 5. What exists today versus what the PRD proposes
 
-**Status meanings:** **Current** = implemented in the main-branch v0.3 local MVP per repository documentation; **Next** = near-term product requirement; **Later** = planned but not committed; **Exploratory** = vision requiring explicit decisions.
+**Status meanings:** **Current** = implemented in the merged single-user local preview, with the stated limitations; **Next** = near-term product requirement; **Later** = planned but not committed; **Exploratory** = vision requiring explicit decisions. See the linked feature docs for operational detail; these capabilities do not establish a completed release gate.
 
-| Area | Current baseline (v0.3, local) | Target direction |
+| Area | Current baseline (local preview) | Target direction |
 | --- | --- | --- |
-| Job discovery | CSV import, URL normalization/deduplication; optional CLI-invoked JobSpy | Multi-source compliant discovery, employer career pages, freshness and filtering |
-| Matching | Deterministic title / candidate-skill mentions / location heuristic | Structured hard constraints, explainable relevance, verified requirement-to-evidence matching |
-| Sponsorship | Posting keyword flags and manually supplied dated employer records | Official-source ingestion, company identity resolution, job-specific evidence and clearly labeled uncertainty |
-| Candidate profile | Local JSON candidate preferences and confirmed fact bank | Private editable, versioned, permissioned career vault |
-| Application materials | Verbatim-fact Markdown résumé / cover-note packet | ATS-friendly tailored drafts, tracked edits and DOCX/PDF exports |
-| Agent workflow | LangGraph analyze → draft → review with in-memory checkpointing | Durable, auditable orchestration with retries, checkpoints and scoped agent tools |
-| Application state | Manual review decisions, local append-only review events, user-attested submissions | Full pipeline from saved to interview/offer, consent and receipts |
+| Job discovery | CSV and opt-in JobSpy dashboard/CLI and scheduled searches; URL deduplication; selected ATS posting checks | Broader compliant source coverage, cross-source deduplication and freshness |
+| Matching | Heuristic score, literal requirement-to-fact suggestions, remote requirement and exact employer exclusions with unknowns | Broader structured constraints and evaluated semantic matching |
+| Sponsorship | Posting language, imported DOL/USCIS history and user-provided employer associations, labeled unverified | Improved official-source availability and independently verified identity and job policy |
+| Candidate profile | Editable local SQLite preferences and versioned, candidate-verified facts; reviewed résumé extraction | Private permissioned career vault and richer structured import |
+| Application materials | Verified-fact selection, unverified AI wording suggestions, versioned packets and reviewed DOCX/PDF export | Semantic-fidelity evaluation and a complete document editor/diff |
+| Agent workflow | Durable SQLite-backed LangGraph discovery and application review, with opt-in model analysis separate | Broader auditable orchestration, model jobs and scoped agent tools |
+| Application state | Local CRM stages, contacts, follow-ups, review events and user-attested submissions | Better correction and outcome workflows, with verified integrations where approved |
 | UI | Loopback-only FastAPI dashboard with job board, packet review, audit events | Full accessible user workspace, document studio and outcome analytics |
 | Security | Single-user local app, session-token API; private files/SQLite are not encrypted | Authenticated, isolated, encrypted multi-user product if hosting is approved |
 | Application sending | **None** | Only separately reviewed, legally permitted, user-authorized supervised integrations |
@@ -121,7 +121,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - A generated claim can be traced to one or more candidate-verified fact IDs; edits invalidate an earlier review.
 - The candidate can update preferences and facts without modifying public repository files.
 
-**Today:** JSON preferences and confirmed fact-bank parsing exist. Secure editing, import review, version history, and encryption are **not built**.
+**Today:** The local profile editor stores versioned preferences and explicitly verified facts. Résumé text extraction suggests lines for manual review. The SQLite workspace is not encrypted; it is not a hosted or tenant-isolated vault.
 
 ### F02 — Multi-source opportunity discovery and quality control (P0)
 
@@ -140,7 +140,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - Failed discovery is labeled as a failure, not interpreted as zero open jobs; sources may be incomplete.
 - Disabled/suspended source adapters do not crash the rest of the product.
 
-**Today:** CSV normalization and an optional CLI JobSpy adapter exist; the dashboard does not scrape or schedule jobs.
+**Today:** CSV and opt-in JobSpy discovery work in the CLI and dashboard, including saved schedules and run history. URL deduplication and selected Greenhouse/Lever checks exist; source completeness and cross-source identity are not established.
 
 ### F03 — Candidate-to-role match engine (P0)
 
@@ -157,7 +157,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - A comparison like "candidate has Python; posting asks for Rust" must not incorrectly label Python as a missing candidate qualification.
 - Ranking changes are testable with fixed fixtures, and the user can see why a role moved.
 
-**Today:** Title overlap, candidate skill mentions, and location yield a heuristic score; no true qualification-gap inference exists.
+**Today:** Title, candidate skill mentions, and location yield a heuristic score. Explicit remote and employer-name constraints and literal requirement-to-fact suggestions are shown separately with unknowns; no qualification-gap inference is established.
 
 ### F04 — Visa and work-authorization sponsorship intelligence (P0 differentiator)
 
@@ -175,7 +175,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - Unknown sponsorship stays **unknown**, never "no" or "yes" by inference.
 - Any purported job-specific positive claim requires subsequent verification for that role; screening answers remain candidate-controlled.
 
-**Today:** Keyword checks and manually curated CSV history exist; official bulk-data ingestion and independent validation do not.
+**Today:** Posting language is separate from user-imported DOL CSV/XLSX records and USCIS CSV snapshots. USCIS refresh is supported where reachable. Imported data and employer associations are not independently verified or guarantees for a role.
 
 ### F05 — Truthful résumé, cover-letter, and outreach studio (P0/P1)
 
@@ -194,7 +194,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - An unverified career claim cannot pass review simply because an LLM wrote it convincingly.
 - Source notes and private evidence must not leak into outward-facing documents.
 
-**Today:** Verbatim-fact Markdown packets, cover notes, fact IDs and SHA-256 version checks exist. Advanced rewriting, diff UI, and DOCX/PDF exports are not implemented.
+**Today:** Verified-fact packets, selected facts, fingerprinted review and DOCX/PDF exports exist. AI wording suggestions can be saved for separate verification; semantic fidelity and a complete document diff/editor remain open.
 
 ### F06 — Application preparation, approvals, and submission control (P0/P1)
 
@@ -229,7 +229,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - The user can find stale applications, active interviews and next actions quickly.
 - A drafted or approved application is not counted as submitted.
 
-**Today:** Basic local states, review events and attested submissions exist. Full CRM states, contact management and reminders are planned.
+**Today:** Local CRM stages, contacts, follow-up tasks and interview notes exist alongside review events and attested submissions. Notifications and some correction workflows remain open.
 
 ### F08 — Multi-agent orchestration and tool gateway (P1)
 
@@ -261,7 +261,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - Model/tool failures cannot trigger unauthorized external actions or fabricate successful job applications.
 - Agent jobs can be cancelled and retried safely.
 
-**Today:** Optional LangGraph analyze → draft → review exists with **in-memory** checkpointing only. The local dashboard's persisted review events are distinct and are not a durable LangGraph checkpoint implementation.
+**Today:** LangGraph discovery and application review use durable SQLite checkpoints and support recovery. Model analysis and wording suggestions remain separate, opt-in calls; broader follow-up and interview agents are not implemented.
 
 ### F09 — Candidate web workspace and UX (P0/P1)
 
@@ -405,8 +405,8 @@ Do not report fabricated usage, conversion, revenue or TAM numbers. Establish ba
 
 | Release | Objective | Representative features | Gate |
 | --- | --- | --- | --- |
-| **R0: Foundation — current** | Operable local prototype | CSV/optional JobSpy, heuristic fit, source-backed manual sponsorship, fact-based drafts, LangGraph review demo, local web board, append-only review and manual submission records | Existing repository CI; clearly labeled limitations |
-| **R1: Trusted candidate workspace — next** | Real candidate can safely operate end-to-end without editing code | Private profile editor, candidate fact verification, accurate job/requirement provenance, richer CRM statuses, safe backups and draft versioning | Usability and privacy review; no fabricated claims or unauthorized actions |
+| **R0: Foundation — implemented** | Operable local prototype | Discovery, heuristic fit, manual sponsorship research, fact-based drafts, local web board, review and manual submission records | Existing repository CI; clearly labeled limitations |
+| **R1: Trusted candidate workspace — in progress** | Real candidate can safely operate end-to-end without editing code | Private profile editor, candidate fact verification, accurate job/requirement provenance, CRM, backups and draft versioning | Usability and privacy review; no fabricated claims or unauthorized actions |
 | **R2: Higher-quality intelligence** | More relevant and timely shortlists with defensible sponsorship evidence | Compliant ATS/official-source connectors, posting freshness, structured matching, government-data import with provenance, human correction loops | Source-specific integration tests, false-positive review, transparent confidence |
 | **R3: Document and workflow maturity** | Reduce genuine application preparation effort | Verified résumé tailoring, DOCX/PDF export, version diff, durable LangGraph, notifications and follow-up suggestions | Snapshot/export QA, replay/idempotency tests, explicit approvals |
 | **R4: Supervised application support (conditional)** | Assist permitted external form workflows without forfeiting user control | ATS integrations and assisted form entry where permitted, per-job preview and approval, receipts | Security/compliance approval, provider policy review, tested consent and rollback paths |
