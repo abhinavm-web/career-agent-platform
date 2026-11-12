@@ -16,6 +16,8 @@ MAX_TOTAL = 4 * 1024 * 1024 * 1024
 MAX_ENTRIES = 10002
 MAX_WORKFLOW_PACKET = 8 * 1024 * 1024
 DATABASES = ('workspace.sqlite3', 'workspace.workflows.sqlite3', 'workspace.discovery.sqlite3')
+AI_CONFIG = 'ai-routes.json'
+MAX_AI_CONFIG = 32768
 
 
 def _digest(path):
@@ -77,7 +79,7 @@ def _validate_published_packets(published, packet_names, read_packet):
             raise ValueError('A published workflow packet is invalid or does not match the latest published workflow; check --packet-dir and reconcile the packet before backup') from None
 
 
-def create_backup(db, packets, destination, *, offline=False, password=None):
+def create_backup(db, packets, destination, *, offline=False, password=None, ai_config=None):
     """Write an archive only after an explicit stopped-server acknowledgement.
 
     The caller must stop all writers: SQLite snapshots alone cannot synchronize
@@ -85,6 +87,18 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
     """
     if offline is not True:
         raise ValueError('Stop the app and all workspace writers, then pass --offline')
+    config_data = None
+    if ai_config is not None:
+        if password is None:
+            raise ValueError('Backing up AI configuration requires an encrypted backup')
+        from .ai import routes
+        from .application import _reject_symlink_components
+        config_path = Path(ai_config)
+        _reject_symlink_components(config_path)
+        _regular(config_path)
+        config_data = json.dumps(routes(config_path), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        if len(config_data) > MAX_AI_CONFIG:
+            raise ValueError('AI configuration is too large')
     db, packets, destination = Path(db), Path(packets), Path(destination)
     _regular(db)
     if destination.exists() or destination.is_symlink():
@@ -96,7 +110,7 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
     packet_files = sorted(packets.glob('*.json'))
     for path in packet_files:
         _regular(path)
-    if len(packet_files) + len(DATABASES) + 1 > MAX_ENTRIES:
+    if len(packet_files) + len(DATABASES) + 1 + (config_data is not None) > MAX_ENTRIES:
         raise ValueError('Too many backup files')
     if any(path.stat().st_size > MAX_FILE for path in packet_files):
         raise ValueError('A packet exceeds the backup file size limit')
@@ -105,6 +119,11 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
         sources = [(db, DATABASES[0]), (db.with_suffix('.workflows.sqlite3'), DATABASES[1]),
                    (db.with_suffix('.discovery.sqlite3'), DATABASES[2])]
         files = []
+        if config_data is not None:
+            config_snapshot = temp_path / AI_CONFIG
+            config_snapshot.write_bytes(config_data)
+            config_snapshot.chmod(0o600)
+            files.append((config_snapshot, AI_CONFIG))
         published_packets = {}
         for source, name in sources:
             if not source.exists() and source != db:
@@ -167,7 +186,10 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
         archive_path.chmod(0o600)
         # Atomic create-if-absent; hard link prevents replacing a concurrent file.
         os.link(archive_path, destination)
-    return {'archive': str(destination), 'files': len(files), 'warnings': warnings}
+    result = {'archive': str(destination), 'files': len(files), 'warnings': warnings}
+    if config_data is not None:
+        result['ai_config_included'] = True
+    return result
 
 
 def restore_backup(archive_path, destination, *, offline=False, password=None):
@@ -207,11 +229,13 @@ def restore_backup(archive_path, destination, *, offline=False, password=None):
             total = 0
             for name, metadata in files.items():
                 parts = PurePosixPath(name).parts
-                if not (name in DATABASES or (len(parts) == 2 and parts[0] == 'packets' and parts[1] not in ('.', '..') and parts[1].endswith('.json') and '\\' not in parts[1] and ':' not in parts[1])):
+                if not (name in DATABASES or name == AI_CONFIG or (len(parts) == 2 and parts[0] == 'packets' and parts[1] not in ('.', '..') and parts[1].endswith('.json') and '\\' not in parts[1] and ':' not in parts[1])):
                     raise ValueError('Unsafe backup file name')
                 entry = archive.getinfo(name)
                 if not isinstance(metadata, dict) or set(metadata) != {'sha256', 'size'} or type(metadata['size']) is not int or metadata['size'] != entry.file_size or entry.file_size > MAX_FILE:
                     raise ValueError('Invalid backup file metadata')
+                if name == AI_CONFIG and entry.file_size > MAX_AI_CONFIG:
+                    raise ValueError('AI configuration is too large')
                 total += entry.file_size
             if total > MAX_TOTAL:
                 raise ValueError('Backup exceeds the restore size limit')
@@ -248,13 +272,19 @@ def restore_backup(archive_path, destination, *, offline=False, password=None):
                         raise ValueError('A published workflow packet exceeds the validation size limit')
                     return target.read_bytes()
                 _validate_published_packets(published, packet_names, read_restored_packet)
+                if AI_CONFIG in files:
+                    from .ai import routes
+                    routes(destination / AI_CONFIG)
             except Exception:
                 # Leave partial files in the new directory for inspection; never delete user data.
                 raise ValueError(f'Restore failed; incomplete files are in the new directory {destination}') from None
     except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, KeyError, sqlite3.Error):
         raise ValueError('Invalid or corrupt backup archive') from None
-    return {'directory': str(destination), 'database': str(destination / DATABASES[0]),
-            'packet_dir': str(destination / 'packets'), 'files': len(files), 'warnings': warnings}
+    result = {'directory': str(destination), 'database': str(destination / DATABASES[0]),
+              'packet_dir': str(destination / 'packets'), 'files': len(files), 'warnings': warnings}
+    if AI_CONFIG in files:
+        result['ai_config'] = str(destination / AI_CONFIG)
+    return result
 
 
 def verify_backup(archive_path, *, password=None, temp_dir=None):
@@ -266,5 +296,8 @@ def verify_backup(archive_path, *, password=None, temp_dir=None):
             if str(error).startswith('Restore failed; incomplete files'):
                 raise ValueError('Backup verification failed during extraction or integrity checks') from error
             raise
-        return {'archive': str(archive_path), 'verified': True, 'files': result['files'],
-                'warnings': result['warnings']}
+        verification = {'archive': str(archive_path), 'verified': True, 'files': result['files'],
+                        'warnings': result['warnings']}
+        if 'ai_config' in result:
+            verification['ai_config_included'] = True
+        return verification

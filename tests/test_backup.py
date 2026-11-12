@@ -2,6 +2,7 @@
 import json
 import hashlib
 import importlib.util
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -58,6 +59,65 @@ class BackupTests(unittest.TestCase):
             restore_backup(self.archive, destination, offline=True)
 
     @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
+    def test_opt_in_ai_configuration_encrypted_roundtrip(self):
+        config = self.root / 'ai.json'
+        original = json.dumps({'cloud': {'provider': 'anthropic', 'model': 'fictional-model', 'key_env': 'FICTIONAL_API_KEY'}})
+        config.write_text(original, encoding='utf-8')
+        with patch.dict(os.environ, {'FICTIONAL_API_KEY': 'fictional-secret-value'}):
+            result = create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=config)
+            self.assertTrue(result['ai_config_included'])
+            self.assertNotIn(b'fictional-model', self.archive.read_bytes())
+            self.assertTrue(verify_backup(self.archive, password='passphrase')['ai_config_included'])
+            restored = restore_backup(self.archive, self.root / 'restored', offline=True, password='passphrase')
+        self.assertEqual(json.loads(Path(restored['ai_config']).read_text()), json.loads(original))
+        self.assertNotIn('fictional-secret-value', Path(restored['ai_config']).read_text())
+        self.assertEqual(config.read_text(), original)
+        with self.assertRaisesRegex(ValueError, 'already exists'):
+            restore_backup(self.archive, self.root / 'restored', offline=True, password='passphrase')
+
+    def test_ai_config_requires_encryption_and_rejects_inline_secrets(self):
+        config = self.root / 'ai.json'
+        config.write_text(json.dumps({'cloud': {'provider': 'anthropic', 'model': 'fictional', 'api_key': 'secret'}}))
+        with self.assertRaisesRegex(ValueError, 'encrypted'):
+            create_backup(self.db, self.packets, self.archive, offline=True, ai_config=config)
+        with self.assertRaisesRegex(ValueError, 'Unsupported AI setting'):
+            create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=config)
+        self.assertFalse(self.archive.exists())
+        config.write_text(json.dumps({'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://user:pass@127.0.0.1:11434/v1'}}))
+        with self.assertRaisesRegex(ValueError, 'credentials'):
+            create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=config)
+        with self.assertRaises(ValueError):
+            create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=self.root / 'missing')
+
+    def test_ai_config_rejects_symlinks(self):
+        config = self.root / 'ai.json'
+        config.write_text('{}')
+        link = self.root / 'linked.json'
+        try:
+            link.symlink_to(config)
+        except OSError:
+            self.skipTest('Creating symlinks requires additional privileges')
+        with self.assertRaises(ValueError):
+            create_backup(self.db, self.packets, self.archive, offline=True, password='passphrase', ai_config=link)
+
+    def test_restore_rejects_injected_ai_configuration(self):
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        injected = b'{"cloud":{"provider":"anthropic","model":"fictional","api_key":"secret"}}'
+        forged = self.root / 'forged.zip'
+        with zipfile.ZipFile(self.archive) as source, zipfile.ZipFile(forged, 'w') as target:
+            manifest = json.loads(source.read('manifest.json'))
+            manifest['files']['ai-routes.json'] = {'size': len(injected), 'sha256': hashlib.sha256(injected).hexdigest()}
+            target.writestr('manifest.json', json.dumps(manifest))
+            for name in source.namelist():
+                if name != 'manifest.json':
+                    target.writestr(name, source.read(name))
+            target.writestr('ai-routes.json', injected)
+        with self.assertRaisesRegex(ValueError, 'Restore failed'):
+            restore_backup(forged, self.root / 'forged-restore', offline=True)
+        with self.assertRaisesRegex(ValueError, 'verification failed'):
+            verify_backup(forged)
+
+    @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
     def test_encrypted_backup_roundtrip_and_authentication(self):
         create_backup(self.db, self.packets, self.archive, offline=True, password='fictional passphrase')
         self.assertNotIn(b'fictional candidate', self.archive.read_bytes())
@@ -77,11 +137,14 @@ class BackupTests(unittest.TestCase):
 
     @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
     def test_encrypted_cli_prompts_and_restores(self):
+        config = self.root / 'ai.json'
+        config.write_text('{"local":{"provider":"ollama","model":"fictional","base_url":"http://127.0.0.1:11434/v1"}}')
         with patch('career_agent.cli.getpass.getpass', side_effect=['test password', 'test password']):
-            self.assertEqual(main(['--db', str(self.db), 'backup', str(self.archive), '--packet-dir', str(self.packets), '--offline', '--encrypted']), 0)
+            self.assertEqual(main(['--db', str(self.db), 'backup', str(self.archive), '--packet-dir', str(self.packets), '--offline', '--encrypted', '--ai-config', str(config)]), 0)
         with patch('career_agent.cli.getpass.getpass', return_value='test password'):
             self.assertEqual(main(['restore', str(self.archive), str(self.root / 'cli-restored'), '--offline', '--encrypted']), 0)
         self.assertTrue((self.root / 'cli-restored' / 'workspace.sqlite3').is_file())
+        self.assertEqual(json.loads((self.root / 'cli-restored' / 'ai-routes.json').read_text()), json.loads(config.read_text()))
 
     @unittest.skipUnless(importlib.util.find_spec('cryptography'), 'Install backup extra')
     def test_verify_encrypted_backup_and_remove_temporary_files(self):

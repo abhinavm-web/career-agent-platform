@@ -69,6 +69,10 @@ The packet directory must exist, the archive must not already exist, and no othe
 workspace writers may run. Keep the copied archive on protected storage, apart
 from this volume. Verify and restore following [Local workspace backup](BACKUP.md);
 remember the restored directory and temporary staging contain plaintext. The backup
-does not include AI route configuration, credentials, or other external files.
+does not include AI route configuration by default, credentials, or other external files.
+If the route configuration is stored inside the mounted volume, append
+`--ai-config .local/ai.json` to the encrypted backup command to include it.
+Review the [AI route backup instructions](BACKUP.md#optional-ai-route-configuration)
+for sensitivity, credential, and restore details.
 Do not commit backups. Creating a backup inside the volume is not a replacement
 for copying it elsewhere.
