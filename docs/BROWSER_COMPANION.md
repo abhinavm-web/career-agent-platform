@@ -8,7 +8,7 @@ anything sensitive before saving.
 
 On either capture click, the companion also inspects bounded JSON-LD on the active
 page. If it finds exactly one supported [Schema.org JobPosting](https://schema.org/JobPosting), it may include that
-posting's title and hiring-organization name as unverified hints. **Copy structured description** also copies the description from that single posting, converting supported HTML to plain text without running scripts. It does not copy other structured fields; ambiguous or oversized metadata is ignored. The
+posting's title and hiring-organization name as unverified hints. **Copy structured description** also copies the description from that single posting, converting supported HTML to plain text without running scripts. HTML list items become `-` bullets and formatting is simplified, so compare the result with the page. It does not copy other structured fields; ambiguous or oversized metadata is ignored. The
 page may be inaccurate, stale, or describe a different entity, so review the
 suggested title and company. An existing company field is never overwritten.
 
