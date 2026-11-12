@@ -672,6 +672,20 @@ test("JobSpy search requires consent, blocks duplicate clicks and reports import
   assert.equal(harness.get("discover-consent").checked, false);
 });
 
+test("partial discovery shows source errors and inconclusive empty sources", async () => {
+  const h = createHarness({discovery: () => Promise.resolve(ok({found: 1, new: 1, duplicates: 0,
+    source_status: {indeed: {state: "returned", returned: 1}, linkedin: {state: "reported_error", returned: 0},
+      zip_recruiter: {state: "inconclusive", returned: 0}}}))});
+  await flush();
+  h.get("discover-consent").checked = true;
+  h.get("discover-query").value = "Fictional role";
+  h.get("discover-location").value = "USA";
+  h.get("discover-results").value = "3";
+  await h.get("discover-form").handlers.submit({preventDefault() {}});
+  assert.match(h.get("discover-status").textContent, /linkedin: reported an error/);
+  assert.match(h.get("discover-status").textContent, /zip_recruiter: no usable rows; inconclusive/);
+});
+
 test("failed discovery preserves search input and enables retry", async () => {
   const harness = createHarness({discovery: () => Promise.resolve({
     ok: false, status: 503, json: async () => ({detail: "Install the jobspy extra"})

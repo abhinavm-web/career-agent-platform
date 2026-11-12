@@ -477,6 +477,16 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(self.call("POST", "/api/discover", []).status_code, 422)
             discover.assert_not_called()
 
+    def test_manual_discovery_reports_sanitized_partial_source_status(self):
+        from career_agent.discovery import DiscoveryResults
+        statuses = {'indeed': {'state': 'returned', 'returned': 1},
+                    'linkedin': {'state': 'reported_error', 'returned': 0}}
+        with patch('career_agent.dashboard.discover_isolated', return_value=DiscoveryResults([self.job], statuses)):
+            result = self.call('POST', '/api/discover', {'query': 'Lead', 'location': 'USA', 'acknowledged': True})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()['source_status'], statuses)
+        self.assertEqual(result.json()['new'], 0)
+
     def test_discovery_failure_is_sanitized_and_can_be_retried(self):
         from career_agent.discovery import DiscoveryUnavailable
         from career_agent.automation import DiscoveryStopped, DiscoveryTimedOut
