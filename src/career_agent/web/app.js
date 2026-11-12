@@ -719,10 +719,23 @@
     const drafts = section("Application preparation");
     const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
     drafts.append(p);
+    const missingProfile = state.settings.profile_configured === false;
+    const missingFacts = state.settings.facts_configured === false;
+    if (job.application_stage !== "submitted" && (missingProfile || missingFacts)) {
+      const needed = [];
+      if (missingProfile) needed.push("a saved career profile");
+      if (missingFacts) needed.push("at least one verified career fact");
+      drafts.append(node("p", "muted", "To create a draft, add " + needed.join(" and ") + ". Review each fact and verify it yourself."));
+      if (state.settings.legacy_files_unavailable) drafts.append(node("p", "muted", "A configured profile or fact file could not be read or validated. Check the local configuration or set up the career profile here."));
+      drafts.append(button("Open career profile for draft setup", "button", () => byId("nav-profile").click()));
+    }
     if (job.application_stage === "submitted") {
       drafts.append(node("p", "", "This submitted application's reviewed packet is locked. Draft regeneration is disabled."));
     } else {
-      drafts.append(button(job.packet_available ? "Regenerate draft" : "Create application draft", "button button-primary", createDraft));
+      const draftButton = button(job.packet_available ? "Regenerate draft" : "Create application draft", "button button-primary", createDraft);
+      draftButton.disabled = missingProfile || missingFacts;
+      drafts.append(draftButton);
+      if (!missingProfile && !missingFacts) {
       const choose = node("details", "tailoring-picker");
       choose.dataset.jobId = job.id;
       choose.append(node("summary", "", "Choose facts for a tailored draft"));
@@ -803,6 +816,7 @@
         finally {load.disabled = false;}
       });
       choose.append(load, choices, status); drafts.append(choose);
+      }
     }
     detail.append(drafts);
     if (state.packet) renderPacket(detail, job, state.packet);

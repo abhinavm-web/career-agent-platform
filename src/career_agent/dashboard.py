@@ -698,24 +698,34 @@ def create_app(config: DashboardConfig) -> FastAPI:
         workspace = active_workspace()
         is_saved = workspace["revision"] > 0
         profile = workspace["profile"]
+        legacy_profile_ok = legacy_facts_ok = False
         if not is_saved and config.profile_path:
             try:
                 legacy_profile = CandidateProfile.load(config.profile_path)
                 targets, skills = legacy_profile.target_titles, legacy_profile.skills
+                legacy_profile_ok = True
             except (OSError, ValueError):
                 targets, skills = (), ()
         else:
             targets, skills = profile["target_titles"], profile["skills"]
+        if not is_saved and config.facts_path:
+            try:
+                FactBank.load(config.facts_path)
+                legacy_facts_ok = True
+            except (OSError, ValueError):
+                pass
         return {
-            "profile_configured": bool(workspace["profile"]["name"]) if is_saved else config.profile_path is not None,
+            "profile_configured": bool(workspace["profile"]["name"]) if is_saved else legacy_profile_ok,
             "target_titles_configured": bool(targets),
             "skills_configured": bool(skills),
             "facts_configured": (
                 any(fact["verified_by_candidate"] for fact in workspace["facts"])
-                if is_saved else config.facts_path is not None
+                if is_saved else legacy_facts_ok
             ),
             "workspace_initialized": is_saved,
-            "legacy_import_available": bool(config.profile_path and config.facts_path and not is_saved),
+            "legacy_import_available": bool(legacy_profile_ok and legacy_facts_ok and not is_saved),
+            "legacy_files_unavailable": bool(not is_saved and ((config.profile_path and not legacy_profile_ok) or
+                                                                (config.facts_path and not legacy_facts_ok))),
             "filings_configured": config.filings_path is not None,
             "runtime": "local_single_user",
             "application_submission_enabled": False,
@@ -822,11 +832,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get("/api/jobs")
     def list_jobs(before: int | None = None, limit: int = 500):
         workspace = active_workspace()
-        profile = (
-            CandidateWorkspace.scoring_profile(workspace)
-            if workspace["revision"] > 0
-            else CandidateProfile.load(config.profile_path) if config.profile_path else None
-        )
+        if workspace['revision'] > 0:
+            profile = CandidateWorkspace.scoring_profile(workspace)
+        elif config.profile_path:
+            try:
+                profile = CandidateProfile.load(config.profile_path)
+            except (OSError, ValueError):
+                profile = None
+        else:
+            profile = None
         records = load_filing_evidence(config.filings_path)
         with Store(config.db_path) as store:
             research = H1BResearch(store)

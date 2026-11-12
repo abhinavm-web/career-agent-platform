@@ -26,6 +26,7 @@ All private candidate files should be outside the public repository or under a g
 - Download an approved current résumé as PDF or editable Word, and its cover note as UTF-8 plain text. Edits made after download are not tracked and are not covered by the packet approval; review those changes before use. Private career source notes are not included.
 - Approval/rejection is stored in a local append-only SQLite table with the packet fingerprint.
 - After **manually applying on an employer site**, record a confirmation reference and attestation to update application status.
+- If the selected job cannot yet be drafted because the career profile or verified facts are missing, the application-preparation section explains the prerequisites and links to profile setup. The posting may still be reviewed before setup; no facts are verified automatically.
 - Show dashboard counts and recent review decisions.
 
 JobSpy discovery is available through the CLI, the Opportunity board's **Find jobs with JobSpy** form, and opted-in recurring searches under **Saved searches**. Each dashboard search requires explicit acknowledgement that its query and location will be sent to external sources. Profile facts, recruiter contacts and private notes are not included in discovery requests. The app does not submit applications or answer visa screening questions.
