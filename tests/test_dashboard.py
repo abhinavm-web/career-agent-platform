@@ -519,6 +519,15 @@ class DashboardTests(unittest.TestCase):
         rows = self.call("GET", "/api/jobs").json()["jobs"]
         row = next(item for item in rows if item['id'] == new_job.id)
         self.assertEqual(row['discovery_observations'][0]['observation_count'], 2)
+        self.assertEqual(row['discovery_observations'][0]['description_comparison'], 'matches')
+        changed = replace(new_job, description='New fictional source description')
+        with patch('career_agent.dashboard.discover_isolated', return_value=[changed]):
+            self.assertEqual(self.call('POST', '/api/discover', {
+                'query': 'AI Lead', 'location': 'USA', 'acknowledged': True,
+            }).status_code, 200)
+        row = next(item for item in self.call('GET', '/api/jobs').json()['jobs'] if item['id'] == new_job.id)
+        self.assertEqual(row['discovery_observations'][0]['description_comparison'], 'differs')
+        self.assertEqual(row['description'], new_job.description)
 
     def test_discovery_requires_valid_input_consent_and_session(self):
         valid = {"query": "AI Lead", "location": "United States", "results": 5, "acknowledged": True}

@@ -1,11 +1,17 @@
 """Local SQLite persistence and safe application state transitions."""
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import re
 from pathlib import Path
 
 from .models import Job
+
+
+def _description_digest(description: str) -> str | None:
+    normalized = ' '.join(description.casefold().split())
+    return hashlib.sha256(normalized.encode('utf-8')).hexdigest() if normalized else None
 
 
 class DescriptionConflict(ValueError):
@@ -59,6 +65,11 @@ class Store:
                 observation_count INTEGER NOT NULL,
                 PRIMARY KEY(job_id, source)
             );
+            CREATE TABLE IF NOT EXISTS job_discovery_descriptions(
+                job_id TEXT NOT NULL REFERENCES jobs(job_id), source TEXT NOT NULL,
+                description_sha256 TEXT, observed_at TEXT NOT NULL,
+                PRIMARY KEY(job_id, source)
+            );
         """)
 
     def __enter__(self) -> "Store":
@@ -102,6 +113,12 @@ class Store:
                 ON CONFLICT(job_id,source) DO UPDATE SET
                 last_seen=excluded.last_seen, observation_count=observation_count+1
             ''', key)
+            self.connection.execute('''
+                INSERT INTO job_discovery_descriptions(job_id,source,description_sha256,observed_at)
+                VALUES(?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                ON CONFLICT(job_id,source) DO UPDATE SET
+                description_sha256=excluded.description_sha256, observed_at=excluded.observed_at
+            ''', (job.id, job.source, _description_digest(job.description)))
         return inserted
 
     def add_discovered_jobs(self, jobs: list[Job]) -> int:
@@ -114,11 +131,18 @@ class Store:
             return {}
         placeholders = ','.join('?' for _ in job_ids)
         rows = self.connection.execute(
-            f'SELECT job_id,source,first_seen,last_seen,observation_count FROM job_discovery_observations WHERE job_id IN ({placeholders}) ORDER BY last_seen DESC,source',
-            job_ids)
+            f'''SELECT o.job_id,o.source,o.first_seen,o.last_seen,o.observation_count,
+                d.description_sha256,d.observed_at,j.description
+                FROM job_discovery_observations o JOIN jobs j ON j.job_id=o.job_id
+                LEFT JOIN job_discovery_descriptions d ON d.job_id=o.job_id AND d.source=o.source
+                WHERE o.job_id IN ({placeholders}) ORDER BY o.last_seen DESC,o.source''', job_ids)
         result: dict[str, list[dict]] = {}
         for row in rows:
-            result.setdefault(row['job_id'], []).append({k: row[k] for k in ('source','first_seen','last_seen','observation_count')})
+            item = {k: row[k] for k in ('source','first_seen','last_seen','observation_count')}
+            item['description_comparison'] = ('unknown' if row['description_sha256'] is None else
+                'matches' if row['description_sha256'] == _description_digest(row['description']) else 'differs')
+            item['description_observed_at'] = row['observed_at']
+            result.setdefault(row['job_id'], []).append(item)
         return result
 
     def possible_duplicates(self, job_id: str) -> dict:
