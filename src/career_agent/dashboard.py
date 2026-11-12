@@ -100,6 +100,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
     token = secrets.token_urlsafe(32)
     discovery_lock = Lock()
     h1b_import_lock = Lock()
+    h1b_progress_lock = Lock()
+    h1b_progress = {'phase': 'idle', 'amount': 0}
+
+    def set_h1b_progress(phase, amount):
+        with h1b_progress_lock:
+            h1b_progress.update(phase=phase, amount=amount)
     live_check_lock = Lock()
 
     @app.middleware("http")
@@ -442,6 +448,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if not h1b_import_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail='An H-1B import is already running; wait before retrying')
         try:
+            set_h1b_progress('uploading', 0)
             with tempfile.TemporaryDirectory(prefix='career-lca-') as directory:
                 path = Path(directory) / 'disclosure.xlsx'
                 size = 0
@@ -451,18 +458,26 @@ def create_app(config: DashboardConfig) -> FastAPI:
                         if size > LCA_WORKBOOK_LIMIT:
                             raise HTTPException(status_code=413, detail='Workbook exceeds the 512 MB upload limit')
                         await run_in_threadpool(output.write, chunk)
+                        set_h1b_progress('uploading', size)
                 if length is not None and size != int(length):
                     raise HTTPException(status_code=400, detail='Incomplete workbook upload; retry')
                 if not size:
                     raise ValueError('Choose a nonempty XLSX workbook')
+                set_h1b_progress('opening', 0)
                 def import_workbook():
                     with Store(config.db_path) as store:
-                        return H1BResearch(store).import_xlsx(path, source_url, captured_on)
+                        return H1BResearch(store).import_xlsx(path, source_url, captured_on, progress=set_h1b_progress)
                 return await run_in_threadpool(import_workbook)
         except OSError:
             raise HTTPException(status_code=507, detail='Unable to stage or read the workbook locally; check disk space and retry') from None
         finally:
+            set_h1b_progress('idle', 0)
             h1b_import_lock.release()
+
+    @app.get('/api/h1b/import-progress')
+    def h1b_import_progress():
+        with h1b_progress_lock:
+            return dict(h1b_progress)
 
     @app.post("/api/h1b/uscis/{action}")
     async def uscis_update(action: str, request: Request):

@@ -133,6 +133,7 @@
           const section = document.createElement("section");
           section.append(text("p", `Verified fact ${row.fact_id}: ${row.original_fact}`),
             text("blockquote", row.job_quote), text("p", `Unverified suggested wording: ${row.wording}`));
+          for (const warning of row.review_warnings || []) section.append(text("p", "Review warning: " + warning));
           const stage = text("button", "Save unverified wording for review");
           stage.type = "button"; stage.className = "button";
           stage.addEventListener("click", async () => {

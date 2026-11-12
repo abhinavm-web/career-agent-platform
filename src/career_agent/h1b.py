@@ -21,7 +21,7 @@ XLSX_MAX_ROW = 1048576
 XLSX_MAX_COLUMN = 1024
 
 
-def _xlsx_dimensions(workbook, sheet):
+def _xlsx_dimensions(workbook, sheet, progress=None):
     """Inspect actual cell coordinates; worksheet dimension metadata can lie."""
     from defusedxml.sax import make_parser
     from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
@@ -42,6 +42,8 @@ def _xlsx_dimensions(workbook, sheet):
                     raise ValueError('Worksheet row numbers must be ordered and within Excel limits')
                 self.row_number, self.column_number = number, 0
                 self.max_row = number
+                if progress and number % 2000 == 0:
+                    progress('scanning', number)
             elif name == (namespace, 'c'):
                 raw = attributes.get((None, 'r'))
                 previous_column = self.column_number
@@ -153,7 +155,7 @@ class H1BResearch:
                               (data['need'], data['min_year'], int(data['include_unknown'])))
         return self.settings()
 
-    def import_csv(self, stream, source_url, captured_on):
+    def import_csv(self, stream, source_url, captured_on, *, progress=None):
         source_url, captured = validate_lca_source(source_url, captured_on)
         reader = csv.DictReader(stream, strict=True)
         required = {'CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'}
@@ -175,6 +177,8 @@ class H1BResearch:
                 selected = [row.get(key) or '' for key in fields]
                 digest.update((json.dumps(selected, ensure_ascii=True, separators=(',', ':')) + '\n').encode('ascii'))
                 row_count += 1
+                if progress and row_count % 2000 == 0:
+                    progress('reading', row_count)
                 visa = text(row['VISA_CLASS'], f'Row {line} VISA_CLASS').upper()
                 if visa in ('E-3 AUSTRALIAN', 'H-1B1 CHILE', 'H-1B1 SINGAPORE'):
                     counts['other_visas_skipped'] += 1
@@ -224,7 +228,7 @@ class H1BResearch:
                                last_decision.isoformat() if last_decision else None, json.dumps(counts)))
         return counts
 
-    def import_xlsx(self, path, source_url, captured_on):
+    def import_xlsx(self, path, source_url, captured_on, *, progress=None):
         """Stream the relevant cells from a local DOL LCA disclosure workbook.
 
         This retains the existing CSV import's one-transaction validation and
@@ -266,7 +270,9 @@ class H1BResearch:
             fields = required + optional
             matches = []
             for sheet in workbook.worksheets:
-                max_row, max_column = _xlsx_dimensions(workbook, sheet)
+                if progress:
+                    progress('scanning', 0)
+                max_row, max_column = _xlsx_dimensions(workbook, sheet, progress)
                 if not max_row or not max_column:
                     continue
                 sheet.reset_dimensions()
@@ -279,6 +285,8 @@ class H1BResearch:
             if len(matches) != 1:
                 raise ValueError('Workbook must contain exactly one LCA disclosure sheet with the required headers')
             sheet, positions, max_row, max_column = matches[0]
+            if progress:
+                progress('reading', 0)
             def lines():
                 buffer = io.StringIO(newline='')
                 writer = csv.writer(buffer)
@@ -291,7 +299,7 @@ class H1BResearch:
                         continue
                     yield line([value.isoformat(' ') if isinstance(value, datetime) else value.isoformat() if isinstance(value, date)
                                 else '' if value is None else str(value) for value in values])
-            return self.import_csv(lines(), source_url, captured_on)
+            return self.import_csv(lines(), source_url, captured_on, progress=progress)
         except ValueError:
             raise
         except Exception:

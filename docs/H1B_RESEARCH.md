@@ -8,7 +8,7 @@ Search uses a company-name substring against imported legal employer names and c
 
 ## Load public records
 
-1. Visit the official [DOL OFLC performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance) page and download an LCA disclosure workbook. In the H-1B research import panel, provide the source URL and capture date, choose the original XLSX (up to 512 MB), and confirm the provenance. Install workbook support first (`pip install -e '.[lca]'`; the Docker image includes it). The upload is streamed to a temporary local file, removed after processing, and runs the same atomic validation as the CLI. Large files may take time and substantial temporary disk space. The app does not independently verify a supplied file or its source.
+1. Visit the official [DOL OFLC performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance) page and download an LCA disclosure workbook. In the H-1B research import panel, provide the source URL and capture date, choose the original XLSX (up to 512 MB), and confirm the provenance. Install workbook support first (`pip install -e '.[lca]'`; the Docker image includes it). The upload is streamed to a temporary local file, removed after processing, and runs the same atomic validation as the CLI. Large files may take time and substantial temporary disk space. The panel reports upload, structure-scan and row-reading progress; those counts are not committed records. Wait for the final success message. The app does not independently verify a supplied file or its source.
 
    Alternatively, use the command below to import the original XLSX without a CSV conversion:
 

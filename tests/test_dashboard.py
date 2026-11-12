@@ -151,6 +151,30 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(response.json()['added'], 1)
         self.assertEqual(response.headers['x-content-type-options'], 'nosniff')
         self.assertEqual(self.call('GET', '/api/h1b').json()['coverage']['records'], 1)
+
+    def test_dol_workbook_progress_is_visible_only_during_import(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        started, release = Event(), Event()
+        def blocked_import(_research, _path, _url, _date, *, progress):
+            progress('scanning', 2000)
+            started.set()
+            if not release.wait(10):
+                raise RuntimeError('Test did not release importer')
+            return {'added': 0}
+        headers = {'X-Session-Token': self.session, 'X-LCA-Acknowledged': 'true', 'Content-Type': 'application/octet-stream'}
+        path = '/api/h1b/import-workbook?source_url=https%3A%2F%2Fwww.dol.gov%2Fdata&captured_on=2025-06-01'
+        self.assertEqual(self.call('GET', '/api/h1b/import-progress').json()['phase'], 'idle')
+        with patch('career_agent.dashboard.H1BResearch.import_xlsx', blocked_import), ThreadPoolExecutor() as executor:
+            future = executor.submit(self.client.post, path, content=b'workbook', headers=headers)
+            try:
+                self.assertTrue(started.wait(10))
+                self.assertEqual(self.call('GET', '/api/h1b/import-progress').json(), {'phase': 'scanning', 'amount': 2000})
+                self.assertEqual(self.client.post(path, content=b'other', headers=headers).status_code, 409)
+            finally:
+                release.set()
+            self.assertEqual(future.result(timeout=10).status_code, 200)
+        self.assertEqual(self.call('GET', '/api/h1b/import-progress').json()['phase'], 'idle')
     def test_oversized_stream_stops_reading(self):
         import httpx
         from career_agent.dashboard import API_BODY_LIMIT

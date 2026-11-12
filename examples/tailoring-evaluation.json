@@ -1,0 +1,23 @@
+{
+  "description": "Fictional, manually labeled wording pairs. Unsupported means the wording adds or changes a claim not established by the single source fact.",
+  "cases": [
+    {"id":"same", "category":"supported", "source":"Built a Python dashboard for a fictional team.", "wording":"Built a Python dashboard for a fictional team.", "label":"supported"},
+    {"id":"paraphrase", "category":"supported", "source":"Created a dashboard using Python.", "wording":"Built a dashboard using Python.", "label":"supported"},
+    {"id":"same-number", "category":"supported", "source":"Maintained 3 Python dashboards.", "wording":"Maintained 3 dashboards in Python.", "label":"supported"},
+    {"id":"source-negation", "category":"supported", "source":"Did not manage a team.", "wording":"Did not manage a team.", "label":"supported"},
+    {"id":"supported-led", "category":"supported", "source":"Led a Python migration.", "wording":"Led the Python migration.", "label":"supported"},
+    {"id":"new-percent", "category":"metric", "source":"Built a Python dashboard.", "wording":"Built a Python dashboard that cut costs by 40%.", "label":"unsupported"},
+    {"id":"changed-count", "category":"metric", "source":"Maintained 3 Python dashboards.", "wording":"Maintained 30 Python dashboards.", "label":"unsupported"},
+    {"id":"added-percent-unit", "category":"metric", "source":"Tracked 20 customer requests.", "wording":"Reduced customer requests by 20%.", "label":"unsupported"},
+    {"id":"new-year", "category":"date", "source":"Built a Python dashboard.", "wording":"Built a Python dashboard in 2025.", "label":"unsupported"},
+    {"id":"negation-dropped", "category":"negation", "source":"Did not manage a team.", "wording":"Managed a team.", "label":"unsupported"},
+    {"id":"negation-added", "category":"negation", "source":"Managed a team.", "wording":"Never managed a team.", "label":"unsupported"},
+    {"id":"new-leadership", "category":"seniority", "source":"Contributed to a Python migration.", "wording":"Led a Python migration.", "label":"unsupported"},
+    {"id":"new-certification", "category":"credential", "source":"Worked with AWS.", "wording":"Certified in AWS.", "label":"unsupported"},
+    {"id":"new-skill-blindspot", "category":"skill", "source":"Built a Python dashboard.", "wording":"Built a Python and Rust dashboard.", "label":"unsupported"},
+    {"id":"new-employer-blindspot", "category":"employer", "source":"Built a Python dashboard.", "wording":"Built a Python dashboard at Acme Corp.", "label":"unsupported"},
+    {"id":"spelled-number-blindspot", "category":"metric", "source":"Maintained Python dashboards.", "wording":"Maintained twenty Python dashboards.", "label":"unsupported"},
+    {"id":"changed-object-blindspot", "category":"responsibility", "source":"Tested a Python dashboard.", "wording":"Built a Python dashboard.", "label":"unsupported"},
+    {"id":"false-positive-format", "category":"supported", "source":"Maintained 1000 fictional reports.", "wording":"Maintained 1,000 fictional reports.", "label":"supported"}
+  ]
+}
