@@ -150,6 +150,15 @@ def test_route(route_name, acknowledged=False):
             'notice': 'The provider returned a response to a synthetic test. This does not verify output quality, privacy settings, or future availability.'}
 
 
+def _excerpt_scope_notice(route, excerpts):
+    """Explain the actual citation constraint, not the model's understanding."""
+    if route['provider'] != 'ollama' or not excerpts:
+        return ''
+    return (f' Ollama was asked to select citations from {len(excerpts)} preselected posting excerpt(s). '
+            'Other text may not be citable, including headings, long lines and lines beyond the limit. '
+            'Review the complete posting; this is not a complete requirements list.')
+
+
 def _key(route):
     defaults = {'anthropic': 'ANTHROPIC_API_KEY', 'azure': 'AZURE_OPENAI_API_KEY'}
     name = route.get('key_env', defaults.get(route['provider']))
@@ -353,7 +362,8 @@ def analyze(job, bank, route_name, acknowledged=False):
     return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'],
             'observed_at': datetime.now(timezone.utc).isoformat(), 'prompt_version': 1,
             'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(), 'requirements': rows,
-            'notice': 'AI suggestions only. Exact quotes and fact IDs were checked; semantic relevance still needs human review. No eligibility determination or application changes.'}
+            'notice': ('AI suggestions only. Exact quotes and fact IDs were checked; semantic relevance still needs human review. No eligibility determination or application changes.'
+                       + _excerpt_scope_notice(route, excerpts))}
 
 
 def tailoring_suggestions(job, bank, route_name, acknowledged=False):
@@ -418,4 +428,5 @@ def tailoring_suggestions(job, bank, route_name, acknowledged=False):
     return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'],
             'observed_at': datetime.now(timezone.utc).isoformat(), 'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(),
             'suggestions': rows,
-            'notice': 'Unverified wording suggestions only. Valid fact IDs, exact job quotes and an absence of warnings do not prove the rewrite is accurate. Review every claim and verify it separately before using it.'}
+            'notice': ('Unverified wording suggestions only. Valid fact IDs, exact job quotes and an absence of warnings do not prove the rewrite is accurate. Review every claim and verify it separately before using it.'
+                       + _excerpt_scope_notice(route, excerpts))}
