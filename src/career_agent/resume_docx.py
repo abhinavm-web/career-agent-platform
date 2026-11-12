@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 
-from .application import validate_packet
+from .application import export_resume_blocks, validate_packet
 
 
 class DOCXUnavailable(RuntimeError):
@@ -32,6 +32,17 @@ def resume_docx(packet: dict) -> bytes:
     normal.font.size = Pt(10.5)
     document.core_properties.author = ''
     document.core_properties.last_modified_by = ''
+    blocks = export_resume_blocks(packet)
+    if blocks is not None:
+        for block in blocks:
+            kind, value = block['kind'], block['text']
+            if kind == 'name': document.add_heading(value, level=0)
+            elif kind == 'section': document.add_heading(value, level=1)
+            elif kind == 'fact': document.add_paragraph(value, style='List Bullet')
+            else: document.add_paragraph(value)
+        result = io.BytesIO()
+        document.save(result)
+        return result.getvalue()
     for line in text.splitlines():
         if line.startswith('# '):
             document.add_heading(line[2:], level=0)

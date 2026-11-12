@@ -841,7 +841,19 @@
     const resume = node("details");
     const resumeTitle = node("summary", "", "Resume draft");
     const resumeText = node("pre", "", packet.resume_markdown);
-    resume.append(resumeTitle, resumeText);
+    resume.append(resumeTitle);
+    const blocks = packet.resume_blocks;
+    if (Array.isArray(blocks) && blocks.length <= 48 && blocks.length > 0 && blocks.every((block) =>
+        block && ["name", "contact", "headline", "section", "fact"].includes(block.kind) && typeof block.text === "string")) {
+      resume.append(node("p", "muted", "Review these literal text blocks and their order. Each fact remains one item in Word and PDF, even if its text contains line breaks."));
+      const preview = node("div", "resume-block-preview");
+      for (const block of blocks) {
+        const tag = block.kind === "name" ? "h4" : block.kind === "section" ? "h5" : "p";
+        preview.append(node(tag, "resume-block " + (block.kind === "fact" ? "resume-block-fact" : ""), block.text));
+      }
+      resume.append(preview, node("p", "muted", "Plain-text draft:"));
+    }
+    resume.append(resumeText);
     const letter = node("details");
     letter.append(node("summary", "", "Cover-note draft"), node("pre", "", packet.cover_note));
     card.append(resume, letter);

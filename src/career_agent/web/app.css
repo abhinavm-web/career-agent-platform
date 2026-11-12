@@ -314,3 +314,7 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
   .nav-glyph {font-size:18px;}
   .setup-banner {align-items:flex-start;flex-direction:column;}
 }
+
+.resume-block-preview .resume-block {white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;}
+.resume-block-preview .resume-block-fact {padding-left:1.25rem;position:relative;}
+.resume-block-preview .resume-block-fact::before {content:"•";position:absolute;left:0;}

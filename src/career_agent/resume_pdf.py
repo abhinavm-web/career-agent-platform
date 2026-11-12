@@ -8,7 +8,7 @@ from __future__ import annotations
 from html import escape
 from importlib.resources import files
 
-from .application import validate_packet
+from .application import export_resume_blocks, validate_packet
 
 
 class PDFUnavailable(RuntimeError):
@@ -23,21 +23,36 @@ def resume_html(packet: dict) -> str:
         raise ValueError("Resume exceeds the PDF export limit")
     parts = []
     in_list = False
-    for line in text.splitlines():
-        if not line.startswith("- ") and in_list:
-            parts.append("</ul>")
-            in_list = False
-        if line.startswith("# "):
-            parts.append('<header class="header"><h1>' + escape(line[2:]) + '</h1><div class="header-gradient"></div></header>')
-        elif line.startswith("## "):
-            parts.append('<h2 class="section-title">' + escape(line[3:]) + '</h2>')
-        elif line.startswith("- "):
-            if not in_list:
-                parts.append('<ul class="job">')
-                in_list = True
-            parts.append("<li>" + escape(line[2:]) + "</li>")
-        elif line.strip():
-            parts.append('<p class="summary-text">' + escape(line) + "</p>")
+    blocks = export_resume_blocks(packet)
+    if blocks is not None:
+        for block in blocks:
+            kind, value = block['kind'], escape(block['text'])
+            if kind != 'fact' and in_list:
+                parts.append('</ul>'); in_list = False
+            if kind == 'name':
+                parts.append('<header class="header"><h1 class="literal-resume-text">' + value + '</h1><div class="header-gradient"></div></header>')
+            elif kind == 'section':
+                parts.append('<h2 class="section-title">' + value + '</h2>')
+            elif kind == 'fact':
+                if not in_list:
+                    parts.append('<ul class="job">'); in_list = True
+                parts.append('<li class="literal-resume-text">' + value + '</li>')
+            else:
+                parts.append('<p class="summary-text literal-resume-text">' + value + '</p>')
+    else:
+        for line in text.splitlines():
+            if not line.startswith("- ") and in_list:
+                parts.append("</ul>"); in_list = False
+            if line.startswith("# "):
+                parts.append('<header class="header"><h1>' + escape(line[2:]) + '</h1><div class="header-gradient"></div></header>')
+            elif line.startswith("## "):
+                parts.append('<h2 class="section-title">' + escape(line[3:]) + '</h2>')
+            elif line.startswith("- "):
+                if not in_list:
+                    parts.append('<ul class="job">'); in_list = True
+                parts.append("<li>" + escape(line[2:]) + "</li>")
+            elif line.strip():
+                parts.append('<p class="summary-text">' + escape(line) + "</p>")
     if in_list:
         parts.append("</ul>")
     css = files("career_agent").joinpath("templates", "resume.css").read_text(encoding="utf-8")
