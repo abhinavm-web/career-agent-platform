@@ -15,7 +15,8 @@ def main():
     try:
         data = json.load(sys.stdin)
         with contextlib.redirect_stdout(sys.stderr):
-            jobs = discover_jobspy(data['query'], data['location'], data['results'], sites=data['sites'])
+            options = {'fetch_details': True} if data.get('fetch_details') is True else {}
+            jobs = discover_jobspy(data['query'], data['location'], data['results'], sites=data['sites'], **options)
         print(json.dumps({'rows': [asdict(j) for j in jobs], 'source_status': jobs.source_status}))
     finally:
         watchdog.cancel()

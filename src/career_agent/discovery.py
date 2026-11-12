@@ -49,10 +49,12 @@ def read_csv_jobs(path: str | Path) -> list[Job]:
         return [Job.from_mapping(row) for row in csv.DictReader(file)]
 
 
-def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None) -> list[Job]:
+def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None, fetch_details=False) -> list[Job]:
     """Explicit or user-scheduled discovery. Follow source terms and rate limits."""
     if not 1 <= results <= 100:
         raise ValueError("results must be between 1 and 100")
+    if type(fetch_details) is not bool or (fetch_details and results > 20):
+        raise ValueError('Detail fetching requires a boolean and at most 20 results per source')
     try:
         from jobspy import scrape_jobs
     except ImportError as error:
@@ -66,12 +68,14 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
         skipped = _SkippedZipRecords()
         zip_logger.addHandler(skipped)
         try:
+            detail_option = {'fetch_description': True} if fetch_details else {}
             frame = scrape_jobs(
                 site_name=selected,
                 search_term=query,
                 location=location,
                 results_wanted=results,
                 country_indeed="USA",
+                **detail_option,
             )
         finally:
             zip_logger.removeHandler(skipped)
@@ -96,12 +100,16 @@ def discover_jobspy(query: str, location: str, results: int = 20, *, sites=None)
     return DiscoveryResults(jobs, status)
 
 
-def discover_isolated(query: str, location: str, results: int, stop, *, sites=None) -> list[Job]:
+def discover_isolated(query: str, location: str, results: int, stop, *, sites=None, fetch_details=False) -> list[Job]:
     """Run manual searches in the same bounded process used by saved searches."""
     from .automation import fetch
     selected = validate_sites(sites) if sites is not None else list(SUPPORTED_SITES)
     if importlib.util.find_spec('jobspy') is None:
         raise DiscoveryUnavailable('Install JobSpy: pip install -e ".[jobspy]"')
-    rows = fetch({'query': query, 'location': location, 'results': results,
-                  'sites': selected}, stop)
+    if type(fetch_details) is not bool or (fetch_details and results > 20):
+        raise ValueError('Detail fetching requires a boolean and at most 20 results per source')
+    settings = {'query': query, 'location': location, 'results': results, 'sites': selected}
+    if fetch_details:
+        settings['fetch_details'] = True
+    rows = fetch(settings, stop)
     return DiscoveryResults([Job.from_mapping(row) for row in rows], getattr(rows, 'source_status', {}))
