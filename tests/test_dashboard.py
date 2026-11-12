@@ -847,6 +847,9 @@ class DashboardTests(unittest.TestCase):
         options = self.call('GET', '/api/tailoring/facts').json()
         self.assertEqual(options['max_facts'], 40)
         ids = [fact['id'] for fact in options['facts']]
+        self._draft()
+        automatic = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        self.assertEqual(len(automatic['selected_fact_ids']), 12)
         payload = {'fact_ids': ids[:40], 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}
         path = f'/api/jobs/{self.job.id}/tailored-draft'
         self.assertEqual(self.call('POST', path, {**payload, 'fact_ids': ids}).status_code, 422)
