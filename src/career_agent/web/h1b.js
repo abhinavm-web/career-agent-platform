@@ -168,14 +168,17 @@
     const lookup = node("button", "Search imported employer names"); lookup.type = "button"; lookup.className = "button";
     const lookupStatus = node("p"); lookupStatus.setAttribute("role", "status");
     const candidates = node("div");
+    let lookupSequence = 0;
+    lookupInput.addEventListener("input", () => { lookupSequence++; candidates.replaceChildren(); lookupStatus.textContent = "Search to update possible names."; });
     lookup.addEventListener("click", async () => {
       if (lookup.disabled) return;
       const query = lookupInput.value;
+      const request = ++lookupSequence;
       lookup.disabled = true; candidates.replaceChildren(); lookupStatus.textContent = "Searching local records…";
       try {
         const result = await api("/api/h1b/search?q=" + encodeURIComponent(query));
         if (!card.isConnected) return;
-        if (lookupInput.value !== query) { lookupStatus.textContent = "Search changed; search again."; return; }
+        if (request !== lookupSequence) return;
         lookupStatus.textContent = "Possible names only; compare legal entity and location before selecting. " + result.company_total + " results; first 25 shown.";
         for (const company of result.companies) {
           const select = node("button", "Use " + company.employer); select.type = "button";
@@ -184,7 +187,7 @@
           if (company.records?.length) entry.append(document.createTextNode(" · Example filing location: " + company.records[0].city + ", " + company.records[0].state));
           candidates.append(entry);
         }
-      } catch (error) { lookupStatus.textContent = error.message; }
+      } catch (error) { if (request === lookupSequence) lookupStatus.textContent = error.message; }
       finally { lookup.disabled = false; }
     });
     const employerLabel = node("label", "Imported legal employer name");
