@@ -59,9 +59,27 @@ workspace does not require either optional checkpoint database.
 Check the path carefully. The archive is created atomically and an
 existing destination is never overwritten. The
 archive contains SHA-256 file checksums. Without `--encrypted` it is unencrypted. It excludes external
-legacy `--profile`, `--facts`, and `--filings` files, AI route configuration,
+legacy `--profile`, `--facts`, and `--filings` files, AI route configuration by default,
 credentials, and files elsewhere on your machine. Back up any such files
 separately if you still use them. Do not put credentials in the archive.
+
+### Optional AI route configuration
+
+To include a specific route configuration, use an encrypted archive and opt in:
+
+```powershell
+.\.venv\Scripts\python.exe -m career_agent.cli --db .local/demo.sqlite3 backup private/workspace-backup.enc --packet-dir .local/demo-packets --offline --encrypted --ai-config .local/ai.json
+```
+
+The file is validated using the application's route parser, which rejects unsupported
+credential fields, credentials in endpoint URLs, and symbolic-link paths. It stores
+environment variable names such as `key_env`, never their values. Review the file
+for secrets accidentally placed in other fields; route names, model identifiers and
+endpoints may themselves be sensitive. Plaintext is temporarily staged as described
+above. Restore validates the configuration into `ai-routes.json` in the new directory;
+it never activates the file or overwrites your existing configuration. To opt into it
+after reviewing it, set `$env:CAREER_AGENT_AI_CONFIG` to its absolute path before
+starting the restored app. Set provider credentials separately in that shell.
 
 ## Verify a backup
 

@@ -101,6 +101,7 @@ def parser() -> argparse.ArgumentParser:
     backup.add_argument("--packet-dir", default=".local/packets")
     backup.add_argument("--offline", action="store_true", help="Confirm the app and all writers are stopped")
     backup.add_argument("--encrypted", action="store_true", help="Protect the archive with a prompted passphrase")
+    backup.add_argument("--ai-config", help="Include this validated AI route configuration (requires --encrypted)")
     restore = cmd.add_parser("restore", help="Restore a backup into a new directory")
     restore.add_argument("archive")
     restore.add_argument("destination", help="New directory; never overwrites existing data")
@@ -155,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
                 password = getpass.getpass('Backup passphrase: ')
                 if not password or password != getpass.getpass('Repeat passphrase: '):
                     raise ValueError('Passphrases must be nonempty and match')
-            print(json.dumps(create_backup(args.db, args.packet_dir, args.destination, offline=args.offline, password=password)))
+            print(json.dumps(create_backup(args.db, args.packet_dir, args.destination, offline=args.offline, password=password, ai_config=args.ai_config)))
             return 0
         if args.command == "restore":
             from .backup import restore_backup
