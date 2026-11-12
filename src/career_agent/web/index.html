@@ -152,7 +152,12 @@
         </form>
         <details class="panel profile-editor">
           <summary>Import public DOL LCA records</summary>
-          <p class="muted">Download the LCA disclosure workbook from <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">DOL performance data</a> and import the original XLSX (up to 512 MB) or an exported UTF-8 CSV (up to 8 MB). The workbook is processed locally and can take time. No records are downloaded automatically.</p>
+          <p class="muted">Choose a quarterly workbook from <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">DOL performance data</a>. You may explicitly download a supported direct DOL workbook URL or import a local XLSX (up to 512 MB) or CSV (up to 8 MB). Large imports can take several minutes.</p>
+          <form id="h1b-refresh-dol" class="crm-form">
+            <label>Direct DOL quarterly workbook URL<input id="h1b-refresh-url" type="url" required placeholder="https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx"></label>
+            <label class="check-label"><input id="h1b-refresh-consent" type="checkbox" required> Download and import this public DOL workbook. A large download uses network and disk space.</label>
+            <button id="h1b-refresh-submit" type="submit" class="button">Download and import DOL workbook</button>
+          </form>
           <form id="h1b-import" class="crm-form">
             <label>DOL source URL<input id="h1b-source" type="url" required value="https://www.dol.gov/agencies/eta/foreign-labor/performance"></label>
             <label>Date you captured the source<input id="h1b-captured" type="date" required></label>

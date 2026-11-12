@@ -106,6 +106,17 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 413)
 
+    def test_dol_refresh_requires_explicit_consent_and_existing_session(self):
+        url = 'https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx'
+        payload = {'source_url': url, 'acknowledged': True}
+        with patch('career_agent.h1b.H1BResearch.refresh_dol', return_value={'added': 1}) as refresh:
+            self.assertEqual(self.call('POST', '/api/h1b/refresh-dol', payload, token='bad').status_code, 403)
+            self.assertEqual(self.call('POST', '/api/h1b/refresh-dol', {**payload, 'acknowledged': False}).status_code, 422)
+            self.assertEqual(self.call('POST', '/api/h1b/refresh-dol', payload, headers={'Origin': 'https://example.invalid'}).status_code, 403)
+            refresh.assert_not_called()
+            self.assertEqual(self.call('POST', '/api/h1b/refresh-dol', payload).json()['added'], 1)
+            refresh.assert_called_once()
+
     def test_dol_workbook_upload_is_bounded_authorized_and_atomic(self):
         try:
             from openpyxl import Workbook

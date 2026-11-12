@@ -329,6 +329,19 @@ class H1BBrowserTests(unittest.TestCase):
                             page.get_by_role('button', name='Import records locally', exact=True).click()
                             expect(page.locator('#h1b-status')).to_contain_text('1 added')
                             expect(page.locator('#h1b-coverage')).to_contain_text('2 imported H-1B cases')
+                            import hashlib
+                            content = buffer.getvalue()
+                            def fake_download(_url, _hosts, destination, **_kwargs):
+                                Path(destination).write_bytes(content)
+                                return {'bytes': len(content), 'sha256': hashlib.sha256(content).hexdigest()}
+                            with patch('career_agent.public_sources.public_download', side_effect=fake_download):
+                                page.locator('#h1b-refresh-url').fill('https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx')
+                                page.locator('#h1b-refresh-consent').check()
+                                page.get_by_role('button', name='Download and import DOL workbook').click()
+                                expect(page.locator('#h1b-status')).to_contain_text('1 updated')
+                                page.get_by_text('Recent DOL import history (up to 10)').click()
+                                expect(page.locator('#h1b-coverage')).to_contain_text('downloaded over DOL HTTPS')
+                                expect(page.locator('#h1b-coverage')).to_contain_text('original-file SHA-256')
                         page.get_by_text('USCIS employer decisions: refresh or import', exact=True).click()
                         page.locator('#uscis-source').fill(URL)
                         page.locator('#uscis-year').fill('2025')
