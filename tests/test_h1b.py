@@ -614,6 +614,17 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(self.research.search("%' OR 1=1 --")['company_total'], 0)
         self.assertFalse(self.research.coverage()['complete'])
 
+    def test_employer_lookup_does_not_scan_jobs_and_keeps_distinct_names(self):
+        self.ingest([{'EMPLOYER_NAME': 'Example, Inc.'}, {'EMPLOYER_NAME': 'Example Inc'}])
+        with patch.object(self.store, 'list_jobs', side_effect=AssertionError('job scan is not needed')), \
+             patch.object(self.research, 'company', side_effect=AssertionError('full history is not needed')):
+            result = self.research.search_employers('Example Inc', name_mode='punctuation')
+        self.assertEqual({c['employer'] for c in result['companies']}, {'Example, Inc.', 'Example Inc'})
+        self.assertEqual(result['company_total'], 2)
+        self.assertNotIn('jobs', result)
+        self.assertIsNone(result['next_offset'])
+        with self.assertRaises(ValueError): self.research.search_employers('--', name_mode='punctuation')
+
     def test_punctuation_search_suggests_names_without_merging_entities(self):
         self.ingest([{'EMPLOYER_NAME': 'Example, Inc.'}, {'EMPLOYER_NAME': 'Example Inc'}])
         literal = self.research.search('Example Inc')
@@ -652,6 +663,11 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual((first['company_total'], first['next_offset'], len(first['companies'])), (27, 25, 25))
         self.assertEqual((second['company_total'], second['next_offset'], len(second['companies'])), (27, None, 2))
         self.assertFalse({c['employer'] for c in first['companies']} & {c['employer'] for c in second['companies']})
+        first_lookup = self.research.search_employers('Ex.ample', name_mode='punctuation')
+        next_lookup = self.research.search_employers('Ex.ample', 25, name_mode='punctuation')
+        self.assertEqual((first_lookup['company_total'], first_lookup['next_offset'], len(first_lookup['companies'])), (27, 25, 25))
+        self.assertEqual((next_lookup['company_total'], next_lookup['next_offset'], len(next_lookup['companies'])), (27, None, 2))
+        self.assertEqual([c['employer'] for c in first_lookup['companies']], [c['employer'] for c in first['companies']])
 
     def test_dol_certified_withdrawn_spelling_with_spaces_is_supported(self):
         self.ingest([{'CASE_STATUS': 'Certified - Withdrawn'}])
