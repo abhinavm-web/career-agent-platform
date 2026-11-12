@@ -16,6 +16,53 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_empty_history_explains_missing_import_then_shows_local_evidence(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'fictional.sqlite3'
+            job = Job.from_mapping({'company': 'Fictional Employer', 'title': 'Engineer',
+                                    'job_url': 'https://example.invalid/role', 'description': ''})
+            with Store(db) as store: store.add_jobs([job])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-h1b').click()
+                        page.locator('#h1b-query').fill('Fictional Employer')
+                        page.get_by_role('button', name='Search company records and jobs').click()
+                        results = page.locator('#h1b-results')
+                        expect(results).to_contain_text('No DOL LCA or USCIS records have been imported')
+                        expect(results).to_contain_text('No DOL LCA records have been imported')
+                        expect(results).not_to_contain_text('Recent certified LCA cases')
+                        expect(results.get_by_role('link', name='Go to data administration')).to_have_attribute('href', '#h1b-data-admin-heading')
+                        page.get_by_text('Import public DOL LCA records', exact=True).click()
+                        page.locator('#h1b-captured').fill('2025-06-01')
+                        page.locator('#h1b-file').set_input_files({'name': 'fictional.csv', 'mimeType': 'text/csv',
+                            'buffer': lca_csv([{'EMPLOYER_NAME': 'Fictional Employer'}]).encode()})
+                        page.locator('#h1b-consent').check()
+                        page.get_by_role('button', name='Import records locally', exact=True).click()
+                        expect(page.locator('#h1b-import-status')).to_contain_text('1 added')
+                        page.get_by_role('button', name='Search company records and jobs').click()
+                        expect(results).to_contain_text('Certified LCA cases in imported data since FY')
+                        expect(results).to_contain_text('No USCIS snapshots have been imported')
+                        expect(results).not_to_contain_text('No DOL LCA or USCIS records have been imported')
+                        with Store(db) as store:
+                            self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM h1b_lca').fetchone()[0], 1)
+                    finally: browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_dol_progress_is_local_visible_and_announced_by_phase(self):
         import uvicorn
         from unittest.mock import patch

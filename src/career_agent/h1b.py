@@ -409,10 +409,14 @@ class H1BResearch:
         rows = self.conn.execute('SELECT fiscal_year,case_status,COUNT(*) AS cases FROM h1b_lca WHERE employer_key=? AND fiscal_year>=? GROUP BY fiscal_year,case_status ORDER BY fiscal_year DESC,case_status',
                                  (employer_key(name), settings['min_year'])).fetchall()
         recent = self.conn.execute('SELECT case_number,employer,fiscal_year,decision_date,case_status,city,state,job_title,source_url,captured_on FROM h1b_lca WHERE employer_key=? ORDER BY decision_date DESC,case_number LIMIT 20', (employer_key(name),)).fetchall()
+        has_data = bool(self.conn.execute('SELECT EXISTS(SELECT 1 FROM h1b_lca)').fetchone()[0])
+        data_status = ('no_data' if not has_data else 'no_exact_match' if not recent else
+                       'outside_window' if not rows else 'in_window')
         return {'employer': name, 'match': 'exact_case_whitespace_only',
                 'uscis': self.uscis.company(name, settings['min_year']),
                 'counts': [dict(row) for row in rows], 'records': [dict(row) for row in recent],
-                'record_limit': 20, 'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
+                'record_limit': 20, 'min_year': settings['min_year'], 'lca_data_status': data_status,
+                'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
 
     def employer_link(self, job_id):
         row = self.conn.execute('SELECT revision,employer,source_note,changed_at FROM h1b_employer_links WHERE job_id=? ORDER BY revision DESC LIMIT 1', (job_id,)).fetchone()

@@ -148,5 +148,8 @@ class USCISRecords:
         rows = self.conn.execute('SELECT e.*,s.data_as_of,s.retrieved_at,s.source_url,s.transport,s.sha256 FROM uscis_employers e JOIN uscis_snapshots s USING(fiscal_year) WHERE employer_key=? AND fiscal_year>=? ORDER BY fiscal_year DESC,state,city,row_key', (employer_key(name), min_year)).fetchall()
         keys = ('initial_approval', 'initial_denial', 'continuing_approval', 'continuing_denial')
         totals = {key: sum(row[key] for row in rows) if rows and all(row[key] is not None for row in rows) else None for key in keys}
-        return {'totals': totals, 'records': [dict(row) for row in rows],
+        snapshots = self.conn.execute('SELECT EXISTS(SELECT 1 FROM uscis_snapshots), EXISTS(SELECT 1 FROM uscis_snapshots WHERE fiscal_year>=?)', (min_year,)).fetchone()
+        data_status = ('no_data' if not snapshots[0] else 'outside_window' if not snapshots[1] else
+                       'no_exact_match' if not rows else 'in_window')
+        return {'totals': totals, 'records': [dict(row) for row in rows], 'data_status': data_status, 'min_year': min_year,
                 'warning': 'First-decision historical counts, not current vacancies or individual eligibility. Initial/continuing categories are not new-cap/transfer categories. Missing or suppressed counts remain unknown. Reporting cut-off dates are user-supplied from the release.'}
