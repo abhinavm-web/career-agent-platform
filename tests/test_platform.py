@@ -85,6 +85,29 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(set(result.candidate_skills_not_mentioned_in_posting), {"AWS", "Python"})
         self.assertIn("does not establish a qualification gap", ' '.join(result.reasons))
 
+    def test_duplicate_skill_spellings_do_not_inflate_score(self):
+        from dataclasses import replace
+        profile = replace(self.profile, skills=('Python', ' python ', 'PYTHON', 'AWS', '  '))
+        result = score_job(sample_job('Python experience'), profile)
+        baseline = score_job(sample_job('Python experience'), replace(self.profile, skills=('Python', 'AWS')))
+        self.assertEqual(result.score, baseline.score)
+        self.assertEqual(result.matched_skills, ('Python',))
+        self.assertEqual(result.candidate_skills_not_mentioned_in_posting, ('AWS',))
+        self.assertIn('Profile skills mentioned: 1/2 (25/50)', result.reasons)
+        self.assertEqual(profile.skills, ('Python', ' python ', 'PYTHON', 'AWS', '  '))
+
+    def test_duplicate_multiword_skills_use_same_whitespace_as_matching(self):
+        from dataclasses import replace
+        profile = replace(self.profile, skills=('Machine Learning', 'machine   learning', 'C', 'C++'))
+        result = score_job(sample_job('Machine\tLearning and C++ experience'), profile)
+        self.assertEqual(result.matched_skills, ('Machine Learning', 'C++'))
+        self.assertEqual(result.candidate_skills_not_mentioned_in_posting, ('C',))
+        self.assertIn('Profile skills mentioned: 2/3 (33/50)', result.reasons)
+        reversed_profile = replace(profile, skills=('machine   learning', 'Machine Learning', 'C', 'C++'))
+        reversed_result = score_job(sample_job('Machine Learning and C++ experience'), reversed_profile)
+        self.assertEqual(reversed_result.matched_skills, ('machine   learning', 'C++'))
+        self.assertEqual(reversed_result.score, result.score)
+
     def test_explanation_names_matching_skills_and_unknown_location(self):
         from dataclasses import replace
         result = score_job(replace(sample_job("Python experience"), location="", remote=False), self.profile)
