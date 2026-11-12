@@ -756,6 +756,31 @@ test("pasted resume lines enter the editor without saving or verifying", async (
   assert.equal(harness.get("resume-use-line").disabled, true);
 });
 
+test("resume suggestions use explicit headings, preserve duplicate lines, and require manual save", async () => {
+  const h = createHarness();
+  await flush();
+  await h.get("nav-profile").click();
+  h.get("resume-text").value = "EXPERIENCE:\nBuilt a fictional dashboard.\nSKILLS\nPython\nEDUCATION\nFictional degree\nSUMMARY\nBuilt a fictional dashboard.";
+  h.get("resume-extract").click();
+  const options = h.get("resume-lines").children;
+  assert.equal(options.length, 4);
+  assert.match(options[1].textContent, /^Suggested skills/);
+  assert.match(options[3].textContent, /^Unclassified/);
+  h.get("resume-lines").value = options[1].value;
+  h.get("resume-use-line").click();
+  assert.equal(h.get("fact-category").value, "skills");
+  assert.equal(h.get("fact-statement").value, "Python");
+  assert.equal(h.getWorkspace().facts.length, 0);
+  h.get("resume-lines").value = options[3].value;
+  h.get("resume-use-line").click();
+  assert.match(h.get("resume-status").textContent, /No category was inferred/);
+  assert.equal(h.get("fact-category").value, "experience");
+  assert.equal(h.getWorkspace().facts.length, 0);
+  h.get("resume-text").handlers.input();
+  h.get("resume-use-line").click();
+  assert.match(h.get("resume-status").textContent, /Choose a suggested statement/);
+});
+
 test("career profile can add and separately verify a fact through the browser controls", async () => {
   const harness = createHarness();
   await flush();

@@ -262,13 +262,13 @@
           <div id="career-facts-list" aria-label="Saved career facts"></div>
           <details>
             <summary>Import and review résumé text</summary>
-            <p class="muted">Paste text or extract it locally from a PDF, Word or UTF-8 text file (up to 2 MB). Choose a line to review as a fact. Nothing is sent to a model, saved or verified automatically. Scanned PDFs need OCR and are not supported.</p>
+            <p class="muted">Paste text or extract it locally from a PDF, Word or UTF-8 text file (up to 2 MB). Recognized section headings suggest a category for each line; choose a suggestion to review and edit as a fact. Nothing is sent to a model, saved or verified automatically. Scanned PDFs need OCR and are not supported.</p>
             <label class="block-label">Résumé file<input id="resume-file" type="file" accept=".pdf,.docx,.txt"></label>
             <button id="resume-file-extract" type="button" class="button">Extract file locally</button>
             <p id="resume-file-status" role="status" aria-live="polite"></p>
             <label class="block-label">Résumé text<textarea id="resume-text" rows="5" maxlength="20000"></textarea></label>
-            <button id="resume-extract" type="button" class="button">Extract lines</button>
-            <label class="block-label">Extracted line<select id="resume-lines"></select></label>
+            <button id="resume-extract" type="button" class="button">Find fact suggestions</button>
+            <label class="block-label">Suggested statement<select id="resume-lines"></select></label>
             <button id="resume-use-line" type="button" class="button" disabled>Review as a career fact</button>
             <p id="resume-status" role="status" aria-live="polite"></p>
           </details>
