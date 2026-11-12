@@ -105,7 +105,7 @@ class DuplicateBrowserTests(unittest.TestCase):
                         page.get_by_role('button', name='Find possible duplicates').click()
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
                         expect(page.locator('#detail-panel')).to_contain_text('Submission recorded')
-                        page.wait_for_function('window.packetSettled === true')
+                        page.wait_for_function('() => window.packetSettled === true')
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
                         page.get_by_role('button', name='Open other saved opportunity').click()
                         expect(page.locator('#detail-panel')).to_contain_text('first-board')
