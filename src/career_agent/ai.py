@@ -103,9 +103,17 @@ def _endpoint(value, provider):
 def catalog():
     return [{'route': name, 'provider': r['provider'], 'model': r['model'],
              'destination': r.get('base_url', r.get('region', 'https://api.anthropic.com')),
+             'route_fingerprint': route_fingerprint(name, r),
              'max_tokens': r.get('max_tokens', 1500), 'daily_request_limit': r.get('daily_request_limit'),
              'record_history': r.get('record_history', False) or 'daily_request_limit' in r,
              **_readiness(r)} for name, r in routes().items()]
+
+
+def route_fingerprint(name, route):
+    """Bind consent to the displayed destination and model, without exposing secrets."""
+    identity = {'route': name, 'provider': route['provider'], 'model': route['model'],
+                'destination': route.get('base_url', route.get('region', 'https://api.anthropic.com'))}
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=True).encode('ascii')).hexdigest()
 
 
 def _route(route_name):

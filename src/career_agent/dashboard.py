@@ -333,15 +333,22 @@ def create_app(config: DashboardConfig) -> FastAPI:
             history = AIHistory(store)
             return {"recent": history.recent(), "today": history.today()}
 
+    def route_consent_fingerprint(data):
+        fingerprint = data.get('route_fingerprint')
+        if not isinstance(fingerprint, str) or not re.fullmatch(r'[a-f0-9]{64}', fingerprint):
+            raise ValueError('Reload model routes and confirm the destination before sharing')
+        return fingerprint
+
     @app.post("/api/ai/test-route")
     async def ai_test_route(request: Request):
         data = await request.json()
-        if not isinstance(data, dict) or set(data) != {"route", "acknowledged"} or data["acknowledged"] is not True:
+        if not isinstance(data, dict) or set(data) != {"route", "route_fingerprint", "acknowledged"} or data["acknowledged"] is not True:
             raise ValueError("Confirm that the test contacts the selected provider and may incur charges")
+        fingerprint = route_consent_fingerprint(data)
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="An AI request is already running")
         try:
-            return await run_in_threadpool(run_recorded, config.db_path, data["route"], 'route_test', ai.test_route, data["route"], True)
+            return await run_in_threadpool(run_recorded, config.db_path, data["route"], 'route_test', ai.test_route, data["route"], True, expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
 
@@ -350,6 +357,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         data = await request.json()
         if not isinstance(data, dict) or data.get("acknowledged") is not True:
             raise ValueError("Confirm sending your question to the selected provider")
+        fingerprint = route_consent_fingerprint(data)
         include_facts = data.get("include_verified_facts", False)
         if not isinstance(include_facts, bool):
             raise ValueError("Choose whether to share verified facts")
@@ -364,7 +372,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                               if fact["verified_by_candidate"]}
                 elif config.facts_path:
                     claims = FactBank.load(config.facts_path).public_claims()
-            return await run_in_threadpool(run_recorded, config.db_path, data.get("route"), 'career_chat', ai.profile_chat, data.get("route"), data.get("message"), claims, True, data.get("history", []))
+            return await run_in_threadpool(run_recorded, config.db_path, data.get("route"), 'career_chat', ai.profile_chat, data.get("route"), data.get("message"), claims, True, data.get("history", []), expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
 
@@ -380,13 +388,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.post("/api/workspace/ai-resume-suggestions")
     async def ai_resume_suggestions(request: Request):
         data = await request.json()
-        if not isinstance(data, dict) or set(data) != {'route', 'resume_text', 'acknowledged'} or data['acknowledged'] is not True:
+        if not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'resume_text', 'acknowledged'} or data['acknowledged'] is not True:
             raise ValueError('Confirm sending the résumé text to the selected provider')
+        fingerprint = route_consent_fingerprint(data)
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail='An AI request is already running')
         try:
             return await run_in_threadpool(run_recorded, config.db_path, data['route'], 'resume_fact_suggestions',
-                                           ai.resume_fact_suggestions, data['route'], data['resume_text'], True)
+                                           ai.resume_fact_suggestions, data['route'], data['resume_text'], True,
+                                           expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
 
@@ -395,13 +405,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
         data = await request.json()
         if not isinstance(data, dict) or data.get('acknowledged') is not True:
             raise ValueError('Confirm sending this posting and verified fact statements to the selected provider')
+        fingerprint = route_consent_fingerprint(data)
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail='An AI analysis is already running')
         try:
             with Store(config.db_path) as store:
                 job = _get_job(store, job_id)
             bank = configured_facts()
-            return await run_in_threadpool(run_recorded, config.db_path, data.get('route'), 'requirements', ai.analyze, job, bank, data.get('route'), True)
+            return await run_in_threadpool(run_recorded, config.db_path, data.get('route'), 'requirements', ai.analyze, job, bank, data.get('route'), True, expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
 
@@ -410,13 +421,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
         data = await request.json()
         if not isinstance(data, dict) or data.get('acknowledged') is not True:
             raise ValueError('Confirm sending this posting and verified fact statements to the selected provider')
+        fingerprint = route_consent_fingerprint(data)
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail='An AI request is already running')
         try:
             with Store(config.db_path) as store:
                 job = _get_job(store, job_id)
             bank = configured_facts()
-            return await run_in_threadpool(run_recorded, config.db_path, data.get('route'), 'resume_suggestions', ai.tailoring_suggestions, job, bank, data.get('route'), True)
+            return await run_in_threadpool(run_recorded, config.db_path, data.get('route'), 'resume_suggestions', ai.tailoring_suggestions, job, bank, data.get('route'), True, expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
 

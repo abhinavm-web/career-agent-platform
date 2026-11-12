@@ -56,6 +56,8 @@ AWS uses the normal SDK credential chain (prefer a signed-in profile/role). No c
 
 Open **AI analysis** in the workspace navigation, select a route and job, and explicitly consent per request. You can also open analysis from an opportunity's detail; it carries the selected job into the analysis screen. At least one verified career fact is required. The selected destination is shown. No provider is contacted merely by loading the page or configuration.
 
+Each dashboard request is bound to the displayed route name, provider, model and destination. If those settings change after routes were loaded, the request is rejected before contacting a provider or consuming a local request allowance. Reload routes, inspect the destination and consent again. The check cannot establish whether a loopback server forwards data elsewhere or whether provider-side settings have changed.
+
 **Test model connection** works without a saved job or verified facts. Refresh routes, select one, and separately consent to send a fixed synthetic prompt. It sends no candidate or job data; cloud requests may incur charges. The output is not displayed or saved. A successful response does not prove future availability, response quality, or provider privacy settings. The displayed SDK and credential indicators are local checks only; AWS credentials remain unknown until used. They do not verify a key or model access. If a route or key changes, refresh routes and restart the server when changing its environment.
 
 Alternatively, use the CLI:

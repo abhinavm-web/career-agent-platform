@@ -144,7 +144,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
         suggested_facts: [{id: 'fact-01', statement: 'Verified fictional Python work', matched_keywords: ['Python']}]},
         {category: 'preferred', quote: '- Rust', suggested_facts: []}]
     }));
-    if (url === "/api/ai/routes") return Promise.resolve(ok({routes: [{route: "local", provider: "ollama", model: "fictional", destination: "loopback"}]}));
+    if (url === "/api/ai/routes") return Promise.resolve(ok({routes: [{route: "local", provider: "ollama", model: "fictional", destination: "loopback", route_fingerprint: "a".repeat(64)}]}));
     if (url === "/api/workspace/chat") {
       chatRequests.push(JSON.parse(options.body));
       return Promise.resolve(ok({answer: "Fictional suggestion", provider: "ollama", model: "fictional"}));
@@ -362,7 +362,7 @@ test('provider test needs explicit consent and sends no private data', async () 
   const calls = [];
   const fetch = async (url, options) => {
     calls.push({url, options});
-    const payload = url === '/api/ai/routes' ? {routes: [{route: 'local', provider: 'ollama', model: 'fictional', destination: 'loopback', max_tokens: 1500, sdk_installed: true, credential_status: 'not_required'}]}
+    const payload = url === '/api/ai/routes' ? {routes: [{route: 'local', provider: 'ollama', model: 'fictional', destination: 'loopback', route_fingerprint: 'a'.repeat(64), max_tokens: 1500, sdk_installed: true, credential_status: 'not_required'}]}
       : url.startsWith('/api/jobs?') ? {jobs: []}
       : url === '/api/settings' ? {facts_configured: false}
       : {notice: 'Provider responded to synthetic test.'};
@@ -379,7 +379,7 @@ test('provider test needs explicit consent and sends no private data', async () 
   get('ai-test-consent').checked = true;
   await get('ai-test-route').click();
   const request = calls.find((call) => call.url === '/api/ai/test-route');
-  assert.deepEqual(JSON.parse(request.options.body), {route: 'local', acknowledged: true});
+  assert.deepEqual(JSON.parse(request.options.body), {route: 'local', route_fingerprint: 'a'.repeat(64), acknowledged: true});
   assert.match(get('ai-test-status').textContent, /synthetic test/);
   assert.equal(get('ai-test-consent').checked, false);
 });

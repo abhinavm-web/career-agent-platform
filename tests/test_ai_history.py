@@ -54,7 +54,8 @@ class AIHistoryTests(unittest.TestCase):
     def test_snapshot_used_for_model_even_if_config_changes(self):
         routes = {'local': self.route}
         with patch('career_agent.ai.routes', side_effect=[routes, {}]):
-            value = run_recorded(self.db, 'local', 'route_test', lambda: ai._route('local'))
+            value = run_recorded(self.db, 'local', 'route_test', lambda: ai._route('local'),
+                                 expected_route_fingerprint=ai.route_fingerprint('local', self.route))
         self.assertEqual(value, self.route)
 
     def test_unknown_route_invalid_purpose_and_zero_limit_do_not_invoke(self):

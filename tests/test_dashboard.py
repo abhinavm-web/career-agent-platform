@@ -13,6 +13,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from career_agent.application import load_packet
+from career_agent import ai
 from career_agent.models import CandidateProfile, Job
 from career_agent.storage import Store
 
@@ -239,10 +240,11 @@ class DashboardTests(unittest.TestCase):
             url = f'/api/jobs/{self.job.id}/ai-analysis'
             self.assertEqual(self.call('POST', url, {'route': 'local'}).status_code, 422)
             complete.assert_not_called()
-            self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
+            request = {'route': 'local', 'route_fingerprint': ai.route_fingerprint('local', route['local']), 'acknowledged': True}
+            self.assertEqual(self.call('POST', url, request).status_code, 200)
             with patch('career_agent.ai.complete', side_effect=ValueError('Provider unavailable')):
-                self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 422)
-            self.assertEqual(self.call('POST', url, {'route': 'local', 'acknowledged': True}).status_code, 200)
+                self.assertEqual(self.call('POST', url, request).status_code, 422)
+            self.assertEqual(self.call('POST', url, request).status_code, 200)
             self.assertFalse(self.packet_dir.exists())
 
     def test_ai_tailoring_is_consent_gated_and_read_only(self):
@@ -253,7 +255,7 @@ class DashboardTests(unittest.TestCase):
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
             self.assertEqual(self.call('POST', url, {'route': 'local'}).status_code, 422)
             complete.assert_not_called()
-            response = self.call('POST', url, {'route': 'local', 'acknowledged': True})
+            response = self.call('POST', url, {'route': 'local', 'route_fingerprint': ai.route_fingerprint('local', route['local']), 'acknowledged': True})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()['suggestions'][0]['fact_id'], 'experience-01')
         self.assertEqual(self.call('GET', '/api/workspace').json(), before)
@@ -266,12 +268,20 @@ class DashboardTests(unittest.TestCase):
         path = '/api/workspace/ai-resume-suggestions'
         before = self.call('GET', '/api/workspace').json()
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            fingerprint = self.call('GET', '/api/ai/routes').json()['routes'][0]['route_fingerprint']
             self.assertEqual(self.call('POST', path, {'route': 'local', 'resume_text': resume}).status_code, 422)
             complete.assert_not_called()
-            response = self.call('POST', path, {'route': 'local', 'resume_text': resume, 'acknowledged': True})
+            request = {'route': 'local', 'route_fingerprint': fingerprint, 'resume_text': resume, 'acknowledged': True}
+            changed_route = {'local': {**route['local'], 'base_url': 'http://127.0.0.1:1234/v1'}}
+            with patch('career_agent.ai.routes', return_value=changed_route):
+                changed = self.call('POST', path, request)
+                self.assertEqual(changed.status_code, 422)
+                self.assertIn('reload routes', changed.json()['detail'])
+                complete.assert_not_called()
+            response = self.call('POST', path, request)
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()['suggestions'], output['suggestions'])
-            self.assertEqual(self.call('POST', path, {'route': 'local', 'resume_text': resume, 'acknowledged': True}).status_code, 429)
+            self.assertEqual(self.call('POST', path, request).status_code, 429)
             self.assertEqual(complete.call_count, 1)
         self.assertEqual(self.call('GET', '/api/workspace').json(), before)
         history = self.call('GET', '/api/ai/history').json()
@@ -284,16 +294,18 @@ class DashboardTests(unittest.TestCase):
             path = '/api/ai/test-route'
             self.assertEqual(self.call('POST', path, {'route': 'local'}).status_code, 422)
             probe.assert_not_called()
-            self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 200)
+            request = {'route': 'local', 'route_fingerprint': ai.route_fingerprint('local', route['local']), 'acknowledged': True}
+            self.assertEqual(self.call('POST', path, request).status_code, 200)
             with patch('career_agent.dashboard.ai.test_route', side_effect=ValueError('unavailable')):
-                self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 422)
-            self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 200)
+                self.assertEqual(self.call('POST', path, request).status_code, 422)
+            self.assertEqual(self.call('POST', path, request).status_code, 200)
 
     def test_ai_history_limit_applies_across_dashboard_features(self):
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='OK') as complete:
-            self.assertEqual(self.call('POST', '/api/ai/test-route', {'route': 'local', 'acknowledged': True}).status_code, 200)
-            denied = self.call('POST', '/api/workspace/chat', {'route': 'local', 'message': 'Fictional private question', 'acknowledged': True})
+            fingerprint = ai.route_fingerprint('local', route['local'])
+            self.assertEqual(self.call('POST', '/api/ai/test-route', {'route': 'local', 'route_fingerprint': fingerprint, 'acknowledged': True}).status_code, 200)
+            denied = self.call('POST', '/api/workspace/chat', {'route': 'local', 'route_fingerprint': fingerprint, 'message': 'Fictional private question', 'acknowledged': True})
             self.assertEqual(denied.status_code, 429)
             self.assertEqual(complete.call_count, 1)
             history = self.call('GET', '/api/ai/history').json()
@@ -301,10 +313,32 @@ class DashboardTests(unittest.TestCase):
             self.assertEqual(history['recent'][0]['purpose'], 'route_test')
             self.assertNotIn('private question', json.dumps(history))
 
+    def test_changed_route_never_transmits_or_consumes_quota_across_ai_features(self):
+        local = {'provider': 'ollama', 'model': 'local-fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
+        cloud = {'provider': 'anthropic', 'model': 'cloud-fictional', 'daily_request_limit': 1}
+        cases = [
+            ('/api/ai/test-route', {}),
+            ('/api/workspace/chat', {'message': 'Fictional private question'}),
+            ('/api/workspace/ai-resume-suggestions', {'resume_text': 'Fictional private resume text.'}),
+            (f'/api/jobs/{self.job.id}/ai-analysis', {}),
+            (f'/api/jobs/{self.job.id}/ai-tailoring-suggestions', {}),
+        ]
+        with patch('career_agent.ai.routes', return_value={'selected': cloud}), patch('career_agent.ai.complete') as complete:
+            for path, extra in cases:
+                request = {'route': 'selected', 'route_fingerprint': ai.route_fingerprint('selected', local),
+                           'acknowledged': True, **extra}
+                with self.subTest(path=path):
+                    response = self.call('POST', path, request)
+                    self.assertEqual(response.status_code, 422)
+                    self.assertIn('reload routes', response.json()['detail'])
+            complete.assert_not_called()
+            self.assertEqual(self.call('GET', '/api/ai/history').json()['recent'], [])
+
     def test_profile_chat_sends_only_opted_in_verified_statements(self):
         path = '/api/workspace/chat'
         request = {'route': 'local', 'message': 'What should I highlight?'}
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        request['route_fingerprint'] = ai.route_fingerprint('local', route['local'])
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.dashboard.ai.profile_chat', return_value={
             'answer': 'Review your evidence.', 'route': 'local', 'provider': 'ollama', 'model': 'fictional'
         }) as chat:
