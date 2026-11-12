@@ -10,6 +10,7 @@ from pathlib import Path
 from career_agent.candidate import FactBank
 from career_agent.models import CandidateProfile, Job
 from career_agent.storage import Store
+from career_agent.scoring import constraint_evidence, score_job
 from career_agent.workspace import CandidateWorkspace, StaleRevision, blank_workspace
 
 try:
@@ -59,6 +60,30 @@ class WorkspaceModelTests(unittest.TestCase):
         self.assertEqual(updated["revision"], 1)
         self.assertFalse(updated["facts"][0]["verified_by_candidate"])
         self.assertEqual(self.ws.history()[0]["change_type"], "edited")
+
+    def test_explicit_constraints_persist_and_do_not_change_preference_score(self):
+        options = {**preferences(), "require_remote": True,
+                   "excluded_companies": [" example   TEST employer "]}
+        saved = self.ws.save(0, options, [])
+        self.assertEqual(self.ws.latest(), saved)
+        job = new_job()
+        evidence = constraint_evidence(job, saved["profile"])
+        self.assertEqual([row["status"] for row in evidence], ["unknown", "flagged"])
+        self.assertIn("not proof", evidence[0]["detail"])
+        self.assertIn("exactly matches", evidence[1]["detail"])
+        self.assertEqual(score_job(job, CandidateWorkspace.scoring_profile(saved)),
+                         score_job(job, CandidateWorkspace.scoring_profile({"profile": preferences()})))
+        with self.assertRaisesRegex(ValueError, "Include fully remote"):
+            self.ws.save(saved["revision"], {**options, "allow_remote": False}, [])
+        with self.assertRaisesRegex(ValueError, "excluded_companies"):
+            self.ws.save(saved["revision"], {**options, "excluded_companies": [""]}, [])
+
+    def test_constraint_evidence_never_assumes_unknown_employer_or_remote_scope(self):
+        job = Job.from_mapping({"company": "Other Inc", "title": "Role", "job_url": "https://example.invalid/role", "is_remote": True})
+        rows = constraint_evidence(job, {"require_remote": True, "excluded_companies": ["Other"]})
+        self.assertEqual([row["status"] for row in rows], ["source_marked", "unknown"])
+        self.assertIn("geographic eligibility", rows[0]["detail"])
+        self.assertIn("aliases", rows[1]["detail"])
 
     def test_fact_must_be_verified_in_separate_action(self):
         saved = self.ws.save(0, preferences(), [fact()])
@@ -195,6 +220,14 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/workspace").status_code, 403)
         self.assertEqual(self.api("GET", "/api/workspace", token="bad").status_code, 403)
         self.assertEqual(self.api("GET", "/api/workspace").status_code, 200)
+
+    def test_board_shows_saved_constraints_separately_from_score(self):
+        profile = {**preferences(), "require_remote": True, "excluded_companies": ["Example Test Employer"]}
+        result = self.api("PUT", "/api/workspace", {"expected_revision": 0, "profile": profile, "facts": []})
+        self.assertEqual(result.status_code, 200, result.text)
+        row = self.api("GET", "/api/jobs").json()["jobs"][0]
+        self.assertEqual([item["status"] for item in row["constraint_evidence"]], ["unknown", "flagged"])
+        self.assertTrue(row["fit_reasons"])
 
     def test_legacy_import_only_when_explicit_and_does_not_edit_source(self):
         data = self.api("GET", "/api/workspace").json()["workspace"]

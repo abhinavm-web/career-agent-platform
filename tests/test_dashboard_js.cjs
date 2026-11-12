@@ -306,6 +306,19 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test('hard constraint warnings appear separately from the score', async () => {
+  const job = {...fakeJob(ID_A, 'Role Alpha'), constraint_evidence: [
+    {constraint: 'Excluded employer names', status: 'flagged', detail: 'Exact name match'},
+    {constraint: 'Fully remote required', status: 'unknown', detail: 'Remote status not confirmed'}
+  ]};
+  const h = createHarness({jobsOverride: [job]}); await flush();
+  assert.match(h.get('job-list').textContent, /Constraint flagged/);
+  h.get('job-list').children[0].click();
+  assert.match(h.get('detail-panel').textContent, /Excluded employer names — Flagged/);
+  assert.match(h.get('detail-panel').textContent, /Fully remote required — Unknown/);
+  assert.match(h.get('detail-panel').textContent, /separate from the preference score/);
+});
+
 test('fit evidence presents untrusted excerpts and unknowns without claiming qualifications', async () => {
   const h = createHarness(); await flush();
   h.get('job-list').children[0].click();

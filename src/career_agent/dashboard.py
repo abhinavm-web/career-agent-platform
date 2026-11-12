@@ -39,7 +39,7 @@ from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
-from .scoring import score_job
+from .scoring import constraint_evidence, score_job
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
@@ -200,7 +200,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return False
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
-                 records: tuple, workspace_revision: int, posting_checks: PostingChecks) -> dict:
+                 records: tuple, workspace_revision: int, posting_checks: PostingChecks,
+                 constraints: dict) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
@@ -222,6 +223,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "application_stage": store.stage_of(job.id),
             "fit_score": fit.score if fit is not None else None,
             "fit_reasons": list(fit.reasons) if fit is not None else [],
+            "constraint_evidence": constraint_evidence(job, constraints),
             "sponsorship_status": sponsorship["status"],
             "sponsorship_reason": sponsorship["reason"],
             "packet_available": packet is not None,
@@ -543,7 +545,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             store.connection.execute('BEGIN')
             jobs, next_before = store.job_page(limit=limit, before=before)
             items = [
-                job_view(store, job, profile, records, workspace["revision"], posting_checks)
+                job_view(store, job, profile, records, workspace["revision"], posting_checks,
+                         workspace["profile"] if workspace["revision"] else {})
                 for job in jobs
             ]
         return {"jobs": items, "total": len(items), "next_before": next_before}

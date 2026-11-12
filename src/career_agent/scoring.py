@@ -38,6 +38,29 @@ def contains_location(location: str, preference: str) -> bool:
     return bool(phrase and re.search(r"(?<!\w)" + phrase + r"(?!\w)", location, re.IGNORECASE))
 
 
+def constraint_evidence(job: Job, profile: dict) -> list[dict[str, str]]:
+    """Show explicit candidate constraints without inferring a rejection from absent data."""
+    results = []
+    if profile.get("require_remote", False):
+        results.append({
+            "constraint": "Fully remote required",
+            "status": "source_marked" if job.remote else "unknown",
+            "detail": ("The saved source marks this job remote. Confirm remote scope and geographic eligibility with the employer."
+                       if job.remote else "The saved source does not confirm remote work. This is not proof the role is on-site."),
+        })
+    exclusions = profile.get("excluded_companies", [])
+    if exclusions:
+        normalize = lambda value: " ".join(value.casefold().split())
+        exact = next((name for name in exclusions if normalize(name) == normalize(job.company)), None)
+        results.append({
+            "constraint": "Excluded employer names",
+            "status": "flagged" if exact else "unknown",
+            "detail": (f"The saved employer name exactly matches your exclusion: {exact}. Review this role before applying."
+                       if exact else "No exact excluded name matched. Affiliates, aliases and legal identities are not checked."),
+        })
+    return results
+
+
 def score_job(job: Job, profile: CandidateProfile) -> Fit:
     """Score title (40), existing profile-skill mentions (50), and location (10).
 
