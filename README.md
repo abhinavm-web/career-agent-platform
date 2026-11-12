@@ -34,6 +34,10 @@ and `.local/packets`, separate from the fictional demo in
 [Local development](docs/LOCAL_DEVELOPMENT.md). These local files are plaintext;
 never commit them, your résumé, or credentials to Git.
 
+The **Get started** panel tracks profile setup and your first opportunity. Its
+search button opens the JobSpy form; no search runs until you explicitly consent
+and submit it. You can also add an opportunity manually.
+
 1. Open **Career profile**, enter your goals and review extracted résumé lines.
    Save each accurate statement and then explicitly verify it. AI-suggested wording
    also needs your review and separate verification.

@@ -117,11 +117,17 @@
     const ready = s.profile_configured && s.facts_configured && targets && skills;
     el.textContent = ready ? "Candidate profile configured" : "Profile setup incomplete";
     el.classList.toggle("warn", !ready);
-    byId("profile-prompt").hidden = ready;
+    const hasJobs = (state.overview.total_jobs ?? 0) > 0;
+    byId("profile-prompt").hidden = ready && hasJobs;
     byId("setup-progress").textContent = (s.profile_configured ? "Profile name saved" : "Add your name") +
       " · " + (targets ? "Target roles saved" : "Add target roles for matching") +
       " · " + (skills ? "Skills saved" : "Add skills for matching") +
       " · " + (s.facts_configured ? "Career facts verified" : "Verify a career fact for AI analysis and drafts") + ".";
+    byId("setup-jobs-progress").textContent = hasJobs ? "A saved opportunity is available to review." :
+      "Find or add a first opportunity. External searches require your consent.";
+    byId("open-profile").hidden = ready;
+    byId("setup-find-jobs").hidden = hasJobs;
+    byId("setup-add-job").hidden = hasJobs;
   }
 
   function postingDeadline(value) {
@@ -1575,6 +1581,11 @@
   byId("nav-automation").addEventListener("click", () => {showScreen("automation"); byId("automation-panel").open = true; byId("automation-refresh").click();});
   byId("nav-ai").addEventListener("click", () => {showScreen("ai"); byId("ai-panel").open = true; byId("ai-load").click();});
   byId("open-profile").addEventListener("click", () => byId("nav-profile").click());
+  byId("setup-find-jobs").addEventListener("click", () => {
+    byId("discovery-panel").open = true;
+    byId("discover-query").focus();
+  });
+  byId("setup-add-job").addEventListener("click", () => byId("show-add-job").click());
   byId("ai-open-profile").addEventListener("click", () => byId("nav-profile").click());
   byId("discover-form").addEventListener("submit", async (event) => {
     event.preventDefault();
