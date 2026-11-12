@@ -4,7 +4,7 @@ Open **H-1B research** in the local dashboard, or select **Research H-1B records
 
 The opportunity browser works immediately with saved job descriptions, without imported government records. Filter by role, employer, location, and approximate posting signal; search results are paginated and respect the saved new-sponsorship/transfer preference. Use **Find more jobs with JobSpy** to open discovery. Explicit positive, restrictive, unclear and absent wording are signals from the saved description, not verified employer commitments; check the original posting and confirm the specific H-1B path. The browser does not fetch jobs by itself.
 
-Search uses a company-name substring against imported legal employer names and companies in stored jobs. Employer results are paginated in groups of 25. Job results include matching stored opportunities beyond the board's 500-job display limit. Changing the query clears earlier results. No automatic external search runs. Use the Opportunity board's explicit job discovery to add postings separately.
+Search uses a company-name substring against imported legal employer names and companies in stored jobs. Employer results are paginated in groups of 25, including the name lookup inside each job's association form. Choosing a name fills the form; a source note and explicit confirmation are still required to save it. Job results include matching stored opportunities beyond the board's 500-job display limit. Changing the query clears earlier results. No automatic external search runs. Use the Opportunity board's explicit job discovery to add postings separately.
 
 ## Load public records
 

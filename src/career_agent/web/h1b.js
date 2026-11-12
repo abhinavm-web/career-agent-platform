@@ -234,16 +234,17 @@
     const candidates = node("div");
     let lookupSequence = 0;
     lookupInput.addEventListener("input", () => { lookupSequence++; candidates.replaceChildren(); lookupStatus.textContent = "Search to update possible names."; });
-    lookup.addEventListener("click", async () => {
+    async function lookupPage(query, offset) {
       if (lookup.disabled) return;
-      const query = lookupInput.value;
       const request = ++lookupSequence;
       lookup.disabled = true; candidates.replaceChildren(); lookupStatus.textContent = "Searching local records…";
       try {
-        const result = await api("/api/h1b/search?q=" + encodeURIComponent(query));
+        const result = await api("/api/h1b/search?q=" + encodeURIComponent(query) + "&offset=" + offset);
         if (!card.isConnected) return;
         if (request !== lookupSequence) return;
-        lookupStatus.textContent = "Possible names only; compare legal entity and location before selecting. " + result.company_total + " results; first 25 shown.";
+        const first = result.companies.length ? offset + 1 : 0;
+        const last = result.companies.length ? offset + result.companies.length : 0;
+        lookupStatus.textContent = "Possible names only; compare legal entity and location before selecting. Showing " + first + "–" + last + " of " + result.company_total + ".";
         for (const company of result.companies) {
           const select = node("button", "Use " + company.employer); select.type = "button";
           select.addEventListener("click", () => { employerInput.value = company.employer; employerInput.focus(); });
@@ -251,9 +252,24 @@
           if (company.records?.length) entry.append(document.createTextNode(" · Example filing location: " + company.records[0].city + ", " + company.records[0].state));
           candidates.append(entry);
         }
+        if (offset > 0 || Number.isInteger(result.next_offset)) {
+          const pages = node("div");
+          if (offset > 0) {
+            const previous = node("button", "Previous employer names"); previous.type = "button";
+            previous.addEventListener("click", () => lookupPage(query, Math.max(0, offset - 25)));
+            pages.append(previous);
+          }
+          if (Number.isInteger(result.next_offset)) {
+            const next = node("button", "Next employer names"); next.type = "button";
+            next.addEventListener("click", () => lookupPage(query, result.next_offset));
+            pages.append(next);
+          }
+          candidates.append(pages);
+        }
       } catch (error) { if (request === lookupSequence) lookupStatus.textContent = error.message; }
       finally { lookup.disabled = false; }
-    });
+    }
+    lookup.addEventListener("click", () => lookupPage(lookupInput.value, 0));
     const employerLabel = node("label", "Imported legal employer name");
     employerLabel.className = "field";
     const employerInput = node("input"); employerInput.required = true; employerInput.maxLength = 300; employerInput.value = association?.employer || ""; employerLabel.append(employerInput);
