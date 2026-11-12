@@ -528,6 +528,26 @@ class H1BBrowserTests(unittest.TestCase):
                         transfer.get_by_role('button', name='Load policy notes').click()
                         expect(transfer).to_contain_text('Fictional recruiter')
                         expect(transfer).to_contain_text('Only if approved.')
+                        page.once('dialog', lambda dialog: dialog.dismiss())
+                        transfer.get_by_role('button', name='Delete note').click()
+                        expect(transfer).to_contain_text('Fictional recruiter')
+                        page.once('dialog', lambda dialog: dialog.accept())
+                        transfer.get_by_role('button', name='Delete note').click()
+                        expect(transfer).to_contain_text('Policy note deleted from the current workspace.')
+                        expect(transfer).not_to_contain_text('Fictional recruiter')
+                        from career_agent.h1b import H1BResearch
+                        with Store(db) as store:
+                            job = Job.from_mapping({'company': 'Example Inc.', 'title': 'Transfer role',
+                                'job_url': 'https://example.invalid/transfer', 'description': 'H-1B transfers only.'})
+                            research = H1BResearch(store)
+                            for i in range(51):
+                                research.add_policy_note(job, {'discussed_on': '2025-05-01', 'source': 'Fictional',
+                                    'pathway': 'transfer', 'response': 'unclear', 'statement': f'Older note {i}', 'acknowledged': True})
+                        transfer.get_by_role('button', name='Load policy notes').click()
+                        expect(transfer).not_to_contain_text('Older note 0')
+                        transfer.get_by_role('button', name='Load older notes').click()
+                        expect(transfer).to_contain_text('Older note 0')
+                        expect(transfer.get_by_role('button', name='Load older notes')).to_be_hidden()
                         page.locator('#h1b-opportunities-category').select_option('review')
                         page.get_by_role('button', name='Find opportunities', exact=True).click()
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('Unknown role')

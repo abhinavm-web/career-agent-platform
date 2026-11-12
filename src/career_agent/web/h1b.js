@@ -186,27 +186,47 @@
   }
   function policyNotes(job) {
     const details = node("details");
-    details.append(node("summary", "Recruiter or employer policy notes"), node("p", "Record what you were told about this specific role. Notes are candidate-entered, unverified and may become outdated; they do not change the posting assessment or establish eligibility. Stored locally without encryption. Corrections can be added as another note."));
+    details.append(node("summary", "Recruiter or employer policy notes"), node("p", "Record what you were told about this specific role. Notes are candidate-entered, unverified and may become outdated; they do not change the posting assessment or establish eligibility. Stored locally without encryption. Deletion removes the current database record, not copies in backups or database remnants."));
     const output = node("div"), status = node("p"); status.setAttribute("role", "status");
     const path = "/api/jobs/" + job.id + "/h1b/policy-notes";
-    let sequence = 0;
-    function show(notes) {
-      output.replaceChildren();
-      if (!notes.length) output.append(node("p", "No notes recorded for this role."));
-      for (const note of notes) {
+    let sequence = 0, nextBefore = null, busy = false;
+    const more = node("button", "Load older notes"); more.type = "button"; more.className = "button"; more.hidden = true;
+    function show(data, append = false) {
+      if (!append) output.replaceChildren();
+      if (!data.notes.length && !append) output.append(node("p", "No notes recorded for this role."));
+      for (const note of data.notes) {
         const entry = node("section");
         entry.append(node("p", note.discussed_on + " · " + note.source + " · " + note.pathway.replaceAll("_", " ") + " · " + note.response.replaceAll("_", " ") + " · recorded " + note.recorded_at), node("blockquote", note.statement));
+        const remove = node("button", "Delete note"); remove.type = "button"; remove.className = "button";
+        remove.addEventListener("click", async () => {
+          if (busy || !window.confirm("Delete this note from the current workspace? Copies in backups and database remnants may remain.")) return;
+          busy = true; const request = ++sequence; remove.disabled = true;
+          try {
+            const result = await api(path + "/" + note.id + "/delete", "POST", {acknowledged: true});
+            if (details.isConnected && request === sequence) { show(result); status.textContent = "Policy note deleted from the current workspace."; }
+          } catch (error) { if (request === sequence) status.textContent = error.message; }
+          finally { busy = false; remove.disabled = false; }
+        });
+        entry.append(remove);
         output.append(entry);
       }
-      status.textContent = "Showing up to 50 most recently recorded notes.";
+      nextBefore = data.next_before; more.hidden = nextBefore === null;
+      status.textContent = nextBefore === null ? "All recorded notes shown." : "More notes are available.";
     }
     const load = node("button", "Load policy notes"); load.type = "button"; load.className = "button";
     load.addEventListener("click", async () => {
-      if (load.disabled) return;
-      load.disabled = true; const request = ++sequence;
-      try { const data = await api(path); if (details.isConnected && request === sequence) show(data.notes); }
+      if (busy) return;
+      busy = true; load.disabled = true; const request = ++sequence;
+      try { const data = await api(path); if (details.isConnected && request === sequence) show(data); }
       catch (error) { if (request === sequence) status.textContent = error.message; }
-      finally { load.disabled = save.disabled; }
+      finally { busy = false; load.disabled = false; }
+    });
+    more.addEventListener("click", async () => {
+      if (busy || nextBefore === null) return;
+      busy = true; more.disabled = true; const request = ++sequence;
+      try { const data = await api(path + "?before=" + encodeURIComponent(nextBefore)); if (details.isConnected && request === sequence) show(data, true); }
+      catch (error) { if (request === sequence) status.textContent = error.message; }
+      finally { busy = false; more.disabled = false; }
     });
     const form = node("form"); form.className = "crm-form";
     function input(label, type, limit) {
@@ -232,7 +252,8 @@
     const save = node("button", "Save policy note"); save.type = "submit"; save.className = "button";
     form.append(acknowledgement, save);
     form.addEventListener("submit", async (event) => {
-      event.preventDefault(); if (save.disabled || !confirm.checked) return;
+      event.preventDefault(); if (busy || save.disabled || !confirm.checked) return;
+      busy = true;
       const request = ++sequence;
       const controls = [date, source, pathway, response, statement, confirm, save];
       controls.forEach(control => { control.disabled = true; }); load.disabled = true;
@@ -240,11 +261,11 @@
         const data = await api(path, "POST", {discussed_on: date.value, source: source.value, pathway: pathway.value,
           response: response.value, statement: statement.value, acknowledged: true});
         if (!details.isConnected || request !== sequence) return;
-        form.reset(); show(data.notes); status.textContent = "Policy note saved. " + status.textContent;
+        form.reset(); show(data); status.textContent = "Policy note saved. " + status.textContent;
       } catch (error) { status.textContent = error.message; }
-      finally { controls.forEach(control => { control.disabled = false; }); load.disabled = false; }
+      finally { busy = false; controls.forEach(control => { control.disabled = false; }); load.disabled = false; }
     });
-    details.append(load, status, output, form);
+    details.append(load, status, output, more, form);
     return details;
   }
   function jobCard(job) {

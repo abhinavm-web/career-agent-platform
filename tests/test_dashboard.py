@@ -130,6 +130,32 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual((after['policy'], after['potential_match'], after['history']),
                          (original['policy'], original['potential_match'], original['history']))
 
+    def test_policy_note_pagination_and_job_scoped_deletion(self):
+        from career_agent.h1b import H1BResearch
+        path = f'/api/jobs/{self.job.id}/h1b/policy-notes'
+        other = Job.from_mapping({'company': 'Other', 'title': 'Role', 'job_url': 'https://example.invalid/other-note'})
+        with Store(self.db) as store:
+            store.add_jobs([other])
+            research = H1BResearch(store)
+            for i in range(52):
+                research.add_policy_note(self.job, {'discussed_on': '2025-05-01', 'source': 'Fictional',
+                    'pathway': 'new', 'response': 'unclear', 'statement': f'Note {i}', 'acknowledged': True})
+        first = self.call('GET', path).json()
+        self.assertEqual(len(first['notes']), 50)
+        cursor = first['next_before']
+        second = self.call('GET', f'{path}?before={cursor}').json()
+        self.assertEqual([note['statement'] for note in second['notes']], ['Note 1', 'Note 0'])
+        self.assertIsNone(second['next_before'])
+        self.assertEqual(self.call('GET', f'{path}?before=0').status_code, 422)
+        note_id = second['notes'][0]['id']
+        delete = f'{path}/{note_id}/delete'
+        self.assertEqual(self.call('POST', delete, {'acknowledged': True}, token='wrong').status_code, 403)
+        self.assertEqual(self.call('POST', delete, {'acknowledged': 1}).status_code, 422)
+        self.assertEqual(self.call('POST', f'/api/jobs/{other.id}/h1b/policy-notes/{note_id}/delete', {'acknowledged': True}).status_code, 404)
+        self.assertEqual(self.call('POST', delete, {'acknowledged': True}).status_code, 200)
+        self.assertEqual(self.call('POST', delete, {'acknowledged': True}).status_code, 404)
+        self.assertEqual([note['statement'] for note in self.call('GET', f'{path}?before={cursor}').json()['notes']], ['Note 0'])
+
     def setUp(self):
         from fastapi.testclient import TestClient
         from career_agent.dashboard import DashboardConfig, create_app
