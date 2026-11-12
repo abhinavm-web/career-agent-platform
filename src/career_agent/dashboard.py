@@ -32,7 +32,7 @@ from .candidate import FactBank
 from . import ai
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
-from .crm import ApplicationCRM
+from .crm import ApplicationCRM, StageConflict
 from .discovery import DiscoveryUnavailable, discover_isolated
 from .models import CandidateProfile, Job
 from .h1b import H1BResearch, validate_lca_source
@@ -952,6 +952,18 @@ def create_app(config: DashboardConfig) -> FastAPI:
             return ApplicationCRM(store).change_stage(
                 job_id, data.get("stage"), data.get("note", ""),
             )
+
+    @app.post("/api/jobs/{job_id}/crm/correct-terminal")
+    async def crm_correct_terminal(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'expected_event_id', 'reason', 'acknowledged'}:
+            raise ValueError('A correction reason and explicit acknowledgement are required')
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            try:
+                return ApplicationCRM(store).correct_terminal(job_id, data['expected_event_id'], data['reason'], data['acknowledged'])
+            except StageConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from None
 
     @app.post("/api/jobs/{job_id}/crm/priority")
     async def crm_priority(job_id: str, request: Request):

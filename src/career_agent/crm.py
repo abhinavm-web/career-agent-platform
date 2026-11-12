@@ -29,6 +29,11 @@ POST_APPLICATION = {
     "withdrawn": (),
 }
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+TERMINAL_STAGES = {'accepted', 'rejected', 'withdrawn'}
+
+
+class StageConflict(ValueError):
+    """The pipeline changed since the correction was displayed."""
 
 
 def _text(value: Any, field: str, maximum: int, *, required: bool = False) -> str:
@@ -74,6 +79,11 @@ class ApplicationCRM:
             );
             CREATE INDEX IF NOT EXISTS idx_crm_stages_job
                 ON crm_stage_events(job_id, event_id DESC);
+
+            CREATE TABLE IF NOT EXISTS crm_stage_corrections (
+                corrected_event_id INTEGER PRIMARY KEY REFERENCES crm_stage_events(event_id),
+                correction_event_id INTEGER NOT NULL UNIQUE REFERENCES crm_stage_events(event_id)
+            );
 
             CREATE TABLE IF NOT EXISTS crm_priority_events (
                 event_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,11 +181,46 @@ class ApplicationCRM:
     def stage_history(self, job_id: str) -> list[dict]:
         self.store.get_job(job_id)
         rows = self.conn.execute(
-            "SELECT event_id,job_id,stage,note,actor,created_at "
-            "FROM crm_stage_events WHERE job_id=? ORDER BY event_id DESC LIMIT 100",
+            "SELECT e.event_id,e.job_id,e.stage,e.note,e.actor,e.created_at, "
+            "c.corrected_event_id AS corrects_event_id, d.correction_event_id AS corrected_by_event_id "
+            "FROM crm_stage_events e LEFT JOIN crm_stage_corrections c ON c.correction_event_id=e.event_id "
+            "LEFT JOIN crm_stage_corrections d ON d.corrected_event_id=e.event_id "
+            "WHERE e.job_id=? ORDER BY e.event_id DESC LIMIT 100",
             (job_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def correction_option(self, job_id: str) -> dict | None:
+        if self.store.stage_of(job_id) != 'submitted':
+            return None
+        latest = self.conn.execute('SELECT event_id,stage FROM crm_stage_events WHERE job_id=? ORDER BY event_id DESC LIMIT 1', (job_id,)).fetchone()
+        if not latest or latest['stage'] not in TERMINAL_STAGES:
+            return None
+        prior = self.conn.execute("SELECT stage FROM crm_stage_events WHERE job_id=? AND event_id<? AND stage IN ('applied','screening','assessment','interview','offer') ORDER BY event_id DESC LIMIT 1", (job_id, latest['event_id'])).fetchone()
+        return {'event_id': latest['event_id'], 'from_stage': latest['stage'], 'restore_stage': prior['stage'] if prior else 'applied'}
+
+    def correct_terminal(self, job_id: str, expected_event_id: Any, reason: Any, acknowledged: Any) -> dict:
+        """Append a correction and restore the previous post-submission stage."""
+        _id(expected_event_id, 'expected_event_id')
+        comment = _text(reason, 'reason', 1000, required=True)
+        if acknowledged is not True:
+            raise ValueError('Explicit acknowledgement is required to correct an outcome')
+        self.conn.execute('BEGIN IMMEDIATE')
+        try:
+            self.store.get_job(job_id)
+            option = self.correction_option(job_id)
+            if not option or option['event_id'] != expected_event_id:
+                raise StageConflict('The outcome changed; reload before correcting it')
+            cursor = self.conn.execute('INSERT INTO crm_stage_events(job_id,stage,note) VALUES(?,?,?)',
+                                       (job_id, option['restore_stage'], comment))
+            self.conn.execute('INSERT INTO crm_stage_corrections(corrected_event_id,correction_event_id) VALUES(?,?)',
+                              (expected_event_id, cursor.lastrowid))
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return {'job_id': job_id, 'stage': option['restore_stage'], 'corrected_event_id': expected_event_id,
+                'event_id': cursor.lastrowid}
 
     def add_contact(self, job_id: str, name: Any, role: Any = "",
                     email: Any = "", notes: Any = "") -> dict:
@@ -350,6 +395,7 @@ class ApplicationCRM:
             "allowed_transitions": list(self.allowed(job_id)),
             "application_submitted": self.store.stage_of(job_id) == "submitted",
             "stage_events": self.stage_history(job_id),
+            "correction_option": self.correction_option(job_id),
             "contacts": self.contacts(job_id),
             "followups": self.followups(job_id),
             "priority": self.priority(job_id),
@@ -370,6 +416,7 @@ class ApplicationCRM:
             "applications": "SELECT job_id,stage,receipt,updated_at FROM applications ORDER BY job_id",
             "reviews": "SELECT review_id,job_id,packet_sha256,decision,decided_at FROM packet_reviews ORDER BY review_id",
             "stage_events": "SELECT event_id,job_id,stage,note,actor,created_at FROM crm_stage_events ORDER BY event_id",
+            "stage_corrections": "SELECT corrected_event_id,correction_event_id FROM crm_stage_corrections ORDER BY correction_event_id",
             "priority_events": "SELECT event_id,job_id,priority,actor,created_at FROM crm_priority_events ORDER BY event_id",
             "contacts": "SELECT contact_id,job_id,name,role,email,notes,created_at FROM crm_contacts ORDER BY contact_id",
             "interview_notes": "SELECT note_id,job_id,interview_date,round,notes,actor,created_at FROM crm_interview_notes ORDER BY note_id",
@@ -381,7 +428,7 @@ class ApplicationCRM:
             records = {name: [dict(row) for row in self.conn.execute(query)]
                        for name, query in queries.items()}
         return {
-            "format": "career-agent-tracker-history", "schema_version": 1,
+            "format": "career-agent-tracker-history", "schema_version": 2,
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "records": records,
         }
@@ -391,7 +438,8 @@ class ApplicationCRM:
         rows = self.conn.execute(
             "SELECT a.job_id,e.stage FROM applications a "
             "LEFT JOIN crm_stage_events e ON e.job_id=a.job_id "
-            "WHERE a.stage='submitted'"
+            "WHERE a.stage='submitted' AND (e.event_id IS NULL OR NOT EXISTS "
+            "(SELECT 1 FROM crm_stage_corrections c WHERE c.corrected_event_id=e.event_id))"
         ).fetchall()
         submitted = {row["job_id"] for row in rows}
         interviews = {row["job_id"] for row in rows if row["stage"] == "interview"}

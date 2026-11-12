@@ -1136,7 +1136,32 @@
       });
       statusSection.append(form);
     } else {
-      statusSection.append(node("p", "muted", "This is a final pipeline outcome. No further transitions are available in the local MVP."));
+      statusSection.append(node("p", "muted", "This is a final pipeline outcome."));
+      if (data.correction_option) {
+        const correction = data.correction_option;
+        const form = node("form", "crm-form");
+        form.append(node("p", "", `If ${correction.from_stage} was recorded by mistake, restore ${correction.restore_stage}. The original event and submission receipt remain in history.`));
+        const reason = crmInput("Reason for correction (private)", "reason", "text", true, 1000);
+        const confirm = node("label", "check-label");
+        const checked = document.createElement("input"); checked.type = "checkbox"; checked.required = true;
+        confirm.append(checked, document.createTextNode("I confirm this outcome was recorded in error."));
+        const submit = button("Correct mistaken outcome", "button"); submit.type = "submit";
+        form.append(reason.field, confirm, submit);
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          if (submit.disabled || !checked.checked || !reason.control.value.trim()) return;
+          submit.disabled = true;
+          try {
+            await api("/api/jobs/" + item.id + "/crm/correct-terminal", "POST", {
+              expected_event_id: correction.event_id, reason: reason.control.value, acknowledged: true
+            });
+            notice("Outcome corrected locally; submission receipt is unchanged.");
+            await loadCRM();
+          } catch (error) { notice(error.message, true); }
+          finally { submit.disabled = false; }
+        });
+        statusSection.append(form);
+      }
     }
     panel.append(statusSection);
 
@@ -1317,6 +1342,8 @@
     for (const event of data.stage_events) {
       const row = node("div", "crm-record");
       row.append(node("strong", "", event.stage), node("small", "", event.created_at + " · " + event.actor));
+      if (event.corrects_event_id) row.append(node("small", "muted", "Correction of event " + event.corrects_event_id));
+      if (event.corrected_by_event_id) row.append(node("small", "muted", "Corrected by event " + event.corrected_by_event_id));
       if (event.note) row.append(node("p", "", event.note));
       history.append(row);
     }

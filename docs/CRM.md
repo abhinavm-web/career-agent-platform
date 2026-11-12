@@ -15,7 +15,9 @@ The tracker lists all stored opportunities independently of the board's newest-5
 
 A job starts as **discovered**. Before applying, it may be marked **saved**, **shortlisted** or **archived**. These are organizer labels only.
 
-**Applied** appears only when the existing application workflow has recorded a manual submission with user attestation and employer reference. The CRM cannot manufacture an applied state. After a recorded application, candidates can record **screening**, **assessment**, **interview**, **offer**, **accepted**, **rejected** or **withdrawn** as appropriate. Terminal outcomes are intentionally locked in this MVP; an audited correction feature is future work.
+**Applied** appears only when the existing application workflow has recorded a manual submission with user attestation and employer reference. The CRM cannot manufacture an applied state. After a recorded application, candidates can record **screening**, **assessment**, **interview**, **offer**, **accepted**, **rejected** or **withdrawn** as appropriate.
+
+To fix a terminal outcome entered in error, open the opportunity, enter a reason and explicitly confirm **Correct mistaken outcome**. This restores the immediately preceding post-submission stage (or applied) and records a new correction linked to the original event. You can then record the actual stage. The original outcome, correction reason, actor and time remain visible in history; a stale correction is rejected. The independent submission record and receipt are unchanged. This corrects an erroneous entry, not an employer's subsequent reversal of a genuine outcome.
 
 Each manually recorded stage transition includes a timestamp, actor (candidate) and optional private note. Stage history is append-only. Pipeline stage is separate from application packet approval and the original submitted receipt.
 
@@ -46,6 +48,8 @@ Follow-up dates are **not automation schedules**. No email, reminder notificatio
 The tracker shows all-time counts of attested submissions, opportunities with an explicitly recorded interview, recorded offers, and accepted offers. Each opportunity counts once per milestone, including when multiple interview rounds are recorded. Later rejection or withdrawal does not erase an earlier interview or offer.
 
 Interview and offer rates divide their milestone counts by all attested submissions, rounded to one decimal place. With no submissions, rates are unavailable. Drafts, approvals, and interview notes never count as submissions or interview milestones. Skipped pipeline stages are not inferred: moving straight to an offer does not create a recorded interview.
+
+A terminal event explicitly corrected as erroneous is excluded from milestone counts; genuine earlier interviews and offers remain counted.
 
 These are candidate-entered records, not independent employer verification, hiring predictions or causal measures. Search and list filters do not change the all-time metrics.
 
