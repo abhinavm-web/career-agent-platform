@@ -81,6 +81,26 @@ def text(value, label, maximum=300):
     return value.strip()
 
 
+def validate_lca_source(source_url, captured_on):
+    """Validate user-supplied provenance before accepting an import."""
+    source_url = text(source_url, 'source_url', 2000)
+    parts = urlsplit(source_url)
+    try:
+        valid_url = (parts.scheme == 'https' and parts.hostname in ('dol.gov', 'www.dol.gov')
+                     and not parts.username and not parts.password and parts.port in (None, 443))
+    except ValueError:
+        valid_url = False
+    if not valid_url:
+        raise ValueError('Use the original HTTPS dol.gov source URL without credentials')
+    try:
+        captured = date.fromisoformat(captured_on)
+    except (TypeError, ValueError):
+        raise ValueError('captured_on must be YYYY-MM-DD') from None
+    if captured.isoformat() != captured_on or captured > date.today():
+        raise ValueError('captured_on must be a valid date no later than today')
+    return source_url, captured
+
+
 class H1BResearch:
     def __init__(self, store: Store):
         self.store = store
@@ -134,16 +154,7 @@ class H1BResearch:
         return self.settings()
 
     def import_csv(self, stream, source_url, captured_on):
-        source_url = text(source_url, 'source_url', 2000)
-        parts = urlsplit(source_url)
-        if parts.scheme != 'https' or parts.hostname not in ('dol.gov', 'www.dol.gov') or parts.username or parts.password or parts.port not in (None, 443):
-            raise ValueError('Use the original HTTPS dol.gov source URL without credentials')
-        try:
-            captured = date.fromisoformat(captured_on)
-        except (TypeError, ValueError):
-            raise ValueError('captured_on must be YYYY-MM-DD') from None
-        if captured.isoformat() != captured_on or captured > date.today():
-            raise ValueError('captured_on must be a valid date no later than today')
+        source_url, captured = validate_lca_source(source_url, captured_on)
         reader = csv.DictReader(stream, strict=True)
         required = {'CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'}
         if not required.issubset(reader.fieldnames or []) or len(set(reader.fieldnames)) != len(reader.fieldnames):

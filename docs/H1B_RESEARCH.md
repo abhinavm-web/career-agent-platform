@@ -8,8 +8,9 @@ Search uses a company-name substring against imported legal employer names and c
 
 ## Load public records
 
-1. Visit the official [DOL OFLC performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance) page and download an LCA disclosure workbook.
-   The command below accepts the original XLSX file directly, without a CSV conversion. Install workbook support first:
+1. Visit the official [DOL OFLC performance data](https://www.dol.gov/agencies/eta/foreign-labor/performance) page and download an LCA disclosure workbook. In the H-1B research import panel, provide the source URL and capture date, choose the original XLSX (up to 512 MB), and confirm the provenance. Install workbook support first (`pip install -e '.[lca]'`; the Docker image includes it). The upload is streamed to a temporary local file, removed after processing, and runs the same atomic validation as the CLI. Large files may take time and substantial temporary disk space. The app does not independently verify a supplied file or its source.
+
+   Alternatively, use the command below to import the original XLSX without a CSV conversion:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e '.[lca]'
@@ -18,7 +19,7 @@ Search uses a company-name substring against imported legal employer names and c
 
 Use the date you downloaded the file, not an assumed reporting cutoff. The file is parsed locally in read-only mode, and the entire import rolls back on invalid records. It remains labeled user-imported and not independently verified. The workbook must have exactly one sheet with the required LCA headers and be no larger than 512 MB; large workbooks can take time and memory, and Excel-compressed data is bounded. Worksite and appendix sheets do not substitute for the main disclosure data. Direct government download is not performed by this command.
 
-For the existing dashboard import, or if you prefer CSV:
+If you prefer CSV:
 2. Export the disclosure sheet as **UTF-8 CSV**, preserving its DOL column headers. Do not use the worksite/appendix sheet as the main disclosure sheet.
 3. In the import panel, supply the original DOL source URL and the date you captured that source, select the CSV and confirm provenance. The browser accepts files up to 8 MB (the encoded API request is limited to 10 MB). Larger CSVs can be streamed through the CLI:
 

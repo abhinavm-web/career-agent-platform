@@ -152,11 +152,11 @@
         </form>
         <details class="panel profile-editor">
           <summary>Import public DOL LCA records</summary>
-          <p class="muted">Download an LCA disclosure workbook from <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">DOL performance data</a> and export its disclosure sheet as UTF-8 CSV. Upload a file up to 8 MB here; use the documented CLI for larger files. No records are downloaded automatically.</p>
+          <p class="muted">Download the LCA disclosure workbook from <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">DOL performance data</a> and import the original XLSX (up to 512 MB) or an exported UTF-8 CSV (up to 8 MB). The workbook is processed locally and can take time. No records are downloaded automatically.</p>
           <form id="h1b-import" class="crm-form">
             <label>DOL source URL<input id="h1b-source" type="url" required value="https://www.dol.gov/agencies/eta/foreign-labor/performance"></label>
             <label>Date you captured the source<input id="h1b-captured" type="date" required></label>
-            <label>Public LCA CSV<input id="h1b-file" type="file" accept=".csv,text/csv" required></label>
+            <label>Public LCA workbook or CSV<input id="h1b-file" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
             <label class="check-label"><input id="h1b-consent" type="checkbox" required> This is public DOL disclosure data, and I checked the source URL and capture date.</label>
             <button id="h1b-import-submit" type="submit" class="button">Import records locally</button>
           </form>

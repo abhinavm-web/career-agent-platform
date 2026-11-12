@@ -106,6 +106,51 @@ class DashboardTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 413)
 
+    def test_dol_workbook_upload_is_bounded_authorized_and_atomic(self):
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        from io import BytesIO
+        path = '/api/h1b/import-workbook?source_url=https%3A%2F%2Fwww.dol.gov%2Fdata&captured_on=2025-06-01'
+        headers = {'X-Session-Token': self.session, 'X-LCA-Acknowledged': 'true', 'Content-Type': 'application/octet-stream'}
+        def workbook(rows):
+            book = Workbook()
+            book.active.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+            for row in rows:
+                book.active.append(row)
+            output = BytesIO(); book.save(output); book.close()
+            return output.getvalue()
+        valid = ['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15']
+        content = workbook([valid])
+        self.assertEqual(self.client.post(path, content=content, headers={**headers, 'X-Session-Token': 'bad'}).status_code, 403)
+        self.assertEqual(self.client.post(path, content=content, headers={**headers, 'Origin': 'https://example.invalid'}).status_code, 403)
+        self.assertEqual(self.client.post(path, content=content, headers={**headers, 'X-LCA-Acknowledged': 'false'}).status_code, 422)
+        self.assertEqual(self.client.post(path, content=content, headers={**headers, 'Content-Type': 'application/json'}).status_code, 415)
+        self.assertEqual(self.client.post(path, content=b'not a workbook', headers=headers).status_code, 422)
+        self.assertEqual(self.client.post(path, content=content, headers={**headers, 'Content-Length': str(len(content) + 1)}).status_code, 400)
+        with patch('career_agent.dashboard.LCA_WORKBOOK_LIMIT', 10):
+            self.assertEqual(self.client.post(path, content=content, headers=headers).status_code, 413)
+            import httpx
+            consumed = []
+            async def chunks():
+                consumed.append('first'); yield b'12345678901'
+                consumed.append('second'); yield b'x'
+            async def send():
+                transport = httpx.ASGITransport(app=self.app)
+                async with httpx.AsyncClient(transport=transport, base_url='http://localhost') as client:
+                    return await client.post(path, content=chunks(), headers=headers)
+            self.assertEqual(asyncio.run(send()).status_code, 413)
+            self.assertEqual(consumed, ['first'])
+        bad = ['not-a-case', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15']
+        self.assertEqual(self.client.post(path, content=workbook([valid, bad]), headers=headers).status_code, 422)
+        self.assertEqual(self.call('GET', '/api/h1b').json()['coverage']['records'], 0)
+        response = self.client.post(path, content=content, headers=headers)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['added'], 1)
+        self.assertEqual(response.headers['x-content-type-options'], 'nosniff')
+        self.assertEqual(self.call('GET', '/api/h1b').json()['coverage']['records'], 1)
     def test_oversized_stream_stops_reading(self):
         import httpx
         from career_agent.dashboard import API_BODY_LIMIT
