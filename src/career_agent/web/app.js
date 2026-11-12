@@ -522,7 +522,10 @@
         if (!result.requirements.length) evidenceResult.append(node("p", "", "No clearly labeled requirement bullets found; review the full posting manually."));
         for (const row of result.requirements) {
           const item = node("div", "fit-evidence-item");
-          item.append(node("strong", "", row.category === "required" ? "Labeled required" : "Labeled preferred"), node("blockquote", "", row.quote));
+          const label = row.category === "required" ? "Labeled required" : row.category === "preferred" ? "Labeled preferred" : "Qualification level unspecified";
+          item.append(node("strong", "", label));
+          if (row.source_heading && row.source_heading !== row.quote) item.append(node("p", "muted", "Section heading: " + row.source_heading));
+          item.append(node("blockquote", "", row.quote));
           if (!row.suggested_facts.length) item.append(node("p", "", "No verified fact matched by keyword; evidence remains unknown."));
           for (const fact of row.suggested_facts) item.append(node("p", "", "Potentially relevant verified fact " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));
           evidenceResult.append(item);

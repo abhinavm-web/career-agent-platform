@@ -30,3 +30,24 @@ class FitEvidenceTests(unittest.TestCase):
         result = requirement_evidence('Requirements:\n- ' + 'x' * 1001, [])
         self.assertTrue(result['truncated'])
         self.assertEqual(result['requirements'], [])
+
+    def test_markdown_headings_preserve_source_and_do_not_infer_requirement_level(self):
+        text = ('**Required Qualifications:**\n- Python experience\n'
+                '### Qualifications\n* Rust experience\n'
+                '**Basic Qualifications**\n1. Python delivery\n'
+                '**Preferred Skills:** SQL\n'
+                '## Responsibilities\n- Python duties')
+        rows = requirement_evidence(text, self.facts)['requirements']
+        self.assertEqual([row['category'] for row in rows], ['required', 'unspecified', 'unspecified', 'preferred'])
+        self.assertEqual([row['source_heading'] for row in rows],
+                         ['**Required Qualifications:**', '### Qualifications', '**Basic Qualifications**', '**Preferred Skills:** SQL'])
+        self.assertEqual([row['quote'] for row in rows],
+                         ['- Python experience', '* Rust experience', '1. Python delivery', '**Preferred Skills:** SQL'])
+        self.assertEqual(rows[1]['suggested_facts'], [])
+        self.assertEqual(rows[2]['suggested_facts'][0]['id'], 'fact-01')
+
+    def test_markup_does_not_turn_ambiguous_prose_into_a_heading(self):
+        for heading in ('**Qualifications** may vary', '### Qualifications for contractors',
+                        '**Requirements vary**', 'Qualifications may be waived'):
+            with self.subTest(heading=heading):
+                self.assertEqual(requirement_evidence(heading + '\n- Python work', self.facts)['requirements'], [])
