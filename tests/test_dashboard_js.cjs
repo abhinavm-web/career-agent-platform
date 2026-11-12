@@ -748,6 +748,20 @@ test("opportunity filters combine and old observations are never shown as listed
   assert.match(harness.get("job-list").textContent, /Role Beta/);
 });
 
+test("imported employer history is separate from posting policy", async () => {
+  const historical = {...fakeJob(ID_A, "Fictional role"), sponsorship_status: "explicit_exclusion",
+    imported_sponsorship_history: {employer: "Legal Corp", sources: ["DOL LCA"], match: "candidate_association"}};
+  const absent = {...fakeJob(ID_B, "Other role"), imported_sponsorship_history: null};
+  const h = createHarness({jobsOverride: [historical, absent]}); await flush();
+  const filter = h.get("filter"); filter.value = "imported-history"; filter.handlers.change({target: filter});
+  assert.match(h.get("job-list").textContent, /Imported employer history/);
+  assert.doesNotMatch(h.get("job-list").textContent, /Other role/);
+  h.get("job-list").children[0].click();
+  assert.match(h.get("detail-panel").textContent, /unverified employer association/);
+  assert.match(h.get("detail-panel").textContent, /do not establish current job sponsorship/);
+  assert.match(h.get("detail-panel").textContent, /Legal Corp/);
+});
+
 test("description review filter excludes submitted jobs and combines with source", async () => {
   const observation = [{source: "linkedin", candidate_observed_at: "2025-01-01T00:00:00Z"}];
   const pending = {...fakeJob(ID_A, "Reviewable role"), source: "linkedin", description: "", discovery_observations: observation};

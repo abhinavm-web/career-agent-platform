@@ -418,6 +418,34 @@ class H1BResearch:
                 'record_limit': 20, 'min_year': settings['min_year'], 'lca_data_status': data_status,
                 'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
 
+    def board_history(self, jobs):
+        """Batch existence hints for saved jobs; never infer sponsorship policy."""
+        if not jobs:
+            return {}
+        ids = [job.id for job in jobs]
+        marks = ','.join('?' for _ in ids)
+        links = self.conn.execute(f'''SELECT l.job_id,l.employer FROM h1b_employer_links l
+            JOIN (SELECT job_id,MAX(revision) AS revision FROM h1b_employer_links
+                  WHERE job_id IN ({marks}) GROUP BY job_id) latest
+            ON latest.job_id=l.job_id AND latest.revision=l.revision''', ids).fetchall()
+        associations = {row['job_id']: row['employer'] for row in links if row['employer']}
+        employers = {job.id: associations.get(job.id, job.company) for job in jobs}
+        keys = list({employer_key(name) for name in employers.values()})
+        key_marks = ','.join('?' for _ in keys)
+        dol = {row[0] for row in self.conn.execute(
+            f'SELECT DISTINCT employer_key FROM h1b_lca WHERE employer_key IN ({key_marks})', keys)}
+        uscis = {row[0] for row in self.conn.execute(
+            f'SELECT DISTINCT employer_key FROM uscis_employers WHERE employer_key IN ({key_marks})', keys)}
+        results = {}
+        for job in jobs:
+            name = employers[job.id]
+            key = employer_key(name)
+            sources = (['DOL LCA'] if key in dol else []) + (['USCIS decisions'] if key in uscis else [])
+            if sources:
+                results[job.id] = {'employer': name, 'sources': sources,
+                                   'match': 'candidate_association' if job.id in associations else 'exact_name'}
+        return results
+
     def employer_link(self, job_id):
         row = self.conn.execute('SELECT revision,employer,source_note,changed_at FROM h1b_employer_links WHERE job_id=? ORDER BY revision DESC LIMIT 1', (job_id,)).fetchone()
         return dict(row) if row else None

@@ -173,6 +173,7 @@
       if (filters.freshness !== "all" && postingObservation(job).kind !== filters.freshness) return false;
       if (state.filter === "priority") return job.fit_score !== null && job.fit_score >= 70;
       if (state.filter === "sponsorship") return job.sponsorship_status === "posting_claims_sponsorship" || job.sponsorship_status === "historical_only";
+      if (state.filter === "imported-history") return Boolean(job.imported_sponsorship_history?.sources?.length);
       if (state.filter === "missing-description") return !job.description?.trim();
       if (state.filter === "source-text-review") return hasReviewableSourceText(job);
       if (state.filter === "review") return job.packet_available && !job.review_decision;
@@ -251,6 +252,7 @@
       const lower = node("div", "job-item-bottom");
       const signal = sponsorshipLabel(job.sponsorship_status);
       lower.append(chip(signal[0], signal[1]));
+      if (job.imported_sponsorship_history?.sources?.length) lower.append(chip("Imported employer history", "amber"));
       if (job.constraint_evidence?.some((row) => row.status === "flagged")) lower.append(chip("Constraint flagged", "amber"));
       else if (job.constraint_evidence?.some((row) => row.status === "unknown")) lower.append(chip("Constraint unknown", "amber"));
       if (job.source) lower.append(chip("Source: " + job.source));
@@ -492,6 +494,12 @@
     const label = sponsorshipLabel(job.sponsorship_status);
     sponsorBox.append(chip(label[0], label[1]), node("p", "", job.sponsorship_reason));
     sponsor.append(sponsorBox);
+    if (job.imported_sponsorship_history?.sources?.length) {
+      const history = job.imported_sponsorship_history;
+      sponsor.append(node("p", "muted", "Imported historical records: " + history.sources.join(", ") + " · employer name: " + history.employer + ". " +
+        (history.match === "candidate_association" ? "This job uses your unverified employer association. " : "This is an exact name match, not verified legal identity. ") +
+        "Historical records do not establish current job sponsorship, hiring or individual eligibility. Open H-1B research to inspect sources and dates."));
+    }
     sponsor.append(button("Research H-1B records and jobs", "button", () => {
       byId("h1b-query").value = job.company;
       byId("nav-h1b").click();
