@@ -74,7 +74,7 @@ class CRMStoreTests(unittest.TestCase):
             self.store.connection.execute("INSERT INTO private_future_data VALUES ('never export')")
         before = self.store.connection.total_changes
         exported = self.crm.export_history()
-        self.assertEqual(exported["schema_version"], 1)
+        self.assertEqual(exported["schema_version"], 2)
         self.assertEqual(exported["format"], "career-agent-tracker-history")
         rows = exported["records"]
         self.assertEqual(len(rows["jobs"]), 503)
@@ -96,7 +96,7 @@ class CRMStoreTests(unittest.TestCase):
     def test_export_empty_store_has_all_collections(self):
         with Store(Path(self.tmp.name) / "empty.sqlite3") as store:
             rows = ApplicationCRM(store).export_history()["records"]
-        self.assertEqual(len(rows), 9)
+        self.assertEqual(len(rows), 10)
         self.assertTrue(all(value == [] for value in rows.values()))
 
     def test_export_uses_one_snapshot_during_concurrent_edit(self):
@@ -132,6 +132,47 @@ class CRMStoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Cannot move"):
             self.crm.change_stage(self.job.id, "screening")
         self.assertEqual(self.store.stage_of(self.job.id), "submitted")
+
+    def test_terminal_correction_is_audited_concurrency_safe_and_updates_metrics(self):
+        self.store.stage(self.job.id)
+        self.store.confirm(self.job.id, 'fictional receipt', attested=True)
+        self.crm.change_stage(self.job.id, 'offer')
+        accepted = self.crm.change_stage(self.job.id, 'accepted')
+        self.assertEqual(self.crm.outcomes()['accepted'], 1)
+        option = self.crm.details(self.job.id)['correction_option']
+        self.assertEqual(option, {'event_id': accepted['event_id'], 'from_stage': 'accepted', 'restore_stage': 'offer'})
+        for reason, confirmed in [('', True), ('A mistake', False)]:
+            with self.assertRaises(ValueError):
+                self.crm.correct_terminal(self.job.id, option['event_id'], reason, confirmed)
+        corrected = self.crm.correct_terminal(self.job.id, option['event_id'], 'Recorded acceptance in error.', True)
+        self.assertEqual(corrected['stage'], 'offer')
+        history = self.crm.stage_history(self.job.id)
+        self.assertEqual(history[0]['corrects_event_id'], accepted['event_id'])
+        self.assertEqual(history[1]['corrected_by_event_id'], corrected['event_id'])
+        self.assertEqual(history[0]['note'], 'Recorded acceptance in error.')
+        self.assertEqual(self.crm.outcomes()['accepted'], 0)
+        self.assertEqual(self.crm.outcomes()['offered'], 1)
+        self.assertEqual(self.store.stage_of(self.job.id), 'submitted')
+        self.assertEqual(self.crm.export_history()['records']['stage_corrections'], [{
+            'corrected_event_id': accepted['event_id'], 'correction_event_id': corrected['event_id']}])
+        with self.assertRaises(ValueError):
+            self.crm.correct_terminal(self.job.id, option['event_id'], 'retry', True)
+        self.crm.change_stage(self.job.id, 'rejected')
+        with self.assertRaises(ValueError):
+            self.crm.correct_terminal(self.job.id, option['event_id'], 'stale tab', True)
+        self.assertEqual(self.crm.details(self.job.id)['stage'], 'rejected')
+
+    def test_terminal_correction_cannot_create_submission_or_cross_jobs(self):
+        self.crm.change_stage(self.job.id, 'saved')
+        with self.assertRaises(ValueError):
+            self.crm.correct_terminal(self.job.id, 1, 'mistake', True)
+        self.store.stage(self.job.id); self.store.confirm(self.job.id, 'receipt', attested=True)
+        terminal = self.crm.change_stage(self.job.id, 'withdrawn')
+        self.assertEqual(self.crm.details(self.job.id)['correction_option']['restore_stage'], 'applied')
+        with self.assertRaises(ValueError):
+            self.crm.correct_terminal(self.second.id, terminal['event_id'], 'mistake', True)
+        self.assertEqual(self.crm.correct_terminal(self.job.id, terminal['event_id'], 'mistake', True)['stage'], 'applied')
+        self.assertEqual(self.store.stage_of(self.second.id), 'discovered')
 
     def test_stage_validation_and_independent_jobs(self):
         with self.assertRaises(ValueError):
@@ -362,6 +403,22 @@ class CRMApiTests(unittest.TestCase):
         changed = self.api("POST", f"/api/jobs/{self.job.id}/crm/stage", {"stage": "screening"})
         self.assertEqual(changed.status_code, 200)
         self.assertTrue(self.api("GET", f"/api/jobs/{self.job.id}/crm").json()["application_submitted"])
+
+    def test_correction_api_requires_consent_and_rejects_stale_event(self):
+        with Store(self.db) as store:
+            store.stage(self.job.id); store.confirm(self.job.id, 'fictional receipt', attested=True)
+            crm = ApplicationCRM(store); crm.change_stage(self.job.id, 'interview')
+            event = crm.change_stage(self.job.id, 'rejected')
+        path = f'/api/jobs/{self.job.id}/crm/correct-terminal'
+        data = {'expected_event_id': event['event_id'], 'reason': 'Selected by mistake', 'acknowledged': True}
+        self.assertEqual(self.api('POST', path, data, token='bad').status_code, 403)
+        self.assertEqual(self.api('POST', path, data | {'acknowledged': False}).status_code, 422)
+        self.assertEqual(self.api('POST', path, data | {'reason': ''}).status_code, 422)
+        self.assertEqual(self.api('POST', path, data).status_code, 200)
+        self.assertEqual(self.api('POST', path, data).status_code, 409)
+        detail = self.api('GET', f'/api/jobs/{self.job.id}/crm').json()
+        self.assertEqual(detail['stage'], 'interview')
+        self.assertTrue(detail['application_submitted'])
 
     def test_tracker_keeps_jobs_outside_board_window(self):
         with Store(self.db) as store:

@@ -4,9 +4,9 @@ In **Application tracker**, select **Download tracker history** to save `career-
 
 The file contains private contact details, notes and submission references. It is unencrypted; keep it outside public repositories and shared folders. The download excludes career preferences, verified facts, their private evidence notes, workspace revisions and application document files. This is a tracker export, not a complete workspace backup or a restorable database. Import/restore is not implemented.
 
-## Format version 1
+## Format version 2
 
-The top-level `format` is `career-agent-tracker-history`, with `schema_version: 1`, an ISO UTC `exported_at` timestamp and a `records` object. Collections are normalized and joined by their stored IDs:
+The top-level `format` is `career-agent-tracker-history`, with `schema_version: 2`, an ISO UTC `exported_at` timestamp and a `records` object. Version 2 adds `stage_corrections`; all version 1 collections retain their fields. Collections are normalized and joined by their stored IDs:
 
 | Collection | Contents |
 | --- | --- |
@@ -14,6 +14,7 @@ The top-level `format` is `career-agent-tracker-history`, with `schema_version: 
 | `applications` | Current review/submission stage, candidate-entered receipt reference and last update |
 | `reviews` | All recorded packet decisions, fingerprints and decision dates |
 | `stage_events` | All recorded organizer and post-submission pipeline changes |
+| `stage_corrections` | Links each corrected terminal event to its appended correction event |
 | `priority_events` | All recorded priority changes |
 | `contacts` | Current recruiter/contact records, including private notes |
 | `interview_notes` | All dated interview notes |
