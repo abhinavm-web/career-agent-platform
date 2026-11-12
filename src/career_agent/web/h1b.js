@@ -5,6 +5,7 @@
   let sequence = 0;
   let nextOffset = null;
   let searchedQuery = "";
+  let searchedMode = "literal";
   let opportunitySequence = 0;
   let opportunityNext = null;
   const observationTimers = new Map();
@@ -439,6 +440,7 @@
   }
   async function search(offset = 0) {
     const query = get("h1b-query").value.trim();
+    const mode = get("h1b-broad-names").checked ? "punctuation" : "literal";
     const current = ++sequence;
     clearResults("h1b-results");
     get("h1b-next").hidden = true;
@@ -446,10 +448,11 @@
     get("h1b-search-submit").disabled = true;
     status("Searching local records…");
     try {
-      const result = await api("/api/h1b/search?q=" + encodeURIComponent(query) + "&offset=" + offset);
+      const result = await api("/api/h1b/search?q=" + encodeURIComponent(query) + "&offset=" + offset + "&name_mode=" + mode);
       if (current !== sequence) return;
       coverage(result.coverage);
       searchedQuery = query;
+      searchedMode = mode;
       nextOffset = result.next_offset;
       get("h1b-next").hidden = nextOffset === null;
       status(result.company_total + " matching employer names · " + result.jobs.length + " stored jobs. " + result.warning);
@@ -486,15 +489,18 @@
     get("discover-query").focus();
   });
   get("h1b-search").addEventListener("submit", (event) => { event.preventDefault(); search(); });
-  get("h1b-query").addEventListener("input", () => {
+  function invalidateCompanySearch() {
     sequence++;
     get("h1b-search-submit").disabled = false;
     clearResults("h1b-results");
     get("h1b-next").hidden = true;
     status("Search to update the results for this company.");
-  });
+  }
+  get("h1b-query").addEventListener("input", invalidateCompanySearch);
+  get("h1b-broad-names").addEventListener("change", invalidateCompanySearch);
   get("h1b-next").addEventListener("click", () => {
-    if (nextOffset !== null && get("h1b-query").value.trim() === searchedQuery) search(nextOffset);
+    const mode = get("h1b-broad-names").checked ? "punctuation" : "literal";
+    if (nextOffset !== null && get("h1b-query").value.trim() === searchedQuery && mode === searchedMode) search(nextOffset);
   });
   get("h1b-settings").addEventListener("submit", async (event) => {
     event.preventDefault();
