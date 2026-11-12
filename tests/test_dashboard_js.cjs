@@ -474,6 +474,26 @@ test("packet review shows saved source facts and omissions without interpreting 
   assert.match(detail, /Built <fictional> tools/);
   assert.match(detail, /Posting keyword matches: Python/);
   assert.match(detail, /Verified facts not included in this draft: fact-02/);
+  assert.doesNotMatch(detail, /Compare verified facts and tailored draft/);
+});
+
+test("tailored comparison shows ordered baseline and omission without interpreting markup", async () => {
+  const h = createHarness(); await flush();
+  h.get("job-list").children[0].click();
+  const packet = fakePacket(ID_A, "Fictional resume");
+  packet.packet.fact_evidence = [{id: "fact-02", section: "projects", statement: "Selected <example>", matched_keywords: []}];
+  packet.packet.omitted_fact_ids = ["fact-01"];
+  packet.packet.baseline_fact_evidence = [
+    {id: "fact-01", section: "experience", statement: "Omitted <script>"},
+    {id: "fact-02", section: "projects", statement: "Selected <example>"}
+  ];
+  h.waiting.get(ID_A)(ok(packet)); await flush();
+  const detail = h.get("detail-panel").textContent;
+  assert.match(detail, /Compare verified facts and tailored draft/);
+  assert.match(detail, /not your uploaded résumé/);
+  assert.match(detail, /fact-01 · experience · Omitted/);
+  assert.match(detail, /Omitted <script>/);
+  assert.match(detail, /fact-02 · projects · Included/);
 });
 
 test("expired session explains how to recover without discarding input", async () => {

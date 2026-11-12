@@ -28,6 +28,8 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                 'statement': 'Led a fictional Python migration.', 'source_note': 'Private second note.'})
             data['facts'].append({**data['facts'][0], 'id': 'education-01', 'section': 'education',
                 'statement': 'Completed a fictional degree.', 'source_note': 'Private education note.'})
+            data['facts'].append({**data['facts'][0], 'id': 'projects-01', 'section': 'projects',
+                'statement': 'Omitted fictional project for comparison.', 'source_note': 'Private project note.'})
             facts = root / 'facts.json'; facts.write_text(json.dumps(data))
             profile = root / 'profile.json'; profile.write_text(json.dumps(asdict(CandidateProfile(
                 target_titles=('AI Program Lead',), skills=('Python',), preferred_locations=(), allow_remote=True))))
@@ -61,6 +63,17 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                         expect(evidence).to_contain_text('Led a fictional Python migration.')
                         expect(evidence).not_to_contain_text('Private second note.')
                         expect(evidence).to_contain_text('experience-01')
+                        comparison = page.locator('.resume-comparison')
+                        expect(comparison).to_be_visible(); comparison.locator('summary').click()
+                        expect(comparison).to_contain_text('not your uploaded résumé')
+                        expect(comparison).to_contain_text('projects-01 · projects · Omitted')
+                        expect(comparison).to_contain_text('Omitted fictional project for comparison.')
+                        expect(comparison).not_to_contain_text('Private project note.')
+                        baseline = comparison.locator('section').nth(0).inner_text()
+                        tailored = comparison.locator('section').nth(1).inner_text()
+                        self.assertLess(baseline.index('experience-01'), baseline.index('education-01'))
+                        self.assertLess(tailored.index('education-01'), tailored.index('experience-02'))
+                        self.assertLess(tailored.index('experience-02'), tailored.index('experience-01'))
                         packet_text = page.locator('.review-card').get_by_text('Resume draft', exact=True)
                         packet_text.click()
                         resume = page.locator('.review-card details').filter(has_text='Resume draft').locator('pre').inner_text()
@@ -71,6 +84,8 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                         expect(page.locator('.review-card')).to_contain_text('approved for manual submission')
                         page.reload(); page.locator('#job-list button').first.click()
                         expect(page.locator('.review-card')).to_contain_text('approved for manual submission')
+                        page.locator('.resume-comparison summary').click()
+                        expect(page.locator('.resume-comparison')).to_contain_text('projects-01 · projects · Omitted')
                     finally: browser.close()
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()

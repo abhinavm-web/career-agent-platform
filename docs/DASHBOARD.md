@@ -50,6 +50,8 @@ New dashboard drafts and review decisions advance durable LangGraph runs. Legacy
 
 For a tailored draft, choose verified facts and arrange the order of résumé sections and facts within each section. Facts remain verbatim and traceable to the selected IDs; to change wording, edit and reverify the fact in Career profile. Creating a new layout creates a new fingerprint and requires another review. Empty sections do not appear in the exported résumé. This is a structured layout editor, not a free-form document editor.
 
+New tailored packets provide a side-by-side comparison of the **verified fact bank at drafting time** with the selected facts in résumé order, including fact IDs and omitted markers. This is not the originally uploaded résumé, which the app does not retain as a baseline. The comparison snapshot contains all verified statements at drafting time and is stored in the private fingerprinted packet; private source notes are excluded. Omitted statements do not appear in the résumé, cover note, DOCX/PDF export, or tracker export. Existing packets are not changed and do not acquire a comparison snapshot.
+
 Reviews and application statuses are distinct: approving a packet means **ready for manual submission**. A job moves to "submitted" only after the person checks an explicit external-submission box and enters an employer receipt. The UI never sends an application.
 
 ## Tests

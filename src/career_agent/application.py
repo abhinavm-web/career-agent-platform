@@ -169,6 +169,13 @@ def build_packet(
         packet["job_description_revision"] = job_description_revision
     if tailored_fact_ids is not None:
         packet["tailored_fact_ids"] = list(tailored_fact_ids)
+        # This is the verified fact bank at drafting time, not the uploaded résumé.
+        # It intentionally excludes private source notes and remains inside the
+        # fingerprinted packet so comparisons survive subsequent profile edits.
+        packet["baseline_fact_evidence"] = [
+            {"id": fact.fact_id, "section": fact.section, "statement": fact.statement}
+            for fact in sorted(bank.facts, key=lambda fact: SECTIONS.index(fact.section))
+        ]
     if tailored_section_order is not None:
         packet["tailored_section_order"] = list(tailored_section_order)
     packet["packet_sha256"] = packet_fingerprint(packet)

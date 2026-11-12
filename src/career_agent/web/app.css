@@ -276,6 +276,12 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .packet-evidence-row strong {font-size:12px;}
 .packet-evidence-row p {margin:6px 0;font-size:13px;}
 .packet-evidence-row small {color:var(--muted);line-height:1.5;}
+.resume-comparison-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.resume-comparison-grid section {min-width:0;overflow-wrap:anywhere;}
+.resume-comparison-grid h5 {margin:12px 0;color:var(--text);}
+.resume-comparison-grid li {margin:10px 0;}
+.resume-comparison-grid li p {margin:4px 0;}
+@media(max-width:780px) {.resume-comparison-grid {grid-template-columns:1fr;}}
 .board-limit {margin:0;padding:12px 18px;border-bottom:1px solid var(--border);color:#f1ce91;font-size:12px;line-height:1.5;}
 .board-empty {padding:25px 19px;color:var(--text);}
 .board-empty strong {font-size:14px;}
