@@ -45,4 +45,3 @@ class CompensationTests(unittest.TestCase):
         scored = score_job(self.job, profile)
         self.review('Base salary: USD $100,000 per year')
         self.assertEqual(score_job(self.job, profile), scored)
-
