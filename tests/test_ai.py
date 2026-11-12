@@ -345,6 +345,73 @@ class SDKContracts(unittest.TestCase):
             with self.subTest(finish=finish), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))), self.assertRaises(ValueError):
                 ai.complete(route, 'fictional prompt')
 
+    def test_openai_rejects_refusals_legacy_functions_and_nonassistant_messages(self):
+        import httpx
+        route = {'provider': 'lmstudio', 'model': 'fictional', 'base_url': 'http://127.0.0.1:1234/v1'}
+        messages = [
+            {'role': 'assistant', 'content': 'fictional text', 'refusal': 'private refusal'},
+            {'role': 'assistant', 'content': 'fictional text', 'function_call': {'name': 'fictional', 'arguments': '{}'}},
+            {'role': 'user', 'content': 'fictional text'},
+            {'role': 'assistant', 'content': ' '},
+            {'role': 'assistant', 'content': 'x' * 32001},
+        ]
+        for message in messages:
+            seen = []
+            def handler(request):
+                seen.append(request)
+                return httpx.Response(200, json={'id': 'fictional', 'object': 'chat.completion', 'created': 0,
+                    'model': 'fictional', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': message}]})
+            with self.subTest(message=message.get('role')), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=ai._bounded_transport(httpx.MockTransport(handler)), trust_env=False)):
+                with self.assertRaises(ValueError) as error: ai.complete(route, 'private fictional prompt')
+                self.assertIn('no result was accepted', str(error.exception))
+                self.assertNotIn('private', str(error.exception))
+                self.assertEqual(len(seen), 1)
+
+    def test_anthropic_rejects_mixed_text_and_tool_blocks_even_on_end_turn(self):
+        import httpx
+        seen = []
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json={'id': 'msg_fictional', 'type': 'message', 'role': 'assistant',
+                'model': 'fictional', 'content': [{'type': 'text', 'text': 'partial answer'},
+                    {'type': 'tool_use', 'id': 'fictional', 'name': 'fictional', 'input': {'private': 'secret'}}],
+                'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 1, 'output_tokens': 1}})
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fictional-key'}), \
+                patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=ai._bounded_transport(httpx.MockTransport(handler)), trust_env=False)):
+            with self.assertRaises(ValueError) as error: ai.complete({'provider': 'anthropic', 'model': 'fictional'}, 'private prompt')
+        self.assertIn('no result was accepted', str(error.exception))
+        self.assertNotIn('private', str(error.exception))
+        self.assertNotIn('partial answer', str(error.exception))
+        self.assertEqual(len(seen), 1)
+
+    def test_bedrock_rejects_nontext_or_empty_blocks_without_leaking_them(self):
+        from unittest.mock import MagicMock
+        route = {'provider': 'bedrock', 'model': 'fictional', 'region': 'us-east-1'}
+        invalid = [
+            {'role': 'assistant', 'content': [{'text': 'partial answer'}, {'toolUse': {'input': {'private': 'secret'}}}]},
+            {'role': 'assistant', 'content': [{'text': 'partial answer', 'toolUse': {'input': {}}}]},
+            {'role': 'user', 'content': [{'text': 'partial answer'}]},
+            {'role': 'assistant', 'content': []},
+            {'role': 'assistant', 'content': [{'text': None}]},
+            {'role': 'assistant', 'content': [{'text': 'x' * 32001}]},
+        ]
+        for message in invalid:
+            client = MagicMock()
+            client.converse.return_value = {'output': {'message': message}, 'stopReason': 'end_turn'}
+            with self.subTest(role=message['role']), patch('boto3.Session') as session:
+                session.return_value.client.return_value = client
+                with self.assertRaises(ValueError) as error: ai.complete(route, 'private fictional prompt')
+                self.assertIn('no result was accepted', str(error.exception))
+                self.assertNotIn('private', str(error.exception))
+                self.assertNotIn('partial answer', str(error.exception))
+                client.converse.assert_called_once()
+                client.close.assert_called_once()
+        client = MagicMock()
+        client.converse.return_value = {'output': {'message': {'role': 'assistant', 'content': [{'text': 'O'}, {'text': 'K'}]}}, 'stopReason': 'end_turn'}
+        with patch('boto3.Session') as session:
+            session.return_value.client.return_value = client
+            self.assertEqual(ai.complete(route, 'fictional prompt'), 'OK')
+
     def test_provider_error_categories_are_useful_and_never_echo_private_details(self):
         import httpx
         route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
@@ -416,6 +483,26 @@ class SDKContracts(unittest.TestCase):
             ai.complete(route, 'fictional prompt')
         self.assertNotIn('PRIVATE', str(caught.exception))
         self.assertEqual(len(calls), 1)
+
+    def test_bedrock_sdk_response_with_tool_block_is_rejected(self):
+        import boto3
+        from botocore.stub import Stubber
+        client = boto3.client('bedrock-runtime', region_name='us-east-1', aws_access_key_id='fictional', aws_secret_access_key='fictional')
+        self.addCleanup(client.close)
+        output = {'output': {'message': {'role': 'assistant', 'content': [
+            {'text': 'partial fictional text'},
+            {'toolUse': {'toolUseId': 'fictional-id', 'name': 'fictional-tool', 'input': {}}}]}},
+            'stopReason': 'end_turn', 'usage': {'inputTokens': 1, 'outputTokens': 1, 'totalTokens': 2}, 'metrics': {'latencyMs': 1}}
+        expected = {'modelId': 'fictional', 'system': [{'text': ai.SYSTEM}],
+            'messages': [{'role': 'user', 'content': [{'text': 'fictional prompt'}]}], 'inferenceConfig': {'maxTokens': 1500}}
+        with Stubber(client) as stub, patch('boto3.Session') as session:
+            session.return_value.client.return_value = client
+            stub.add_response('converse', output, expected)
+            with self.assertRaises(ValueError) as error:
+                ai.complete({'provider': 'bedrock', 'model': 'fictional', 'region': 'us-east-1'}, 'fictional prompt')
+            self.assertIn('no result was accepted', str(error.exception))
+            self.assertNotIn('partial fictional text', str(error.exception))
+            stub.assert_no_pending_responses()
 
     def test_bedrock_converse_contract(self):
         import boto3

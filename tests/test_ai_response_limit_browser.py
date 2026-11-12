@@ -22,13 +22,18 @@ class AIResponseLimitBrowserTests(unittest.TestCase):
         from career_agent.dashboard import DashboardConfig, create_app
         from career_agent.storage import Store
         from career_agent.workspace import CandidateWorkspace
-        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 2}}
         calls = []
+        mode = {'refusal': False}
         class Stream(httpx.SyncByteStream):
             def __iter__(self):
                 for _ in range(4): yield b'x' * (400 * 1024)
         def handler(request):
             calls.append(request)
+            if mode['refusal']:
+                return httpx.Response(200, json={'id': 'fictional', 'object': 'chat.completion', 'created': 0,
+                    'model': 'fictional', 'choices': [{'index': 0, 'finish_reason': 'stop',
+                        'message': {'role': 'assistant', 'content': 'partial fictional text', 'refusal': 'private refusal'}}]})
             return httpx.Response(200, headers={'content-type': 'application/json'}, stream=Stream())
         def client(): return httpx.Client(transport=ai._bounded_transport(httpx.MockTransport(handler)), trust_env=False)
         with tempfile.TemporaryDirectory() as directory:
@@ -61,6 +66,16 @@ class AIResponseLimitBrowserTests(unittest.TestCase):
                             history = AIHistory(store).recent()
                             self.assertEqual(history[0]['status'], 'failed')
                             self.assertNotIn('Reply with OK', json.dumps(history))
+                            self.assertEqual(CandidateWorkspace(store).latest()['revision'], 0)
+                        mode['refusal'] = True
+                        page.locator('#ai-test-consent').check(); page.locator('#ai-test-route').click()
+                        expect(page.locator('#ai-test-status')).to_contain_text('refused, or contained unsupported content')
+                        expect(page.locator('#ai-test-consent')).not_to_be_checked()
+                        self.assertEqual(len(calls), 2)
+                        with Store(db) as store:
+                            history = AIHistory(store).recent()
+                            self.assertEqual([row['status'] for row in history], ['failed', 'failed'])
+                            self.assertNotIn('private', json.dumps(history))
                             self.assertEqual(CandidateWorkspace(store).latest()['revision'], 0)
                     finally: browser.close()
             finally:
