@@ -57,6 +57,12 @@ class PolicyTests(unittest.TestCase):
             'H-1B sponsorship is available for Canadian citizens only.': 'conditional',
             'H-1B sponsorship is available, but only for executives.': 'conditional',
             'We cannot guarantee H-1B sponsorship is available.': 'conditional',
+            'Visa sponsorship is available for other roles.': 'conditional',
+            'H-1B sponsorship is available for certain positions.': 'conditional',
+            'Visa sponsorship is available subject to approval.': 'conditional',
+            'Visa sponsorship is available pending approval.': 'conditional',
+            'Visa sponsorship is available at our discretion.': 'conditional',
+            'Visa sponsorship is available except for this role.': 'conditional',
             'H-1B transfers are not available, but visa sponsorship is available.': 'conflicting',
         }
         for text, expected in cases.items():
