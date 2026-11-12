@@ -266,7 +266,7 @@
           <div id="career-facts-list" aria-label="Saved career facts"></div>
           <details>
             <summary>Import and review résumé text</summary>
-            <p class="muted">Paste text or extract it locally from a PDF, Word or UTF-8 text file (up to 2 MB). Recognized section headings suggest a category for each line; choose a suggestion to review and edit as a fact. Nothing is sent to a model, saved or verified automatically. Scanned PDFs need OCR and are not supported.</p>
+            <p class="muted">Paste text or extract it locally from a PDF, Word or UTF-8 text file (up to 2 MB). Local extraction and line suggestions do not contact a model. Scanned PDFs need OCR and are not supported.</p>
             <label class="block-label">Résumé file<input id="resume-file" type="file" accept=".pdf,.docx,.txt"></label>
             <button id="resume-file-extract" type="button" class="button">Extract file locally</button>
             <p id="resume-file-status" role="status" aria-live="polite"></p>
@@ -275,6 +275,17 @@
             <label class="block-label">Suggested statement<select id="resume-lines"></select></label>
             <button id="resume-use-line" type="button" class="button" disabled>Review as a career fact</button>
             <p id="resume-status" role="status" aria-live="polite"></p>
+            <details>
+              <summary>Suggest structured facts with AI</summary>
+              <p class="muted">With your consent, the entire text above is sent to the selected provider, including any names, contact details or other sensitive information in it. Edit the text first to remove anything you do not want shared. Cloud requests may incur charges. A local server can forward requests; check its settings.</p>
+              <button id="resume-ai-load" type="button" class="button">Load model routes</button>
+              <label class="block-label">Model route<select id="resume-ai-route"></select></label>
+              <p id="resume-ai-destination" class="muted">Load model routes to see the destination.</p>
+              <label class="check-label"><input id="resume-ai-consent" type="checkbox"> I consent to sending the complete résumé text above to the selected provider.</label>
+              <button id="resume-ai-submit" type="button" class="button" disabled>Suggest résumé facts</button>
+              <p id="resume-ai-status" role="status" aria-live="polite">No request has been made.</p>
+              <div id="resume-ai-results"></div>
+            </details>
           </details>
           <form id="career-fact-form" class="fact-form">
             <h3 id="fact-form-heading">Add career fact</h3>

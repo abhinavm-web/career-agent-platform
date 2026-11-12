@@ -375,6 +375,19 @@ def create_app(config: DashboardConfig) -> FastAPI:
         text = await run_in_threadpool(extract_resume, data["filename"], data["content"])
         return {"text": text}
 
+    @app.post("/api/workspace/ai-resume-suggestions")
+    async def ai_resume_suggestions(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'route', 'resume_text', 'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm sending the résumé text to the selected provider')
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            return await run_in_threadpool(run_recorded, config.db_path, data['route'], 'resume_fact_suggestions',
+                                           ai.resume_fact_suggestions, data['route'], data['resume_text'], True)
+        finally:
+            ai_lock.release()
+
     @app.post("/api/jobs/{job_id}/ai-analysis")
     async def ai_analysis(job_id: str, request: Request):
         data = await request.json()

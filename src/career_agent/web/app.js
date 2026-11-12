@@ -1672,6 +1672,8 @@
         return;
       }
       field.value = result.text;
+      byId("resume-ai-consent").checked = false;
+      byId("resume-ai-results").replaceChildren();
       resumeSuggestions = [];
       byId("resume-lines").replaceChildren();
       byId("resume-use-line").disabled = true;
@@ -1684,6 +1686,68 @@
     byId("resume-lines").replaceChildren();
     byId("resume-use-line").disabled = true;
     byId("resume-status").textContent = "Extract suggestions again after editing the text.";
+    byId("resume-ai-consent").checked = false;
+    byId("resume-ai-results").replaceChildren();
+    byId("resume-ai-status").textContent = "Résumé text changed; review it and consent again before requesting suggestions.";
+  });
+  let resumeAiRoutes = [], resumeAiBusy = false;
+  function showResumeAiDestination() {
+    byId("resume-ai-consent").checked = false;
+    byId("resume-ai-results").replaceChildren();
+    const route = resumeAiRoutes.find((item) => item.route === byId("resume-ai-route").value);
+    byId("resume-ai-destination").textContent = route ? `${route.provider} · ${route.model} · ${route.destination}` : "No model route selected.";
+    byId("resume-ai-submit").disabled = !route || resumeAiBusy;
+  }
+  byId("resume-ai-route").addEventListener("change", showResumeAiDestination);
+  byId("resume-ai-load").addEventListener("click", async () => {
+    if (resumeAiBusy) return;
+    resumeAiBusy = true; byId("resume-ai-load").disabled = true; byId("resume-ai-submit").disabled = true;
+    try {
+      const result = await api("/api/ai/routes");
+      resumeAiRoutes = result.routes;
+      const select = byId("resume-ai-route"), previous = select.value;
+      select.replaceChildren();
+      for (const route of resumeAiRoutes) {
+        const option = node("option", "", `${route.route} (${route.provider})`);
+        option.value = route.route; select.append(option);
+      }
+      if (resumeAiRoutes.some((route) => route.route === previous)) select.value = previous;
+      byId("resume-ai-status").textContent = resumeAiRoutes.length ? "Review the destination and résumé text, then consent." : "No model routes configured.";
+    } catch (error) { resumeAiRoutes = []; byId("resume-ai-status").textContent = error.message; }
+    finally { resumeAiBusy = false; byId("resume-ai-load").disabled = false; showResumeAiDestination(); }
+  });
+  byId("resume-ai-submit").addEventListener("click", async () => {
+    if (resumeAiBusy || !byId("resume-ai-consent").checked || !byId("resume-ai-route").value) {
+      byId("resume-ai-status").textContent = "Select a route, review the text and confirm sharing first."; return;
+    }
+    const source = byId("resume-text").value, route = byId("resume-ai-route").value;
+    if (!source.trim() || source.length > 20000) { byId("resume-ai-status").textContent = "Enter résumé text of at most 20,000 characters."; return; }
+    resumeAiBusy = true; byId("resume-ai-submit").disabled = true; byId("resume-ai-load").disabled = true;
+    byId("resume-ai-results").replaceChildren(); byId("resume-ai-status").textContent = "Waiting for the selected provider…";
+    try {
+      const response = await api("/api/workspace/ai-resume-suggestions", "POST", {route, resume_text: source, acknowledged: true});
+      if (byId("resume-text").value !== source || byId("resume-ai-route").value !== route) {
+        byId("resume-ai-status").textContent = "Text or route changed; suggestions were discarded. Review and request again."; return;
+      }
+      byId("resume-ai-status").textContent = response.notice;
+      if (!response.suggestions.length) byId("resume-ai-results").append(node("p", "muted", "No suggestions returned; this does not mean there are no career facts."));
+      for (const suggestion of response.suggestions) {
+        const card = node("section", "career-fact");
+        card.append(node("strong", "", "Suggested category: " + suggestion.section), node("blockquote", "", suggestion.quote));
+        card.append(button("Review this excerpt as a career fact", "button", () => {
+          if (byId("resume-text").value !== source || byId("resume-ai-route").value !== route) {
+            byId("resume-ai-status").textContent = "Text or route changed; request suggestions again."; return;
+          }
+          if ((state.editingFactId || byId("fact-statement").value || byId("fact-source").value || byId("fact-keywords").value) &&
+              !window.confirm("Replace the unsaved fact editor contents with this résumé excerpt?")) return;
+          resetFactEditor(); byId("fact-category").value = suggestion.section;
+          byId("fact-statement").value = suggestion.quote; byId("fact-statement").focus();
+          byId("resume-ai-status").textContent = "Review the excerpt and category, add a private evidence note, then save it unverified. Verification is a separate action.";
+        }));
+        byId("resume-ai-results").append(card);
+      }
+    } catch (error) { byId("resume-ai-status").textContent = error.message; }
+    finally { resumeAiBusy = false; byId("resume-ai-submit").disabled = !resumeAiRoutes.length; byId("resume-ai-load").disabled = false; byId("resume-ai-consent").checked = false; }
   });
   // Sections are suggestions based only on explicit headings, not inferred credentials.
   const resumeHeadings = {

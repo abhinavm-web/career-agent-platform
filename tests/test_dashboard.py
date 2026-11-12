@@ -259,6 +259,25 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.call('GET', '/api/workspace').json(), before)
         self.assertFalse(self.packet_dir.exists())
 
+    def test_ai_resume_suggestions_are_consented_read_only_and_budgeted(self):
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
+        resume = 'Built a fictional Python dashboard.'
+        output = {'suggestions': [{'quote': resume, 'section': 'experience'}]}
+        path = '/api/workspace/ai-resume-suggestions'
+        before = self.call('GET', '/api/workspace').json()
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete:
+            self.assertEqual(self.call('POST', path, {'route': 'local', 'resume_text': resume}).status_code, 422)
+            complete.assert_not_called()
+            response = self.call('POST', path, {'route': 'local', 'resume_text': resume, 'acknowledged': True})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()['suggestions'], output['suggestions'])
+            self.assertEqual(self.call('POST', path, {'route': 'local', 'resume_text': resume, 'acknowledged': True}).status_code, 429)
+            self.assertEqual(complete.call_count, 1)
+        self.assertEqual(self.call('GET', '/api/workspace').json(), before)
+        history = self.call('GET', '/api/ai/history').json()
+        self.assertEqual(history['recent'][0]['purpose'], 'resume_fact_suggestions')
+        self.assertNotIn(resume, json.dumps(history))
+
     def test_ai_route_test_requires_consent_and_releases_lock_on_failure(self):
         route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.dashboard.ai.test_route', return_value={'notice': 'ok'}) as probe:

@@ -4,7 +4,7 @@ from __future__ import annotations
 from . import ai
 from .storage import Store
 
-PURPOSES = {'route_test', 'career_chat', 'requirements', 'resume_suggestions'}
+PURPOSES = {'route_test', 'career_chat', 'requirements', 'resume_suggestions', 'resume_fact_suggestions'}
 
 
 class DailyRequestLimit(ValueError):
