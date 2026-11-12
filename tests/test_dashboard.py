@@ -789,6 +789,40 @@ class DashboardTests(unittest.TestCase):
         self.assertNotEqual(replacement['packet']['packet_sha256'], fingerprint)
         self.assertIsNone(replacement['review'])
 
+    def test_tailored_layout_reorders_verified_facts_and_requires_new_review(self):
+        data = fake_fact_bank()
+        data['facts'].extend([
+            {**data['facts'][0], 'id': 'experience-02', 'statement': 'A second fictional achievement.'},
+            {**data['facts'][0], 'id': 'education-01', 'section': 'education', 'statement': 'A fictional degree.'},
+        ])
+        self.facts_path.write_text(json.dumps(data))
+        options = self.call('GET', '/api/tailoring/facts').json()
+        path = f'/api/jobs/{self.job.id}/tailored-draft'
+        payload = {'fact_ids': ['experience-02', 'experience-01', 'education-01'],
+                   'section_order': ['education', 'experience', 'projects', 'skills', 'certifications'],
+                   'workspace_revision': options['workspace_revision'], 'facts_sha256': options['facts_sha256']}
+        for invalid in (None, ['education'] * 5, ['education'], ['education', 'experience', 'projects', 'skills', 'made-up']):
+            self.assertEqual(self.call('POST', path, {**payload, 'section_order': invalid}).status_code, 422)
+        response = self.call('POST', path, payload)
+        self.assertEqual(response.status_code, 200, response.text)
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        self.assertEqual(packet['tailored_section_order'], payload['section_order'])
+        self.assertEqual(packet['selected_fact_ids'], ['education-01', 'experience-02', 'experience-01'])
+        resume = packet['resume_markdown']
+        self.assertLess(resume.index('## Education'), resume.index('## Relevant Experience'))
+        self.assertLess(resume.index('A second fictional achievement.'), resume.index(data['facts'][0]['statement']))
+        self.assertNotIn('Private', resume)
+        first = packet['packet_sha256']
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': first}).status_code, 200)
+        response = self.call('POST', path, {**payload, 'section_order': ['experience', 'education', 'projects', 'skills', 'certifications']})
+        self.assertEqual(response.status_code, 200, response.text)
+        current = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()
+        self.assertNotEqual(current['packet']['packet_sha256'], first)
+        self.assertIsNone(current['review'])
+        self.assertEqual(self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': first}).status_code, 409)
+
     def test_tailored_packet_survives_restart_and_rejects_changed_job(self):
         from fastapi.testclient import TestClient
         from career_agent.dashboard import DashboardConfig, create_app

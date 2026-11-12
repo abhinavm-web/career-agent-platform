@@ -26,6 +26,7 @@ class CareerState(TypedDict, total=False):
     workspace_revision: int | None
     job_description_revision: int | None
     tailored_fact_ids: list[str] | None
+    tailored_section_order: list[str] | None
 
 
 def _imports():
@@ -118,7 +119,8 @@ def build_career_graph(checkpointer=None):
         return {"packet": build_packet(job, preferences, bank, records,
                                        workspace_revision=state.get('workspace_revision'),
                                        job_description_revision=state.get('job_description_revision'),
-                                       tailored_fact_ids=state.get('tailored_fact_ids'))}
+                                       tailored_fact_ids=state.get('tailored_fact_ids'),
+                                       tailored_section_order=state.get('tailored_section_order'))}
 
     def validate(state: CareerState) -> dict:
         validate_packet(state['packet'])

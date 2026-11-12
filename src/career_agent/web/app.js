@@ -552,7 +552,8 @@
       const choose = node("details", "tailoring-picker");
       choose.dataset.jobId = job.id;
       choose.append(node("summary", "", "Choose facts for a tailored draft"));
-      choose.append(node("p", "muted", "Select up to 12 verified facts. Statements are copied verbatim and the new draft needs a fresh review."));
+      choose.append(node("p", "muted", "Select up to 12 verified facts and arrange sections and facts. Statements are copied verbatim; changes create a new draft that needs a fresh review."));
+      choose.append(node("p", "muted", "To change a statement, edit it in Career profile and verify the changed fact before including it."));
       const choices = node("div");
       const status = node("p", "muted"); status.setAttribute("role", "status");
       const load = button("Load verified facts", "button", async () => {
@@ -560,28 +561,62 @@
         load.disabled = true;
         try {
           const result = await api("/api/tailoring/facts");
-          choices.replaceChildren();
+          const sections = ["experience", "projects", "skills", "education", "certifications"];
           const selected = [];
+          let layoutBusy = false;
           for (const fact of result.facts) {
             const label = node("label", "check-label");
             const box = document.createElement("input"); box.type = "checkbox";
             label.append(box, document.createTextNode(fact.section + " · " + fact.statement));
-            choices.append(label); selected.push({box, id: fact.id});
+            selected.push({box, label, id: fact.id, section: fact.section});
           }
           const submit = button("Create tailored draft", "button button-primary", async () => {
             const fact_ids = selected.filter((item) => item.box.checked).map((item) => item.id);
             if (!fact_ids.length || fact_ids.length > 12) {status.textContent = "Select between 1 and 12 facts."; return;}
             if (submit.disabled) return;
-            submit.disabled = true; load.disabled = true;
+            submit.disabled = true; load.disabled = true; layoutBusy = true; renderLayout();
             selected.forEach((item) => {item.box.disabled = true;});
             try {
-              await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256});
+              await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, section_order: sections.slice(), workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256});
               notice("Tailored draft created locally. Review it before using.");
               if (state.selectedId === job.id) await refresh(job.id);
             } catch (error) {status.textContent = error.message;}
-            finally {submit.disabled = false; load.disabled = false; selected.forEach((item) => {item.box.disabled = false;});}
+            finally {submit.disabled = false; load.disabled = false; layoutBusy = false; selected.forEach((item) => {item.box.disabled = false;}); renderLayout();}
           });
-          choices.append(submit);
+          function renderLayout() {
+            choices.replaceChildren();
+            sections.forEach((section, index) => {
+              const group = node("div", "tailoring-section");
+              group.append(node("strong", "", section));
+              const up = button("Move " + section + " section up", "button", () => {
+                [sections[index - 1], sections[index]] = [sections[index], sections[index - 1]];
+                renderLayout();
+              });
+              const down = button("Move " + section + " section down", "button", () => {
+                [sections[index], sections[index + 1]] = [sections[index + 1], sections[index]];
+                renderLayout();
+              });
+              up.disabled = layoutBusy || index === 0; down.disabled = layoutBusy || index === sections.length - 1;
+              group.append(up, down);
+              const items = selected.filter((item) => item.section === section);
+              items.forEach((item, position) => {
+                const row = node("div", "tailoring-fact");
+                row.append(item.label);
+                const move = (delta) => {
+                  const from = selected.indexOf(item), to = selected.indexOf(items[position + delta]);
+                  [selected[from], selected[to]] = [selected[to], selected[from]];
+                  renderLayout();
+                };
+                const earlier = button("Move fact " + item.id + " up", "button", () => move(-1));
+                const later = button("Move fact " + item.id + " down", "button", () => move(1));
+                earlier.disabled = layoutBusy || position === 0; later.disabled = layoutBusy || position === items.length - 1;
+                row.append(earlier, later); group.append(row);
+              });
+              choices.append(group);
+            });
+            choices.append(submit);
+          }
+          renderLayout();
           status.textContent = result.facts.length ? "Choose the facts to include." : "No verified facts available.";
           submit.disabled = !result.facts.length;
         } catch (error) {status.textContent = error.message;}

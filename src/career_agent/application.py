@@ -43,11 +43,11 @@ def select_facts(job: Job, bank: FactBank, limit: int = 12) -> tuple[VerifiedFac
     return tuple(sorted(selected, key=lambda fact: (SECTIONS.index(fact.section), -relevance(job, fact))))
 
 
-def resume_markdown(bank: FactBank, facts: tuple[VerifiedFact, ...]) -> str:
+def resume_markdown(bank: FactBank, facts: tuple[VerifiedFact, ...], section_order: tuple[str, ...] = SECTIONS) -> str:
     parts = [f"# {bank.name}"]
     if bank.headline:
         parts.append(bank.headline)
-    for section in SECTIONS:
+    for section in section_order:
         statements = [fact.statement for fact in facts if fact.section == section]
         if statements:
             parts.append(f"\n## {HEADINGS[section]}")
@@ -103,11 +103,18 @@ def build_packet(
     workspace_revision: int | None = None,
     job_description_revision: int | None = None,
     tailored_fact_ids: list[str] | None = None,
+    tailored_section_order: list[str] | None = None,
 ) -> dict[str, Any]:
     if workspace_revision is not None and (type(workspace_revision) is not int or workspace_revision < 1):
         raise ValueError("workspace_revision must be a positive integer")
     if job_description_revision is not None and (type(job_description_revision) is not int or job_description_revision < 1):
         raise ValueError("job_description_revision must be a positive integer")
+    if tailored_section_order is not None and (not isinstance(tailored_section_order, list)
+            or len(tailored_section_order) != len(SECTIONS)
+            or not all(isinstance(section, str) and section in SECTIONS for section in tailored_section_order)
+            or len(set(tailored_section_order)) != len(SECTIONS) or tailored_fact_ids is None):
+        raise ValueError('Choose each resume section exactly once')
+    section_order = tuple(tailored_section_order) if tailored_section_order is not None else SECTIONS
     if tailored_fact_ids is None:
         selected = select_facts(job, bank)
     else:
@@ -116,7 +123,7 @@ def build_packet(
                 or not all(isinstance(item, str) and item in claims for item in tailored_fact_ids)
                 or len(set(tailored_fact_ids)) != len(tailored_fact_ids)):
             raise ValueError('Select 1–12 distinct verified career facts')
-        selected = tuple(sorted((claims[item] for item in tailored_fact_ids), key=lambda fact: SECTIONS.index(fact.section)))
+        selected = tuple(sorted((claims[item] for item in tailored_fact_ids), key=lambda fact: section_order.index(fact.section)))
     selected_ids = {fact.fact_id for fact in selected}
     fit = score_job(job, preferences)
     packet = {
@@ -139,7 +146,7 @@ def build_packet(
                                  if contains_phrase(f"{job.title}\n{job.description}", keyword)],
         } for fact in selected],
         "omitted_fact_ids": [fact.fact_id for fact in bank.facts if fact.fact_id not in selected_ids],
-        "resume_markdown": resume_markdown(bank, selected),
+        "resume_markdown": resume_markdown(bank, selected, section_order),
         "cover_note": cover_note(job, bank, selected),
         "sponsorship": sponsorship_report(job, filing_records),
         "review_questions": [
@@ -162,6 +169,8 @@ def build_packet(
         packet["job_description_revision"] = job_description_revision
     if tailored_fact_ids is not None:
         packet["tailored_fact_ids"] = list(tailored_fact_ids)
+    if tailored_section_order is not None:
+        packet["tailored_section_order"] = list(tailored_section_order)
     packet["packet_sha256"] = packet_fingerprint(packet)
     return packet
 
