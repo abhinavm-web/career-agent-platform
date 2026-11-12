@@ -1,6 +1,8 @@
 """Private, metadata-only AI request journal and conservative local count limits."""
 from __future__ import annotations
 
+import hmac
+
 from . import ai
 from .storage import Store
 
@@ -52,7 +54,7 @@ class AIHistory:
         return [dict(row) for row in self.conn.execute("SELECT route,COUNT(*) AS attempts FROM ai_request_history WHERE started_at >= date('now') AND started_at < date('now','+1 day') GROUP BY route ORDER BY route")]
 
 
-def run_recorded(db_path, route_name, purpose, function, *args):
+def run_recorded(db_path, route_name, purpose, function, *args, expected_route_fingerprint=None):
     """Reserve before invocation so concurrent processes cannot exceed the local limit.
 
     A failure or crash consumes the reservation. No prompt, response, credential, job ID,
@@ -61,6 +63,10 @@ def run_recorded(db_path, route_name, purpose, function, *args):
     route = ai.routes().get(route_name) if isinstance(route_name, str) else None
     if route is None:
         raise ValueError('Choose a configured AI route')
+    if expected_route_fingerprint is not None and (
+            not isinstance(expected_route_fingerprint, str) or
+            not hmac.compare_digest(expected_route_fingerprint, ai.route_fingerprint(route_name, route))):
+        raise ValueError('Model destination or configuration changed; reload routes and consent again')
     if not route.get('record_history', False) and 'daily_request_limit' not in route:
         token = ai._ROUTE_SNAPSHOT.set((route_name, route))
         try:

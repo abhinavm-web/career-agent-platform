@@ -1624,8 +1624,11 @@
     byId("profile-chat-status").textContent = "Waiting for the selected provider…";
     const question = byId("profile-chat-question").value.trim();
     try {
+      const selected = profileChatRoutes.find((item) => item.route === byId("profile-chat-route").value);
+      if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before sharing.");
       const response = await api("/api/workspace/chat", "POST", {
-        route: byId("profile-chat-route").value,
+        route: selected.route,
+        route_fingerprint: selected.route_fingerprint,
         message: question,
         history: profileChatHistory,
         include_verified_facts: byId("profile-chat-facts").checked,
@@ -1721,11 +1724,13 @@
       byId("resume-ai-status").textContent = "Select a route, review the text and confirm sharing first."; return;
     }
     const source = byId("resume-text").value, route = byId("resume-ai-route").value;
+    const selectedRoute = resumeAiRoutes.find((item) => item.route === route);
+    if (!selectedRoute?.route_fingerprint) { byId("resume-ai-status").textContent = "Reload model routes and confirm the destination before sharing."; return; }
     if (!source.trim() || source.length > 20000) { byId("resume-ai-status").textContent = "Enter résumé text of at most 20,000 characters."; return; }
     resumeAiBusy = true; byId("resume-ai-submit").disabled = true; byId("resume-ai-load").disabled = true;
     byId("resume-ai-results").replaceChildren(); byId("resume-ai-status").textContent = "Waiting for the selected provider…";
     try {
-      const response = await api("/api/workspace/ai-resume-suggestions", "POST", {route, resume_text: source, acknowledged: true});
+      const response = await api("/api/workspace/ai-resume-suggestions", "POST", {route, route_fingerprint: selectedRoute.route_fingerprint, resume_text: source, acknowledged: true});
       if (byId("resume-text").value !== source || byId("resume-ai-route").value !== route) {
         byId("resume-ai-status").textContent = "Text or route changed; suggestions were discarded. Review and request again."; return;
       }

@@ -52,6 +52,11 @@ class ResumeAIBrowserTests(unittest.TestCase):
                         expect(page.locator('#resume-ai-destination')).to_contain_text('ollama')
                         page.locator('#resume-ai-submit').click()
                         self.assertEqual(calls, [])
+                        route['local']['base_url'] = 'http://127.0.0.1:1234/v1'
+                        page.locator('#resume-ai-consent').check(); page.locator('#resume-ai-submit').click()
+                        expect(page.locator('#resume-ai-status')).to_contain_text('reload routes and consent again')
+                        self.assertEqual(calls, [])
+                        route['local']['base_url'] = 'http://127.0.0.1:11434/v1'
                         page.locator('#resume-ai-consent').check(); page.locator('#resume-ai-submit').click()
                         self.assertTrue(ready.wait(5))
                         page.locator('#resume-text').fill(excerpt + ' Extra text.')

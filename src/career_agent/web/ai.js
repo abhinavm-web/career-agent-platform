@@ -104,7 +104,9 @@
     controls.forEach((control) => { control.disabled = true; });
     el("ai-test-status").textContent = "Testing the selected provider…";
     try {
-      const result = await api("/api/ai/test-route", {route: el("ai-route").value, acknowledged: true});
+      const selected = routes.find((item) => item.route === el("ai-route").value);
+      if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before testing.");
+      const result = await api("/api/ai/test-route", {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
       el("ai-test-status").textContent = result.notice;
     } catch (e) { el("ai-test-status").textContent = e.message; }
     finally {
@@ -124,7 +126,9 @@
     const jobId = el("ai-job").value;
     const tailoring = event.submitter?.id === "ai-tailor";
     try {
-      const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/${tailoring ? "ai-tailoring-suggestions" : "ai-analysis"}`, {route: el("ai-route").value, acknowledged: true});
+      const selected = routes.find((item) => item.route === el("ai-route").value);
+      if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before sharing.");
+      const r = await api(`/api/jobs/${encodeURIComponent(jobId)}/${tailoring ? "ai-tailoring-suggestions" : "ai-analysis"}`, {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
       if (el("ai-job").dataset.requestedJob && el("ai-job").dataset.requestedJob !== jobId) return;
       el("ai-status").textContent = `${r.notice} Model: ${r.model}. Checked: ${r.observed_at}.`;
       if (tailoring) {
