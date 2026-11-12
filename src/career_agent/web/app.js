@@ -155,6 +155,11 @@
     return {kind: "unknown", label: "Availability unknown", detail: observed.reason || "The check was inconclusive."};
   }
 
+  function hasReviewableSourceText(job) {
+    return !job.description?.trim() && job.application_stage !== "submitted" &&
+      job.discovery_observations?.some((row) => Boolean(row.candidate_observed_at));
+  }
+
   function filteredJobs() {
     const needle = state.search.trim().toLocaleLowerCase();
     const filters = state.boardFilters;
@@ -168,6 +173,8 @@
       if (filters.freshness !== "all" && postingObservation(job).kind !== filters.freshness) return false;
       if (state.filter === "priority") return job.fit_score !== null && job.fit_score >= 70;
       if (state.filter === "sponsorship") return job.sponsorship_status === "posting_claims_sponsorship" || job.sponsorship_status === "historical_only";
+      if (state.filter === "missing-description") return !job.description?.trim();
+      if (state.filter === "source-text-review") return hasReviewableSourceText(job);
       if (state.filter === "review") return job.packet_available && !job.review_decision;
       if (state.filter === "approved") return job.review_decision === "approved_for_manual_submission";
       if (state.filter === "submitted") return job.application_stage === "submitted";
@@ -246,7 +253,7 @@
       if (job.source) lower.append(chip("Source: " + job.source));
       if (!job.description?.trim()) lower.append(chip("Description missing", "amber"));
       if (job.discovery_observations?.some((row) => row.description_comparison === "differs")) lower.append(chip("Source text differs", "amber"));
-      if (!job.description?.trim() && job.discovery_observations?.some((row) => row.candidate_observed_at)) lower.append(chip("Source text to review", "amber"));
+      if (hasReviewableSourceText(job)) lower.append(chip("Source text to review", "amber"));
       const observation = postingObservation(job);
       lower.append(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""));
       if (job.packet_available) lower.append(chip(

@@ -23,7 +23,8 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
             job = Job.from_mapping({'company': 'Fictional Co', 'title': 'Engineer',
                 'job_url': 'https://example.invalid/role', 'description': '', 'source': 'linkedin'})
             with Store(db) as store:
-                store.add_jobs([job])
+                store.add_jobs([job, replace(job, title='Other role', url='https://example.invalid/other'),
+                                replace(job, title='Complete role', url='https://example.invalid/complete', description='Existing description.')])
             observed = replace(job, description='Fictional source text. <script>unsafe()</script>')
             app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -38,6 +39,8 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#filter').select_option('missing-description')
+                        expect(page.locator('#visible-count')).to_have_text('2 opportunities')
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Fictional engineer')
                         page.locator('#discover-site-indeed').uncheck(); page.locator('#discover-site-zip').uncheck()
@@ -45,6 +48,9 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                         page.get_by_role('button', name='Search and import jobs').click()
                         expect(page.locator('#discover-status')).to_contain_text('1 duplicates')
                         expect(page.locator('#job-list')).to_contain_text('Source text to review')
+                        page.locator('#filter').select_option('source-text-review')
+                        expect(page.locator('#visible-count')).to_have_text('1 opportunity')
+                        expect(page.locator('#job-list')).not_to_contain_text('Other role')
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         page.get_by_text('Correct saved description', exact=True).click()
                         page.get_by_text('Review returned source descriptions', exact=True).click()
@@ -65,6 +71,10 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                         with Store(db) as store:
                             self.assertEqual(store.get_job(job.id).description, observed.description)
                             self.assertEqual(store.description_revision(job.id), 1)
+                        expect(page.locator('#visible-count')).to_have_text('0 opportunities')
+                        page.locator('#filter').select_option('missing-description')
+                        expect(page.locator('#visible-count')).to_have_text('1 opportunity')
+                        expect(page.locator('#job-list')).to_contain_text('Other role')
                     finally: browser.close()
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
