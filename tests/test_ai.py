@@ -53,6 +53,27 @@ class AITests(unittest.TestCase):
         with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [row, row]})), self.assertRaises(ValueError):
             ai.tailoring_suggestions(self.job, self.bank, 'local', True)
 
+    def test_route_diagnostics_require_consent_and_send_only_synthetic_text(self):
+        with patch('career_agent.ai.complete', return_value='OK') as complete:
+            for route, consent in [('local', False), ('missing', True), ([], True)]:
+                with self.assertRaises(ValueError):
+                    ai.test_route(route, consent)
+            complete.assert_not_called()
+            result = ai.test_route('local', True)
+            self.assertEqual(complete.call_args.args[1], 'Reply with OK.')
+            self.assertEqual(complete.call_args.args[0]['max_tokens'], 128)
+            self.assertNotIn('answer', result)
+        with patch('career_agent.ai.complete', return_value=' '), self.assertRaises(ValueError):
+            ai.test_route('local', True)
+
+    def test_catalog_readiness_never_discloses_key(self):
+        self.config.write_text(json.dumps({'cloud': {'provider': 'anthropic', 'model': 'fictional', 'key_env': 'FICTIONAL_TEST_KEY'}}))
+        with patch.dict(os.environ, {'FICTIONAL_TEST_KEY': 'do-not-disclose'}):
+            result = ai.catalog()
+        self.assertEqual(result[0]['credential_status'], 'configured')
+        self.assertNotIn('do-not-disclose', json.dumps(result))
+        self.assertNotIn('FICTIONAL_TEST_KEY', json.dumps(result))
+
     def test_profile_chat_requires_consent_and_sends_only_supplied_facts(self):
         claims = self.bank.public_claims()
         with patch('career_agent.ai.complete', return_value='Ask about the role scope.') as complete:

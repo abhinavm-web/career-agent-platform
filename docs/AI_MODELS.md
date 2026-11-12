@@ -38,7 +38,11 @@ $env:ANTHROPIC_API_KEY = Read-Host 'Anthropic API key' -MaskInput
 
 AWS uses the normal SDK credential chain (prefer a signed-in profile/role). No credentials are read from JSON. An explicitly configured region is required; inference profiles may route across regions according to AWS configuration. Azure supports key-authenticated Azure OpenAI v1 chat completions, not arbitrary Foundry endpoints or Entra ID yet. Local routes require literal loopback HTTP addresses. Optional `key_env` can name a local server token; otherwise a dummy local credential is used. A loopback endpoint does not guarantee local inference: Ollama cloud models, proxies and LM Studio remote links may forward requests. Check that server's settings.
 
-Open **AI analysis** in the workspace navigation, select a route and job, and explicitly consent per request. You can also open analysis from an opportunity's detail; it carries the selected job into the analysis screen. At least one verified career fact is required. The selected destination is shown. No provider is contacted merely by loading the page or configuration. Alternatively:
+Open **AI analysis** in the workspace navigation, select a route and job, and explicitly consent per request. You can also open analysis from an opportunity's detail; it carries the selected job into the analysis screen. At least one verified career fact is required. The selected destination is shown. No provider is contacted merely by loading the page or configuration.
+
+**Test model connection** works without a saved job or verified facts. Refresh routes, select one, and separately consent to send a fixed synthetic prompt. It sends no candidate or job data; cloud requests may incur charges. The output is not displayed or saved. A successful response does not prove future availability, response quality, or provider privacy settings. The displayed SDK and credential indicators are local checks only; AWS credentials remain unknown until used. They do not verify a key or model access. If a route or key changes, refresh routes and restart the server when changing its environment.
+
+Alternatively, use the CLI:
 
 ```powershell
 career-agent --db .local/demo.sqlite3 ai-analyze JOB_ID --facts .local/facts.json --route claude --acknowledge-data-sharing

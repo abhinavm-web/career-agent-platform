@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -91,7 +92,34 @@ def _endpoint(value, provider):
 def catalog():
     return [{'route': name, 'provider': r['provider'], 'model': r['model'],
              'destination': r.get('base_url', r.get('region', 'https://api.anthropic.com')),
-             'max_tokens': r.get('max_tokens', 1500)} for name, r in routes().items()]
+             'max_tokens': r.get('max_tokens', 1500), **_readiness(r)} for name, r in routes().items()]
+
+
+def _readiness(route):
+    """Local-only checks; never resolve AWS credentials or contact a provider."""
+    provider = route['provider']
+    module = {'anthropic': 'anthropic', 'bedrock': 'boto3'}.get(provider, 'openai')
+    key_name = route.get('key_env', {'anthropic': 'ANTHROPIC_API_KEY', 'azure': 'AZURE_OPENAI_API_KEY'}.get(provider))
+    credential = ('unknown' if provider == 'bedrock' else
+                  'configured' if key_name and os.environ.get(key_name) else
+                  'missing' if key_name else 'not_required')
+    return {'sdk_installed': importlib.util.find_spec(module) is not None,
+            'credential_status': credential}
+
+
+def test_route(route_name, acknowledged=False):
+    """Send a fixed synthetic prompt; no candidate or job data is read."""
+    if acknowledged is not True:
+        raise ValueError('Confirm that the test contacts the selected provider and may incur charges')
+    route = routes().get(route_name) if isinstance(route_name, str) else None
+    if route is None:
+        raise ValueError('Choose a configured AI route')
+    answer = complete({**route, 'max_tokens': 128}, 'Reply with OK.',
+                      system='This is a connectivity test. Reply briefly.')
+    if not isinstance(answer, str) or not answer.strip():
+        raise ValueError('Provider returned an empty response; check model availability')
+    return {'route': route_name, 'provider': route['provider'], 'model': route['model'],
+            'notice': 'The provider returned a response to a synthetic test. This does not verify output quality, privacy settings, or future availability.'}
 
 
 def _key(route):

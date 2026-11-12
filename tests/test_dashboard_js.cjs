@@ -319,6 +319,35 @@ test('hard constraint warnings appear separately from the score', async () => {
   assert.match(h.get('detail-panel').textContent, /separate from the preference score/);
 });
 
+test('provider test needs explicit consent and sends no private data', async () => {
+  const elements = new Map();
+  const get = (id) => { if (!elements.has(id)) elements.set(id, new Element('div')); return elements.get(id); };
+  get('app').dataset.session = 'fictional-session';
+  const calls = [];
+  const fetch = async (url, options) => {
+    calls.push({url, options});
+    const payload = url === '/api/ai/routes' ? {routes: [{route: 'local', provider: 'ollama', model: 'fictional', destination: 'loopback', max_tokens: 1500, sdk_installed: true, credential_status: 'not_required'}]}
+      : url.startsWith('/api/jobs?') ? {jobs: []}
+      : url === '/api/settings' ? {facts_configured: false}
+      : {notice: 'Provider responded to synthetic test.'};
+    return {ok: true, json: async () => payload};
+  };
+  const document = {getElementById: get, createElement: (tag) => new Element(tag)};
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'career_agent', 'web', 'ai.js'), 'utf8');
+  vm.runInNewContext(source, {document, fetch}, {timeout: 1500});
+  await get('ai-load').click();
+  get('ai-route').value = 'local';
+  get('ai-route').handlers.change();
+  await get('ai-test-route').click();
+  assert.equal(calls.filter((call) => call.url === '/api/ai/test-route').length, 0);
+  get('ai-test-consent').checked = true;
+  await get('ai-test-route').click();
+  const request = calls.find((call) => call.url === '/api/ai/test-route');
+  assert.deepEqual(JSON.parse(request.options.body), {route: 'local', acknowledged: true});
+  assert.match(get('ai-test-status').textContent, /synthetic test/);
+  assert.equal(get('ai-test-consent').checked, false);
+});
+
 test('fit evidence presents untrusted excerpts and unknowns without claiming qualifications', async () => {
   const h = createHarness(); await flush();
   h.get('job-list').children[0].click();

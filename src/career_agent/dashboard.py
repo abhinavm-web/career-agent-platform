@@ -305,6 +305,18 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def ai_routes():
         return {"routes": ai.catalog()}
 
+    @app.post("/api/ai/test-route")
+    async def ai_test_route(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"route", "acknowledged"} or data["acknowledged"] is not True:
+            raise ValueError("Confirm that the test contacts the selected provider and may incur charges")
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="An AI request is already running")
+        try:
+            return await run_in_threadpool(ai.test_route, data["route"], True)
+        finally:
+            ai_lock.release()
+
     @app.post("/api/workspace/chat")
     async def workspace_chat(request: Request):
         data = await request.json()

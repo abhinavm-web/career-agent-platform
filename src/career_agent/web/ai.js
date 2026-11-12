@@ -32,9 +32,13 @@
   }
   function changed() {
     el("ai-consent").checked = false;
+    el("ai-test-consent").checked = false;
+    el("ai-test-status").textContent = "";
     el("ai-results").replaceChildren();
     const r = routes.find((r) => r.route === el("ai-route").value);
     el("ai-destination").textContent = r ? `${r.provider} · ${r.model} · ${r.destination} · output cap ${r.max_tokens} tokens` : "No route configured";
+    el("ai-route-readiness").textContent = r ? `Provider SDK: ${r.sdk_installed ? "installed" : "missing"} · Credential: ${r.credential_status}. These local checks do not establish connectivity or model access.` : "";
+    el("ai-test-route").disabled = !r;
   }
   el("ai-route").addEventListener("change", changed);
   el("ai-job").addEventListener("change", changed);
@@ -56,6 +60,11 @@
       delete el("ai-job").dataset.requestedJob;
       const sameSelection = !requestedJob && previousRoute === el("ai-route").value && previousJob === el("ai-job").value;
       if (!sameSelection) changed();
+      if (sameSelection) {
+        const selected = routes.find((r) => r.route === el("ai-route").value);
+        el("ai-route-readiness").textContent = selected ? `Provider SDK: ${selected.sdk_installed ? "installed" : "missing"} · Credential: ${selected.credential_status}. These local checks do not establish connectivity or model access.` : "";
+        el("ai-test-route").disabled = !selected;
+      }
       const ready = settings.facts_configured;
       el("ai-consent").checked = false;
       if (!ready) el("ai-results").replaceChildren();
@@ -69,6 +78,27 @@
       }
     } catch (e) { el("ai-status").textContent = e.message; }
     finally { busy = false; el("ai-load").disabled = false; }
+  });
+  el("ai-test-route").addEventListener("click", async () => {
+    if (busy || !el("ai-test-consent").checked || !el("ai-route").value) {
+      el("ai-test-status").textContent = "Select a route and confirm the test request first.";
+      return;
+    }
+    busy = true;
+    const controls = ["ai-load", "ai-route", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor"]
+      .map((id) => el(id)).filter(Boolean);
+    const states = controls.map((control) => control.disabled);
+    controls.forEach((control) => { control.disabled = true; });
+    el("ai-test-status").textContent = "Testing the selected provider…";
+    try {
+      const result = await api("/api/ai/test-route", {route: el("ai-route").value, acknowledged: true});
+      el("ai-test-status").textContent = result.notice;
+    } catch (e) { el("ai-test-status").textContent = e.message; }
+    finally {
+      controls.forEach((control, i) => { control.disabled = states[i]; });
+      el("ai-test-consent").checked = false;
+      busy = false;
+    }
   });
   el("ai-form").addEventListener("submit", async (event) => {
     event.preventDefault();
