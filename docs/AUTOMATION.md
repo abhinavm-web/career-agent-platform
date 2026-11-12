@@ -18,6 +18,12 @@ For new discovery observations, the app compares a fingerprint of the latest ret
 
 Run history shows returned/new counts, timestamps and completed/partial/failed/inconclusive/interrupted states. Per-source outcomes show whether JobSpy reported an error or warning, returned usable rows, or returned no usable rows. These indicators omit upstream error details and can miss errors that a provider does not report. Empty JobSpy results are inconclusive: some source adapters return empty data on errors. Positive results may also be incomplete. Failed, partial or empty runs back off (at least the configured interval, with exponential backoff up to one day). No missing result is interpreted as a closed vacancy. Detailed upstream exception text is not retained.
 
+JobSpy can log skipped ZipRecruiter rows without returning structured warnings.
+The worker marks that source as having reported a warning when it observes this
+specific condition, even if other rows were returned. It retains no provider
+message or affected posting details. This detection is best-effort and does not
+repair upstream parsing or establish source completeness.
+
 ## Durable application preparation
 
 The opportunity board's **Create application draft** now runs:

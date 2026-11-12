@@ -1,5 +1,6 @@
 """Offline schedule, crash recovery, idempotency and durable approval tests."""
 import json
+import logging
 import tempfile
 import time
 import unittest
@@ -186,6 +187,28 @@ class AutomationTests(unittest.TestCase):
         with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=lambda **kwargs: Frame())}):
             results = discover_jobspy('Fictional role', 'USA', 3, sites=['indeed', 'linkedin'])
         self.assertEqual(results.source_status['linkedin']['state'], 'inconclusive')
+
+    def test_jobspy_logged_skips_are_reported_without_provider_text(self):
+        from career_agent.discovery import discover_jobspy
+        logger = logging.getLogger('jobspy.ziprecruiter')
+        class Frame:
+            attrs = {}
+            def to_dict(self, orient):
+                return [asdict(fake_job()) | {'source': 'zip_recruiter'}]
+        def scrape(**_):
+            logger.warning('skipping job: fictional private provider detail')
+            return Frame()
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=scrape)}), self.assertLogs(logger, level='WARNING'):
+            results = discover_jobspy('Fictional role', 'USA', 3, sites=['zip_recruiter'])
+        self.assertEqual(results.source_status['zip_recruiter'], {'state': 'reported_warning', 'returned': 1})
+        self.assertNotIn('fictional private', json.dumps(results.source_status))
+        self.assertEqual(len(results), 1)
+        before = tuple(logger.handlers)
+        def fail(**_):
+            raise RuntimeError('fictional failure')
+        with patch.dict(sys.modules, {'jobspy': SimpleNamespace(scrape_jobs=fail)}), self.assertRaises(RuntimeError):
+            discover_jobspy('Fictional role', 'USA', 3, sites=['zip_recruiter'])
+        self.assertEqual(tuple(logger.handlers), before)
 
     def test_expired_lease_records_interrupted_run(self):
         sid = self.auto.save(self.search)['id']
