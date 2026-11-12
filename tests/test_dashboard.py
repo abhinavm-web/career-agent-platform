@@ -48,6 +48,21 @@ def fake_job(url="https://example.invalid/jobs/alpha"):
 
 @unittest.skipUnless(HAS_WEB, 'Install test dependencies with pip install -e ".[web,dev]"')
 class DashboardTests(unittest.TestCase):
+    def test_unreadable_legacy_files_are_not_reported_ready_and_board_still_loads(self):
+        self.profile_path.unlink()
+        self.facts_path.write_text('{invalid fictional JSON')
+        response = self.call('GET', '/api/settings')
+        self.assertEqual(response.status_code, 200)
+        settings = response.json()
+        self.assertFalse(settings['profile_configured'])
+        self.assertFalse(settings['facts_configured'])
+        self.assertFalse(settings['legacy_import_available'])
+        self.assertTrue(settings['legacy_files_unavailable'])
+        self.assertNotIn(str(self.profile_path), response.text)
+        board = self.call('GET', '/api/jobs')
+        self.assertEqual(board.status_code, 200, board.text)
+        self.assertIsNone(board.json()['jobs'][0]['fit_score'])
+
     def test_board_imported_history_stays_separate_from_policy_and_respects_job_associations(self):
         import io
         from career_agent.h1b import DOL_URL, H1BResearch
