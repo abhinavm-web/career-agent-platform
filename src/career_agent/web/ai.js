@@ -36,12 +36,25 @@
     el("ai-test-status").textContent = "";
     el("ai-results").replaceChildren();
     const r = routes.find((r) => r.route === el("ai-route").value);
-    el("ai-destination").textContent = r ? `${r.provider} · ${r.model} · ${r.destination} · output cap ${r.max_tokens} tokens` : "No route configured";
+    el("ai-destination").textContent = r ? `${r.provider} · ${r.model} · ${r.destination} · output cap ${r.max_tokens} tokens · ${r.daily_request_limit == null ? "no local daily request limit" : "daily local request limit " + r.daily_request_limit + " (UTC)"} · request history ${r.record_history ? "enabled" : "off"}` : "No route configured";
     el("ai-route-readiness").textContent = r ? `Provider SDK: ${r.sdk_installed ? "installed" : "missing"} · Credential: ${r.credential_status}. These local checks do not establish connectivity or model access.` : "";
     el("ai-test-route").disabled = !r;
   }
   el("ai-route").addEventListener("change", changed);
   el("ai-job").addEventListener("change", changed);
+  el("ai-history-refresh").addEventListener("click", async () => {
+    const button = el("ai-history-refresh");
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      const history = await api("/api/ai/history");
+      const panel = el("ai-history"); panel.replaceChildren();
+      panel.append(text("p", "Today (UTC): " + (history.today.map((row) => `${row.route}: ${row.attempts} attempts`).join("; ") || "no attempts")));
+      if (!history.recent.length) panel.append(text("p", "No recorded AI requests."));
+      for (const row of history.recent) panel.append(text("p", `${row.started_at} UTC · ${row.route} · ${row.provider} · ${row.model} · ${row.purpose} · ${row.status}`));
+    } catch (error) { el("ai-history").textContent = error.message; }
+    finally { button.disabled = false; }
+  });
   el("ai-load").addEventListener("click", async () => {
     if (busy) return;
     busy = true; el("ai-load").disabled = true; el("ai-run").disabled = true; el("ai-tailor").disabled = true;

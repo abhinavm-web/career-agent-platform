@@ -236,7 +236,8 @@ class DashboardTests(unittest.TestCase):
         self.assertFalse(self.packet_dir.exists())
 
     def test_ai_route_test_requires_consent_and_releases_lock_on_failure(self):
-        with patch('career_agent.dashboard.ai.test_route', return_value={'notice': 'ok'}) as probe:
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.dashboard.ai.test_route', return_value={'notice': 'ok'}) as probe:
             path = '/api/ai/test-route'
             self.assertEqual(self.call('POST', path, {'route': 'local'}).status_code, 422)
             probe.assert_not_called()
@@ -245,10 +246,23 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 422)
             self.assertEqual(self.call('POST', path, {'route': 'local', 'acknowledged': True}).status_code, 200)
 
+    def test_ai_history_limit_applies_across_dashboard_features(self):
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1', 'daily_request_limit': 1}}
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='OK') as complete:
+            self.assertEqual(self.call('POST', '/api/ai/test-route', {'route': 'local', 'acknowledged': True}).status_code, 200)
+            denied = self.call('POST', '/api/workspace/chat', {'route': 'local', 'message': 'Fictional private question', 'acknowledged': True})
+            self.assertEqual(denied.status_code, 429)
+            self.assertEqual(complete.call_count, 1)
+            history = self.call('GET', '/api/ai/history').json()
+            self.assertEqual(history['today'], [{'route': 'local', 'attempts': 1}])
+            self.assertEqual(history['recent'][0]['purpose'], 'route_test')
+            self.assertNotIn('private question', json.dumps(history))
+
     def test_profile_chat_sends_only_opted_in_verified_statements(self):
         path = '/api/workspace/chat'
         request = {'route': 'local', 'message': 'What should I highlight?'}
-        with patch('career_agent.dashboard.ai.profile_chat', return_value={
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        with patch('career_agent.ai.routes', return_value=route), patch('career_agent.dashboard.ai.profile_chat', return_value={
             'answer': 'Review your evidence.', 'route': 'local', 'provider': 'ollama', 'model': 'fictional'
         }) as chat:
             self.assertEqual(self.call('POST', path, request).status_code, 422)
