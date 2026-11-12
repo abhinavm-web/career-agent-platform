@@ -1231,6 +1231,32 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(results['draft'].status_code, 422)
         self.assertFalse((self.packet_dir / f'{self.job.id}.json').exists())
 
+    def test_submission_winning_before_new_run_does_not_supersede_reviewed_packet(self):
+        from career_agent.workflows import Workflows
+        fingerprint = self._draft()
+        response = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': fingerprint})
+        self.assertEqual(response.status_code, 200, response.text)
+        original = Workflows.start
+        submissions = []
+        def submitted_before_start(manager, *args, **kwargs):
+            submissions.append(self.call('POST', f'/api/jobs/{self.job.id}/submitted', {
+                'packet_sha256': fingerprint, 'receipt': 'fictional-receipt', 'attest_confirmed': True}))
+            return original(manager, *args, **kwargs)
+        with patch.object(Workflows, 'start', submitted_before_start):
+            rejected = self.call('POST', f'/api/jobs/{self.job.id}/draft', {})
+        self.assertEqual(submissions[0].status_code, 200, submissions[0].text)
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+        with Store(self.db) as store:
+            self.assertEqual(store.stage_of(self.job.id), 'submitted')
+            runs = store.connection.execute('SELECT status,packet_sha256 FROM workflow_runs WHERE job_id=?', (self.job.id,)).fetchall()
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0]['packet_sha256'], fingerprint)
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet')
+        self.assertEqual(packet.status_code, 200, packet.text)
+        self.assertFalse(packet.json()['stale'])
+        self.assertEqual(packet.json()['review']['decision'], 'approved_for_manual_submission')
+
     def test_cli_draft_and_description_correction_are_serialized(self):
         from threading import Event, Thread
         from career_agent.cli import main

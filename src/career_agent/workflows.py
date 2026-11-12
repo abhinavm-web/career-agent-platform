@@ -51,9 +51,15 @@ class Workflows:
 
     def start(self, state, *, guard_workspace=False):
         run_id = uuid.uuid4().hex
+        job_id = Job.from_mapping(state['job']).id
         with Store(self.db) as store, store.connection:
+            # Serialize this check with submission recording. Inserting a newer
+            # queued run after submission would supersede the reviewed packet.
+            store.connection.execute('BEGIN IMMEDIATE')
+            if store.stage_of(job_id) == 'submitted':
+                raise ValueError('Submitted application is locked')
             store.connection.execute('INSERT INTO workflow_runs(run_id,job_id,input_json,input_sha256,status) VALUES(?,?,?,?,?)',
-                (run_id, Job.from_mapping(state['job']).id,
+                (run_id, job_id,
                  json.dumps(state), signature(state), 'queued'))
         return self.advance(run_id, signature(state), expected_workspace_revision=(state.get('workspace_revision') or 0) if guard_workspace else None)
 
