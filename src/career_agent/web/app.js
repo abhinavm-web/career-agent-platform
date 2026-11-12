@@ -121,6 +121,11 @@
       " · " + (s.facts_configured ? "Career facts verified" : "Verify a career fact for AI analysis and drafts") + ".";
   }
 
+  function postingDeadline(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/i.test(value)) return NaN;
+    return Date.parse(value);
+  }
+
   function postingObservation(job) {
     const observed = job.live_check;
     if (!observed) return {kind: "unknown", label: "Not checked", detail: "Availability has not been checked."};
@@ -128,6 +133,11 @@
     const age = Date.now() - timestamp;
     if (!Number.isFinite(timestamp) || age < 0 || age > 86400000 || observed.stale) {
       return {kind: "stale", label: "Check is stale", detail: "The previous observation is stale or has an invalid date; current availability is unknown."};
+    }
+    if (observed.availability === "listed" && observed.application_deadline != null) {
+      const deadline = postingDeadline(observed.application_deadline);
+      if (!Number.isFinite(deadline)) return {kind: "unknown", label: "Availability unknown", detail: "The recorded application deadline is invalid or lacks a time zone; verify the posting directly."};
+      if (deadline <= Date.now()) return {kind: "expired", label: "Deadline passed", detail: "The provider-reported deadline has passed since the check. Current availability is unknown; verify the posting directly."};
     }
     if (observed.availability === "listed") return {kind: "listed", label: "Listed at check", detail: observed.reason};
     if (observed.availability === "expired") return {kind: "expired", label: "Deadline passed", detail: observed.reason};
@@ -161,8 +171,9 @@
     const expirations = state.jobs.map((job) => {
       const observation = job.live_check;
       const timestamp = observation && Date.parse(observation.checked_at);
-      return observation && !observation.stale && Number.isFinite(timestamp) && timestamp <= now
-        && now - timestamp <= 86400000 ? timestamp + 86400001 : null;
+      if (!observation || observation.stale || !Number.isFinite(timestamp) || timestamp > now || now - timestamp > 86400000) return null;
+      const deadline = observation.availability === "listed" ? postingDeadline(observation.application_deadline) : NaN;
+      return Math.min(timestamp + 86400001, Number.isFinite(deadline) && deadline > now ? deadline : Infinity);
     }).filter((value) => value !== null);
     if (expirations.length) {
       freshnessTimer = setTimeout(() => {

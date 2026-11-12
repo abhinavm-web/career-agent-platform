@@ -28,7 +28,7 @@ The adapters use the providers' documented read-only APIs: [Greenhouse Job Board
 
 **listed** means the exact posting was returned at check time, not that an employer is actively hiring or will sponsor. HTTP 200 alone is insufficient. Redirects, 403/404/429 responses, timeouts, HTML challenge pages, malformed responses and identity mismatches stay **unknown**. A 404 is not automatically called filled or closed.
 
-Each check is appended to local history with timestamp, source, HTTP status, reason and (when usable) a content hash and quoted policy evidence. Checks older than 24 hours have effective availability **unknown**, retaining the original observation for context. A failed newer check does not silently reuse a prior positive result. Policy wording from the live response is displayed separately from the saved posting. Saved job descriptions, candidate facts, approval fingerprints and application packets are not modified.
+Each check is appended to local history with timestamp, source, HTTP status, reason and (when usable) a content hash and quoted policy evidence. If a provider-reported deadline passes after a successful check, open views and later reads show the deadline as passed and current availability as unknown; this does not prove the job is closed. Invalid or timezone-free recorded deadlines remain unknown. Checks older than 24 hours have effective availability **unknown**, retaining the original observation for context. A failed newer check does not silently reuse a prior positive result. Policy wording from the live response is displayed separately from the saved posting. Saved job descriptions, candidate facts, approval fingerprints and application packets are not modified.
 
 ## Network boundaries and validation
 

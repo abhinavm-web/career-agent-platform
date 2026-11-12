@@ -98,3 +98,26 @@ class PostingTests(unittest.TestCase):
                     self.assertTrue(current['stale'])
                     self.assertEqual(current['availability'], 'unknown')
                     self.assertEqual(current['observed_availability'], 'listed')
+
+    def test_future_deadline_is_rechecked_when_read_without_changing_audit_record(self):
+        with tempfile.TemporaryDirectory() as directory, Store(Path(directory) / 'test.db') as store:
+            sample = job(); store.add_jobs([sample]); checks = PostingChecks(store)
+            current_time = datetime.now(timezone.utc)
+            observation = {'availability': 'listed', 'checked_at': (current_time - timedelta(hours=1)).isoformat(),
+                           'application_deadline': (current_time - timedelta(minutes=1)).isoformat(),
+                           'reason': 'Listed at check time'}
+            checks.save(sample.id, observation)
+            current = checks.latest(sample.id)
+            self.assertFalse(current['stale'])
+            self.assertEqual(current['availability'], 'expired')
+            self.assertEqual(current['observed_availability'], 'listed')
+            self.assertIn('Current availability is unknown', current['reason'])
+            stored = json.loads(store.connection.execute('SELECT result_json FROM posting_checks').fetchone()[0])
+            self.assertEqual(stored, observation)
+            for invalid in ('bad', '2026-01-01', '2026-01-01T12:00:00'):
+                with self.subTest(deadline=invalid):
+                    checks.save(sample.id, {**observation, 'application_deadline': invalid})
+                    self.assertEqual(checks.latest(sample.id)['availability'], 'unknown')
+            checks.save(sample.id, {**observation, 'checked_at': (current_time - timedelta(days=2)).isoformat()})
+            self.assertTrue(checks.latest(sample.id)['stale'])
+            self.assertEqual(checks.latest(sample.id)['availability'], 'unknown')

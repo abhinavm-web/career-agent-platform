@@ -140,4 +140,20 @@ class PostingChecks:
             result['observed_availability'] = result.get('availability', 'unknown')
             result['availability'] = 'unknown'
             result['reason'] = 'Previous observation is stale or has an invalid timestamp; check again. ' + str(result.get('reason', ''))
+        elif result.get('availability') == 'listed' and result.get('application_deadline') is not None:
+            try:
+                raw_deadline = result['application_deadline']
+                if not isinstance(raw_deadline, str) or 'T' not in raw_deadline:
+                    raise ValueError('Deadline requires a time and timezone')
+                deadline = datetime.fromisoformat(raw_deadline.replace('Z', '+00:00'))
+                if deadline.tzinfo is None or deadline.utcoffset() is None:
+                    raise ValueError('Deadline requires a time and timezone')
+                if deadline <= datetime.now(timezone.utc):
+                    result['observed_availability'] = 'listed'
+                    result['availability'] = 'expired'
+                    result['reason'] = 'The provider-reported application deadline has passed since the check. Current availability is unknown; verify the posting directly.'
+            except (ValueError, TypeError, OverflowError):
+                result['observed_availability'] = 'listed'
+                result['availability'] = 'unknown'
+                result['reason'] = 'The recorded application deadline is invalid or lacks a timezone; current availability is unknown.'
         return result

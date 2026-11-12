@@ -649,6 +649,18 @@ test("opportunity filters combine and old observations are never shown as listed
   assert.match(harness.get("job-list").textContent, /Role Beta/);
 });
 
+test("a passed or invalid provider deadline is never displayed as currently listed", async () => {
+  const base = {availability: "listed", checked_at: new Date().toISOString(), reason: "Listed at check"};
+  const past = {...fakeJob(ID_A, "Role Alpha"), live_check: {...base, application_deadline: new Date(Date.now() - 1000).toISOString()}};
+  const invalid = {...fakeJob(ID_B, "Role Beta"), live_check: {...base, application_deadline: "2026-12-01T12:00:00"}};
+  const harness = createHarness({jobsOverride: [past, invalid]}); await flush();
+  assert.match(harness.get("job-list").textContent, /Deadline passed/);
+  assert.match(harness.get("job-list").textContent, /Availability unknown/);
+  assert.doesNotMatch(harness.get("job-list").textContent, /Listed at check/);
+  harness.get("job-list").children[0].click();
+  assert.match(harness.get("detail-panel").textContent, /Current availability is unknown/);
+});
+
 test("tracker history download ignores filters and recovers from errors", async () => {
   for (const exportError of [false, true]) {
     const harness = createHarness({exportError});
