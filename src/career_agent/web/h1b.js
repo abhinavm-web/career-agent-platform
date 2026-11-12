@@ -117,6 +117,10 @@
     }
     return card;
   }
+  function postingDeadline(value) {
+    if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|[+-]\d\d:\d\d)$/i.test(value)) return NaN;
+    return Date.parse(value);
+  }
   function liveObservation(box, result) {
     if (observationTimers.has(box)) clearTimeout(observationTimers.get(box));
     observationTimers.delete(box);
@@ -124,12 +128,17 @@
     if (!result) { box.append(node("p", "No live check recorded.")); return; }
     const timestamp = Date.parse(result.checked_at), age = Date.now() - timestamp;
     const stale = result.stale || !Number.isFinite(timestamp) || age < 0 || age > 86400000;
-    const availability = stale ? "unknown" : result.availability;
-    box.append(node("p", (stale ? "STALE OBSERVATION · " : "") + availability.replaceAll("_", " ") + " · checked " + result.checked_at + " · " + result.reason));
+    const deadline = result.availability === "listed" && result.application_deadline != null ? postingDeadline(result.application_deadline) : NaN;
+    const invalidDeadline = result.availability === "listed" && result.application_deadline != null && !Number.isFinite(deadline);
+    const passedDeadline = Number.isFinite(deadline) && deadline <= Date.now();
+    const availability = stale || invalidDeadline ? "unknown" : passedDeadline ? "deadline passed; availability unknown" : result.availability;
+    const reason = invalidDeadline ? "The recorded application deadline is invalid or lacks a time zone; verify the posting directly." :
+      passedDeadline ? "The provider-reported application deadline has passed since the check; verify the posting directly." : result.reason;
+    box.append(node("p", (stale ? "STALE OBSERVATION · " : "") + availability.replaceAll("_", " ") + " · checked " + result.checked_at + " · " + reason));
     if (!stale) observationTimers.set(box, setTimeout(() => {
       observationTimers.delete(box);
       if (box.isConnected) liveObservation(box, result);
-    }, Math.max(1, 86400001 - age)));
+    }, Math.max(1, Math.min(86400001 - age, Number.isFinite(deadline) && !passedDeadline ? deadline - Date.now() : Infinity))));
     if (result.policy) {
       box.append(node("p", "Policy at check time: " + result.policy.policy.replaceAll("_", " ") + " · " + result.policy.reason));
       for (const quote of result.policy.quotes) box.append(node("blockquote", quote));

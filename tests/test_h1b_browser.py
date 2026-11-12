@@ -228,6 +228,44 @@ class H1BBrowserTests(unittest.TestCase):
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
 
+    def test_open_board_and_h1b_views_update_at_provider_deadline(self):
+        import uvicorn
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'test.sqlite3'
+            with Store(db) as store:
+                store.add_jobs([Job.from_mapping({'company': 'Fictional Co', 'title': 'Role',
+                    'job_url': 'https://boards.greenhouse.io/fictional/jobs/123'})])
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                observation = {'availability': 'listed', 'reason': 'Fictional check',
+                    'source_url': 'https://example.invalid/role', 'checked_at': datetime.now(timezone.utc).isoformat(),
+                    'application_deadline': (datetime.now(timezone.utc) + timedelta(seconds=8)).isoformat(), 'stale': False}
+                with patch('career_agent.posting_checks.PostingChecks.latest', return_value=observation), sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#job-list')).to_contain_text('Listed at check')
+                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        results = page.locator('#h1b-opportunities-results')
+                        expect(results).to_contain_text('listed')
+                        expect(results).to_contain_text('deadline passed; availability unknown', timeout=14000)
+                        expect(page.locator('#job-list')).to_contain_text('Deadline passed', timeout=14000)
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_navigation_pagination_and_contextual_ai_prerequisite(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
