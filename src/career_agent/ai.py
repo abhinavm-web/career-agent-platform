@@ -305,7 +305,25 @@ def analyze(job, bank, route_name, acknowledged=False):
     prompt = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     if len(prompt) > 32000:
         raise ValueError('AI input exceeds 32,000 characters; shorten the posting or fact bank explicitly')
-    raw = complete(route, prompt)
+    # Ollama can constrain the output shape and fact IDs. Exact job excerpts
+    # and every returned field are still checked independently below.
+    ids_schema = {'type': 'array', 'maxItems': len(claims), 'uniqueItems': True,
+                  'items': {'type': 'string'}}
+    if claims:
+        ids_schema['items']['enum'] = list(claims)
+    excerpts = list(dict.fromkeys(line.strip() for line in job.description.splitlines()
+                                  if line.strip() and len(line.strip()) <= 2000 and not line.strip().endswith(':')))[:100]
+    quote_schema = {'type': 'string', 'minLength': 1, 'maxLength': 2000}
+    if excerpts:
+        quote_schema['enum'] = excerpts
+    schema = {'type': 'object', 'properties': {'requirements': {'type': 'array', 'maxItems': 20,
+              'items': {'type': 'object', 'properties': {
+                  'quote': quote_schema,
+                  'fact_ids': ids_schema,
+                  'reason': {'type': 'string', 'minLength': 1, 'maxLength': 1500}},
+                  'required': ['quote', 'fact_ids', 'reason'], 'additionalProperties': False}}},
+              'required': ['requirements'], 'additionalProperties': False}
+    raw = complete(route, prompt, json_schema=schema)
     try:
         if not isinstance(raw, str) or len(raw) > 32000:
             raise ValueError()
