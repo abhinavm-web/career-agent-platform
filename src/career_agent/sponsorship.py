@@ -99,14 +99,20 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
             transfer.append(sentence)
         elif supports_transfer:
             transfer_support.append(sentence)
-        is_negative = any(re.search(pattern, value) for pattern in EXCLUSIONS) or bool(re.search(
-            r"\b(?:cannot|can't|will not|won't|does not|do not|unable to) (?:currently )?sponsor\b|\bnot (?:eligible|available) for (?:visa )?sponsorship\b|\bno h-?1b(?!1)(?: visa)?(?: sponsorship)?\b|\b(?:sponsorship|h-?1b(?!1)(?: sponsorship)?) (?:is )?(?:not (?:currently )?(?:offered|provided|supported|available)|unavailable)\b", value))
+        transfer_exclusion = re.compile(
+            r"\bh-?1b(?!1) transfers? (?:are )?(?:not (?:currently )?(?:accepted|supported|available)|unavailable)\b"
+            r"|\bno h-?1b(?!1) transfers?\b"
+            r"|\b(?:cannot|can't|will not|won't|does not|do not|unable to) (?:currently )?(?:sponsor|support|accept|offer|provide) h-?1b(?!1) transfers?\b")
+        transfer_excluded = bool(transfer_exclusion.search(value))
+        # Do not let generic patterns reclassify a transfer-specific phrase as a
+        # blanket exclusion; retain other independent restrictions in the sentence.
+        general_value = transfer_exclusion.sub(' ', value)
+        is_negative = any(re.search(pattern, general_value) for pattern in EXCLUSIONS) or bool(re.search(
+            r"\b(?:cannot|can't|will not|won't|does not|do not|unable to) (?:currently )?sponsor\b|\bnot (?:eligible|available) for (?:visa )?sponsorship\b|\bno h-?1b(?!1)(?: visa)?(?: sponsorship)?\b|\b(?:sponsorship|h-?1b(?!1)(?: sponsorship)?) (?:is )?(?:not (?:currently )?(?:offered|provided|supported|available)|unavailable)\b", general_value))
         is_negative = is_negative or bool(re.search(
-            r'\b(?:not (?:currently )?(?:offering|providing) (?:visa |h-?1b )?sponsorship|(?:must|will|should) not (?:now or in the future )?(?:require|need) (?:visa )?sponsorship|(?:but|however)[, ]+not for (?:this|the) (?:role|position))\b', value))
+            r'\b(?:not (?:currently )?(?:offering|providing) (?:visa |h-?1b )?sponsorship|(?:must|will|should) not (?:now or in the future )?(?:require|need) (?:visa )?sponsorship|(?:but|however)[, ]+not for (?:this|the) (?:role|position))\b', general_value))
         is_negative = is_negative or bool(re.search(
-            r'\b(?:except|excluding|other than) h-?1b(?!1)\b|\bnot (?:currently )?sponsoring\b|\bnot able to (?:provide sponsorship|sponsor)\b', value))
-        transfer_excluded = bool(re.search(
-            r'\bh-?1b(?!1) transfers? (?:are )?(?:not (?:currently )?(?:accepted|supported|available)|unavailable)\b', value))
+            r'\b(?:except|excluding|other than) h-?1b(?!1)\b|\bnot (?:currently )?sponsoring\b|\bnot able to (?:provide sponsorship|sponsor)\b', general_value))
         is_positive = any(re.search(pattern, value) for pattern in POSITIVES) or bool(re.search(
             r'\bh-?1b(?!1)(?: visa)? (?:sponsorship )?(?:is )?(?:available|provided|offered|supported|welcome)|\bsponsorship (?:is )?(?:available|provided|offered)\b', value))
         is_conditional = bool(re.search(r'\b(?:may|might|if|case.by.case|consider|considered|depending|eligible candidates|not guaranteed|cannot guarantee|can\x27t guarantee|no guarantee)\b|no (?:visa )?sponsorship (?:is )?(?:required|needed)', value))
