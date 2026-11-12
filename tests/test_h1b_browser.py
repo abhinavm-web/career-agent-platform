@@ -16,6 +16,58 @@ from career_agent.storage import Store
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class H1BBrowserTests(unittest.TestCase):
+    def test_sparse_workbook_error_identifies_worksheet_row_and_allows_retry(self):
+        import uvicorn
+        from io import BytesIO
+        from playwright.sync_api import sync_playwright, expect
+        from career_agent.dashboard import DashboardConfig, create_app
+        try:
+            from openpyxl import Workbook
+            import defusedxml  # noqa: F401
+        except ImportError:
+            self.skipTest('Install optional LCA workbook support')
+        def workbook(status):
+            book = Workbook(); sheet = book.active
+            sheet.append(['CASE_NUMBER', 'EMPLOYER_NAME', 'VISA_CLASS', 'CASE_STATUS', 'DECISION_DATE'])
+            sheet.append(['I-200-25123-000001', 'Fictional Employer', 'H-1B', 'Certified', '2025-04-15'])
+            for column, value in enumerate(['I-200-25123-000002', 'Fictional Employer', 'H-1B', status, '2025-04-15'], 1):
+                sheet.cell(row=9, column=column, value=value)
+            out = BytesIO(); book.save(out); book.close(); return out.getvalue()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'fictional.sqlite3'
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(.05)
+                self.assertTrue(server.started)
+                with sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-h1b').click()
+                        page.get_by_text('Import public DOL LCA records', exact=True).click()
+                        page.locator('#h1b-captured').fill('2025-06-01')
+                        upload = page.locator('#h1b-file')
+                        upload.set_input_files({'name': 'fictional.xlsx', 'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': workbook('Pending')})
+                        page.locator('#h1b-consent').check()
+                        page.get_by_role('button', name='Import records locally', exact=True).click()
+                        expect(page.locator('#h1b-import-status')).to_contain_text('Worksheet row 9: unsupported CASE_STATUS')
+                        with Store(db) as store:
+                            self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM h1b_lca').fetchone()[0], 0)
+                        upload.set_input_files({'name': 'fictional.xlsx', 'mimeType': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'buffer': workbook('Certified')})
+                        page.locator('#h1b-consent').check()
+                        page.get_by_role('button', name='Import records locally', exact=True).click()
+                        expect(page.locator('#h1b-import-status')).to_contain_text('2 added')
+                        with Store(db) as store:
+                            self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM h1b_lca').fetchone()[0], 2)
+                    finally: browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+
     def test_empty_history_explains_missing_import_then_shows_local_evidence(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
