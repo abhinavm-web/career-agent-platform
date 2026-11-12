@@ -18,8 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 class TailoringEvaluationTests(unittest.TestCase):
     def test_live_evaluation_requires_consent_and_only_sends_fictional_cases(self):
         route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
-        with patch('scripts.evaluate_live_tailoring.ai.routes', return_value={'local': route}), \
-             patch('scripts.evaluate_live_tailoring.run_recorded') as run:
+        with patch('career_agent.live_tailoring_evaluation.ai.routes', return_value={'local': route}), \
+             patch('career_agent.live_tailoring_evaluation.run_recorded') as run:
             with self.assertRaisesRegex(ValueError, 'Confirm'):
                 evaluate_live('local', Path('fictional.sqlite3'))
             run.assert_not_called()
@@ -34,13 +34,13 @@ class TailoringEvaluationTests(unittest.TestCase):
 
     def test_live_evaluation_stops_after_limit_or_route_change(self):
         route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
-        with patch('scripts.evaluate_live_tailoring.ai.routes', return_value={'local': route}), \
-             patch('scripts.evaluate_live_tailoring.run_recorded', side_effect=DailyRequestLimit('Local limit')) as run:
+        with patch('career_agent.live_tailoring_evaluation.ai.routes', return_value={'local': route}), \
+             patch('career_agent.live_tailoring_evaluation.run_recorded', side_effect=DailyRequestLimit('Local limit')) as run:
             report = evaluate_live('local', Path('fictional.sqlite3'), True)
             self.assertEqual(report['cases'][0]['status'], 'not_sent_limit')
             self.assertEqual(run.call_count, 1)
-        with patch('scripts.evaluate_live_tailoring.ai.routes', return_value={'local': route}), \
-             patch('scripts.evaluate_live_tailoring.run_recorded', side_effect=ValueError('Model destination or configuration changed')) as run:
+        with patch('career_agent.live_tailoring_evaluation.ai.routes', return_value={'local': route}), \
+             patch('career_agent.live_tailoring_evaluation.run_recorded', side_effect=ValueError('Model destination or configuration changed')) as run:
             report = evaluate_live('local', Path('fictional.sqlite3'), True)
             self.assertEqual(report['cases'][0]['status'], 'failed')
             self.assertEqual(run.call_count, 1)

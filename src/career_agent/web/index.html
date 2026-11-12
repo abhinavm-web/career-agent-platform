@@ -432,6 +432,14 @@
           <button type="button" class="button" id="ai-sample-run" disabled>Test fictional analysis</button>
           <p id="ai-sample-status" role="status" aria-live="polite"></p>
           <div id="ai-sample-results"></div>
+          <details id="ai-tailoring-sample-preview"><summary>Review fictional résumé tailoring cases</summary>
+            <p>These fixed examples contain no saved profile or job data. Review each proposed rewrite against its source; warnings and citation checks cannot establish truth.</p>
+            <div id="ai-tailoring-sample-cases"></div>
+          </details>
+          <label class="check-label"><input type="checkbox" id="ai-tailoring-sample-consent"> I agree to send up to three fictional cases to the selected provider. Cloud requests may incur charges; local servers may forward requests.</label>
+          <button type="button" class="button" id="ai-tailoring-sample-run" disabled>Test fictional résumé tailoring</button>
+          <p id="ai-tailoring-sample-status" role="status" aria-live="polite"></p>
+          <div id="ai-tailoring-sample-results"></div>
           <label class="check-label"><input type="checkbox" id="ai-consent" required> I consent to sending these statements and this posting to the selected provider. Cloud requests may incur charges. A local server may itself forward requests; check its configuration.</label>
           <button type="submit" class="button button-primary" id="ai-run" disabled>Analyze requirements</button>
           <button type="submit" class="button" id="ai-tailor" disabled>Suggest résumé wording</button>

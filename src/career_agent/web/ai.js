@@ -4,6 +4,7 @@
   const token = el("app").dataset.session;
   let routes = [];
   let busy = false;
+  let tailoringCasesLoaded = false;
   const text = (tag, value) => { const n = document.createElement(tag); n.textContent = value; return n; };
   const modelInfo = (result) => ` Configured model: ${result.model}. Provider-reported model: ${result.reported_model || "not available"} (unverified).`;
   async function api(path, data) {
@@ -35,6 +36,9 @@
     el("ai-consent").checked = false;
     el("ai-test-consent").checked = false;
     el("ai-sample-consent").checked = false;
+    el("ai-tailoring-sample-consent").checked = false;
+    el("ai-tailoring-sample-status").textContent = "";
+    el("ai-tailoring-sample-results").replaceChildren();
     el("ai-test-status").textContent = "";
     el("ai-sample-status").textContent = "";
     el("ai-sample-results").replaceChildren();
@@ -44,6 +48,7 @@
     el("ai-route-readiness").textContent = r ? `Provider SDK: ${r.sdk_installed ? "installed" : "missing"} · Credential: ${r.credential_status}. These local checks do not establish connectivity or model access.` : "";
     el("ai-test-route").disabled = !r;
     el("ai-sample-run").disabled = !r;
+    el("ai-tailoring-sample-run").disabled = !r || !tailoringCasesLoaded;
   }
   el("ai-route").addEventListener("change", changed);
   el("ai-job").addEventListener("change", changed);
@@ -85,10 +90,12 @@
         el("ai-route-readiness").textContent = selected ? `Provider SDK: ${selected.sdk_installed ? "installed" : "missing"} · Credential: ${selected.credential_status}. These local checks do not establish connectivity or model access.` : "";
         el("ai-test-route").disabled = !selected;
         el("ai-sample-run").disabled = !selected;
+        el("ai-tailoring-sample-run").disabled = !selected || !tailoringCasesLoaded;
       }
       const ready = settings.facts_configured;
       el("ai-consent").checked = false;
       el("ai-sample-consent").checked = false;
+      el("ai-tailoring-sample-consent").checked = false;
       el("ai-sample-status").textContent = "";
       el("ai-sample-results").replaceChildren();
       if (!ready) el("ai-results").replaceChildren();
@@ -101,7 +108,7 @@
           (jobs.truncated ? " The job picker is limited to the most recent 10,000 roles." : "");
       }
     } catch (e) { el("ai-status").textContent = e.message; }
-    finally { busy = false; el("ai-load").disabled = false; }
+    finally { busy = false; el("ai-load").disabled = false; el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded; }
   });
   el("ai-test-route").addEventListener("click", async () => {
     if (busy || !el("ai-test-consent").checked || !el("ai-route").value) {
@@ -109,7 +116,7 @@
       return;
     }
     busy = true;
-    const controls = ["ai-load", "ai-route", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor", "ai-sample-run", "ai-sample-consent"]
+    const controls = ["ai-load", "ai-route", "ai-run", "ai-test-route", "ai-test-consent", "ai-tailor", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"]
       .map((id) => el(id)).filter(Boolean);
     const states = controls.map((control) => control.disabled);
     controls.forEach((control) => { control.disabled = true; });
@@ -124,6 +131,7 @@
       controls.forEach((control, i) => { control.disabled = states[i]; });
       el("ai-test-consent").checked = false;
       busy = false;
+      el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded;
     }
   });
   el("ai-sample-run").addEventListener("click", async () => {
@@ -132,7 +140,7 @@
       return;
     }
     busy = true;
-    const controls = ["ai-load", "ai-route", "ai-run", "ai-tailor", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent"]
+    const controls = ["ai-load", "ai-route", "ai-run", "ai-tailor", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"]
       .map(id => el(id)).filter(Boolean);
     const states = controls.map(control => control.disabled);
     controls.forEach(control => { control.disabled = true; });
@@ -158,13 +166,67 @@
       controls.forEach((control, i) => { control.disabled = states[i]; });
       el("ai-sample-consent").checked = false;
       busy = false;
+      el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded;
+    }
+  });
+  el("ai-tailoring-sample-preview").addEventListener("toggle", async () => {
+    if (!el("ai-tailoring-sample-preview").open || tailoringCasesLoaded) return;
+    const panel = el("ai-tailoring-sample-cases"); panel.textContent = "Loading fictional cases…";
+    try {
+      const result = await api('/api/ai/tailoring-sample');
+      if (!Array.isArray(result.cases) || result.cases.length !== 3) throw new Error('Unable to load fictional cases');
+      panel.replaceChildren();
+      for (const row of result.cases) {
+        const section = document.createElement("section");
+        section.append(text("h4", row.case), text("p", "Fictional role: " + row.title + " · " + row.company), text("p", "Source fact: " + row.source_fact), text("p", "Job text: " + row.job_description));
+        panel.append(section);
+      }
+      tailoringCasesLoaded = true;
+      el("ai-tailoring-sample-run").disabled = busy || !el("ai-route").value;
+    } catch (error) { panel.textContent = error.message + " Close and reopen to retry."; }
+  });
+  el("ai-tailoring-sample-run").addEventListener("click", async () => {
+    if (busy || !tailoringCasesLoaded || !el("ai-tailoring-sample-consent").checked || !el("ai-route").value) {
+      el("ai-tailoring-sample-status").textContent = "Review the cases, select a route, and confirm the fictional test first."; return;
+    }
+    busy = true;
+    const controls = ["ai-load", "ai-route", "ai-job", "ai-run", "ai-tailor", "ai-consent", "ai-test-route", "ai-test-consent", "ai-sample-run", "ai-sample-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"].map(id => el(id));
+    const states = controls.map(control => control.disabled);
+    controls.forEach(control => { control.disabled = true; });
+    const panel = el("ai-tailoring-sample-results"); panel.replaceChildren();
+    el("ai-tailoring-sample-status").textContent = "Sending up to three fictional cases; this can take several minutes…";
+    try {
+      const selected = routes.find(item => item.route === el("ai-route").value);
+      if (!selected?.route_fingerprint) throw new Error("Reload model routes and confirm the destination before testing.");
+      const report = await api('/api/ai/tailoring-sample', {route: selected.route, route_fingerprint: selected.route_fingerprint, acknowledged: true});
+      el("ai-tailoring-sample-status").textContent = report.notice;
+      for (const row of report.cases) {
+        const section = document.createElement("section");
+        section.append(text("h4", row.case), text("p", "Source fact: " + row.source_fact), text("p", "Job text: " + row.job_description));
+        if (row.status !== 'validated_response') section.append(text("p", "Not completed: " + row.error));
+        else {
+          section.append(text("p", modelInfo({model: row.configured_model, reported_model: row.reported_model})));
+          if (!row.suggestions.length) section.append(text("p", "No suggestions returned; this is not a quality result."));
+          for (const suggestion of row.suggestions) {
+            section.append(text("p", "Job excerpt: " + suggestion.job_quote), text("p", "Proposed wording: " + suggestion.wording));
+            for (const warning of suggestion.review_warnings) section.append(text("p", "Review warning: " + warning));
+          }
+        }
+        panel.append(section);
+      }
+      if (report.cases.length < 3) panel.append(text("p", `${3 - report.cases.length} remaining case(s) were not attempted.`));
+    } catch (error) { el("ai-tailoring-sample-status").textContent = error.message; }
+    finally {
+      controls.forEach((control, i) => { control.disabled = states[i]; });
+      el("ai-tailoring-sample-consent").checked = false; busy = false;
+      el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded;
     }
   });
   el("ai-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (busy || !el("ai-consent").checked) return;
     busy = true;
-    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-job", "ai-consent", "ai-sample-run", "ai-sample-consent", "ai-test-route", "ai-test-consent"];
+    const ids = ["ai-load", "ai-run", "ai-tailor", "ai-route", "ai-job", "ai-consent", "ai-sample-run", "ai-sample-consent", "ai-test-route", "ai-test-consent", "ai-tailoring-sample-run", "ai-tailoring-sample-consent"];
     ids.forEach((id) => { el(id).disabled = true; });
     el("ai-results").replaceChildren();
     el("ai-status").textContent = "Analyzing with the selected provider…";
@@ -221,6 +283,7 @@
     }
     finally {
       busy = false; ids.forEach((id) => { el(id).disabled = false; }); el("ai-consent").checked = false;
+      el("ai-tailoring-sample-run").disabled = !el("ai-route").value || !tailoringCasesLoaded;
       if (el("ai-job").dataset.requestedJob) el("ai-load").click();
     }
   });
