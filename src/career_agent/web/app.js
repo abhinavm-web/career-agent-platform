@@ -15,6 +15,7 @@
   };
   let freshnessTimer = null;
   let selectedAvailabilityUpdater = null;
+  const availabilityInteractions = new Map();
   let workspaceMutationBusy = false;
   let workspaceLoadSequence = 0;
   let profileNavigationSequence = 0;
@@ -419,35 +420,41 @@
     const availability = section("Posting availability");
     const availabilityStatus = node("div", "availability-status");
     availabilityStatus.setAttribute("role", "status");
-    let checkingAvailability = false;
-    let checkFailure = null;
+    if (!availabilityInteractions.has(job.id)) availabilityInteractions.set(job.id, {pending: false, failure: null});
+    const interaction = availabilityInteractions.get(job.id);
+    let check = null;
     const showAvailability = () => {
-      if (checkingAvailability) return;
-      const observation = postingObservation(job);
+      if (check) check.disabled = interaction.pending;
+      if (interaction.pending) { availabilityStatus.textContent = "Checking the public posting…"; return; }
+      const currentJob = state.jobs.find((value) => value.id === job.id) || job;
+      const observation = postingObservation(currentJob);
       availabilityStatus.replaceChildren(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""),
         node("p", "", observation.detail));
-      if (checkFailure) availabilityStatus.append(node("p", "", "Check failed: " + checkFailure + ". Previous observation remains unchanged."));
-      if (job.live_check && job.live_check.checked_at) availabilityStatus.append(node("p", "", "Checked: " + job.live_check.checked_at));
-      if (job.live_check && job.live_check.source_url) availabilityStatus.append(safeLink("Observation source", job.live_check.source_url));
+      if (interaction.failure) availabilityStatus.append(node("p", "", "Check failed: " + interaction.failure + ". Previous observation remains unchanged."));
+      if (currentJob.live_check && currentJob.live_check.checked_at) availabilityStatus.append(node("p", "", "Checked: " + currentJob.live_check.checked_at));
+      if (currentJob.live_check && currentJob.live_check.source_url) availabilityStatus.append(safeLink("Observation source", currentJob.live_check.source_url));
     };
     selectedAvailabilityUpdater = showAvailability;
     showAvailability();
     availability.append(availabilityStatus);
     if (job.live_check_supported) {
-      const check = button("Check live availability", "button", async () => {
-        if (check.disabled) return;
-        check.disabled = true;
-        checkingAvailability = true;
-        checkFailure = null;
-        availabilityStatus.textContent = "Checking the public posting…";
+      check = button("Check live availability", "button", async () => {
+        if (interaction.pending) return;
+        interaction.pending = true;
+        interaction.failure = null;
+        if (selectedAvailabilityUpdater) selectedAvailabilityUpdater();
         try {
-          job.live_check = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
-          checkingAvailability = false;
-          showAvailability();
+          const observation = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
+          const currentJob = state.jobs.find((value) => value.id === job.id);
+          if (currentJob) currentJob.live_check = observation;
+        } catch (error) { interaction.failure = error.message; }
+        finally {
+          interaction.pending = false;
+          if (state.selectedId === job.id && selectedAvailabilityUpdater) selectedAvailabilityUpdater();
           renderJobs();
-        } catch (error) { checkingAvailability = false; checkFailure = error.message; showAvailability(); }
-        finally { checkingAvailability = false; check.disabled = false; }
+        }
       });
+      check.disabled = interaction.pending;
       availability.append(node("p", "", "Checks the public ATS posting. No candidate information is sent."), check);
     } else {
       availability.append(node("p", "", "Live checks support Greenhouse and Lever postings. Check the original posting manually."));
