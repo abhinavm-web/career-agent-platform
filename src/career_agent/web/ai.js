@@ -120,9 +120,29 @@
           const section = document.createElement("section");
           section.append(text("p", `Verified fact ${row.fact_id}: ${row.original_fact}`),
             text("blockquote", row.job_quote), text("p", `Unverified suggested wording: ${row.wording}`));
+          const stage = text("button", "Save unverified wording for review");
+          stage.type = "button"; stage.className = "button";
+          stage.addEventListener("click", async () => {
+            if (stage.disabled) return;
+            stage.disabled = true;
+            try {
+              const workspace = (await api("/api/workspace")).workspace;
+              if (!workspace.revision) throw new Error("Import or create your career profile before saving a suggestion.");
+              await api(`/api/jobs/${encodeURIComponent(jobId)}/stage-ai-wording`, {
+                expected_revision: workspace.revision, fact_id: row.fact_id,
+                source_statement: row.original_fact, job_quote: row.job_quote, wording: row.wording, acknowledged: true
+              });
+              stage.textContent = "Saved for review";
+              el("ai-status").textContent = "Saved as an unverified fact. Open Career profile to compare its source, edit it and verify it separately before drafting.";
+            } catch (error) {
+              el("ai-status").textContent = error.message;
+              stage.disabled = false;
+            }
+          });
+          section.append(stage);
           el("ai-results").append(section);
         }
-        el("ai-results").append(text("p", "These suggestions do not change your profile or application. Check them against your records; add and verify any accurate wording in Career profile before including it in a draft."));
+        el("ai-results").append(text("p", "Suggestions do not change your profile or application unless you save one for review. Check it against your records and verify it separately in Career profile before including it in a draft."));
         return;
       }
       if (!r.requirements.length) el("ai-results").append(text("p", "No requirements returned. This does not establish a match or absence of requirements."));

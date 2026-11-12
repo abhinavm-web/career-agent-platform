@@ -6,6 +6,7 @@ Only separately confirmed, current facts can be used for application drafting.
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,7 +15,7 @@ from .models import CandidateProfile
 from .storage import Store
 
 PROFILE_LISTS = ("target_titles", "skills", "preferred_locations")
-FACT_FIELDS = {"id", "section", "statement", "keywords", "source_note", "verified_by_candidate"}
+FACT_FIELDS = {"id", "section", "statement", "keywords", "source_note", "verified_by_candidate", "derived_from"}
 MAX_FACTS = 100
 
 
@@ -93,20 +94,29 @@ def _validate_facts(rows: Any) -> list[dict[str, Any]]:
         if fact.fact_id in ids:
             raise ValueError("Fact IDs must be unique")
         ids.add(fact.fact_id)
-        normalized.append({
+        normalized_fact = {
             "id": fact.fact_id,
             "section": fact.section,
             "statement": fact.statement,
             "keywords": list(fact.keywords),
             "source_note": fact.source_note,
             "verified_by_candidate": row.get("verified_by_candidate", False),
-        })
+        }
+        if "derived_from" in row:
+            provenance = row["derived_from"]
+            if (not isinstance(provenance, dict) or set(provenance) != {"fact_id", "statement", "job_id", "job_quote"}
+                    or not all(isinstance(value, str) and value.strip() for value in provenance.values())
+                    or len(provenance["fact_id"]) > 64 or len(provenance["statement"]) > 1000
+                    or len(provenance["job_id"]) > 128 or len(provenance["job_quote"]) > 2000):
+                raise ValueError("Invalid wording suggestion provenance")
+            normalized_fact["derived_from"] = dict(provenance)
+        normalized.append(normalized_fact)
     return normalized
 
 
 def _fact_content(fact: dict[str, Any]) -> tuple:
     """Compare all substantive fields; changes revoke old verification."""
-    return (fact["section"], fact["statement"], tuple(fact["keywords"]), fact["source_note"])
+    return (fact["section"], fact["statement"], tuple(fact["keywords"]), fact["source_note"], fact.get("derived_from"))
 
 
 @dataclass
@@ -176,6 +186,8 @@ class CandidateWorkspace:
             previous = {fact["id"]: fact for fact in current["facts"]}
             for fact in validated_facts:
                 old = previous.get(fact["id"])
+                if fact.get("derived_from") != (old.get("derived_from") if old else None):
+                    raise ValueError("Suggestion provenance cannot be changed through the fact editor")
                 # Editing, inserting or explicitly unchecking a fact revokes its verification.
                 fact["verified_by_candidate"] = bool(
                     old and old["verified_by_candidate"]
@@ -185,6 +197,33 @@ class CandidateWorkspace:
             return {"profile": validated_profile, "facts": validated_facts}
 
         return self._write(expected_revision, transform, "edited")
+
+    def stage_wording(self, expected_revision: int, job_id: str, fact_id: str, source_statement: str,
+                      job_quote: str, wording: str, acknowledged: bool) -> dict[str, Any]:
+        """Save a candidate-selected suggestion as an unverified fact, with immutable source snapshot."""
+        if acknowledged is not True:
+            raise ValueError("Explicit acknowledgement is required to save a suggestion")
+        if not all(isinstance(item, str) and item.strip() for item in (job_id, fact_id, source_statement, job_quote, wording)):
+            raise ValueError("A source fact, posting excerpt and wording are required")
+        if len(job_quote) > 2000:
+            raise ValueError("Posting excerpt exceeds 2,000 characters")
+        def transform(current):
+            if len(current['facts']) >= MAX_FACTS:
+                raise ValueError("Career fact limit reached")
+            source = next((fact for fact in current['facts'] if fact['id'] == fact_id), None)
+            if not source or not source['verified_by_candidate'] or source['statement'] != source_statement:
+                raise StaleRevision("Source fact changed or is no longer verified; request a new suggestion")
+            job = self.store.get_job(job_id)
+            if job_quote not in job.description:
+                raise StaleRevision("Posting changed; request a new suggestion")
+            proposal = {'id': 'fact-' + uuid.uuid4().hex[:12], 'section': source['section'],
+                'statement': wording, 'keywords': source['keywords'],
+                'source_note': 'AI wording suggestion from verified fact ' + fact_id + '. Review against your original evidence.',
+                'verified_by_candidate': False, 'derived_from': {'fact_id': fact_id,
+                    'statement': source_statement, 'job_id': job_id, 'job_quote': job_quote}}
+            current['facts'].append(_validate_facts([proposal])[0])
+            return current
+        return self._write(expected_revision, transform, 'ai_wording_staged')
 
     def verify(self, expected_revision: int, fact_id: str, verified: bool,
                acknowledged: bool) -> dict[str, Any]:

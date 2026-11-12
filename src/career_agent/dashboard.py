@@ -528,6 +528,20 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=409, detail=str(error)) from error
         return {"workspace": updated}
 
+    @app.post("/api/jobs/{job_id}/stage-ai-wording")
+    async def stage_ai_wording(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'expected_revision', 'fact_id', 'source_statement', 'job_quote', 'wording', 'acknowledged'}:
+            raise ValueError('A reviewed suggestion and its source are required')
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            try:
+                updated = CandidateWorkspace(store).stage_wording(data['expected_revision'], job_id,
+                    data['fact_id'], data['source_statement'], data['job_quote'], data['wording'], data['acknowledged'])
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return {'workspace': updated}
+
     @app.post("/api/workspace/import")
     async def import_legacy_workspace(request: Request):
         data = await request.json()

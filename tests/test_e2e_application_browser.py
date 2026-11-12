@@ -25,7 +25,9 @@ class ApplicationJourneyTests(unittest.TestCase):
         output = {'requirements': [{'quote': 'Python skills.', 'fact_ids': ['experience-01'], 'reason': 'Review relevance.'}]}
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); facts = root / 'facts.json'; facts.write_text(json.dumps(fake_fact_bank()))
-            app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets', facts_path=facts))
+            profile = root / 'profile.json'; profile.write_text(json.dumps({'target_titles': ['Data Analyst'],
+                'skills': ['Python'], 'preferred_locations': [], 'allow_remote': True}))
+            app = create_app(DashboardConfig(db_path=root / 'fictional.sqlite3', packet_dir=root / 'packets', facts_path=facts, profile_path=profile))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
             thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
@@ -40,6 +42,11 @@ class ApplicationJourneyTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-profile').click()
+                        page.once('dialog', lambda dialog: dialog.accept())
+                        page.locator('#import-career-data').click()
+                        expect(page.locator('#notice')).to_contain_text('imported')
+                        page.locator('#nav-jobs').click()
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Data Analyst')
                         page.locator('#discover-consent').check()
@@ -65,6 +72,24 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#ai-results')).to_contain_text('Delivered a fictional AI program')
                         expect(page.locator('#ai-results')).to_contain_text('do not change your profile')
                         self.assertEqual(complete.call_count, 2)
+                        page.get_by_role('button', name='Save unverified wording for review').click()
+                        expect(page.locator('#ai-status')).to_contain_text('Saved as an unverified fact')
+                        page.locator('#nav-profile').click()
+                        proposed = page.locator('.career-fact').filter(has_text='A fictional suggested rewrite.')
+                        expect(proposed).to_contain_text('Not verified')
+                        expect(proposed).to_contain_text('AI wording source fact experience-01')
+                        page.once('dialog', lambda dialog: dialog.accept())
+                        proposed.get_by_role('button', name='Verify this fact').click()
+                        expect(page.locator('.career-fact').filter(has_text='A fictional suggested rewrite.')).to_contain_text('Candidate verified')
+                        page.locator('#nav-jobs').click()
+                        page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
+                        page.get_by_text('Choose facts for a tailored draft').click()
+                        page.get_by_role('button', name='Load verified facts').click()
+                        page.get_by_label('experience · A fictional suggested rewrite.').check()
+                        page.get_by_role('button', name='Create tailored draft').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Application packet', timeout=20000)
+                        page.get_by_text('Resume draft', exact=True).click()
+                        expect(page.locator('#detail-panel')).to_contain_text('A fictional suggested rewrite.')
                     finally:
                         browser.close()
             finally:

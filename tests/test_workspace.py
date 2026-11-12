@@ -98,6 +98,36 @@ class WorkspaceModelTests(unittest.TestCase):
         self.assertEqual(bank.facts[0].statement, fact()["statement"])
         self.assertEqual(len(self.ws.history()), 2)
 
+    def test_suggested_wording_is_unverified_and_keeps_source_snapshot(self):
+        job = new_job(); self.store.add_jobs([job])
+        saved = self.ws.save(0, preferences(), [fact()])
+        confirmed = self.ws.verify(saved['revision'], 'pilot-01', True, True)
+        args = (confirmed['revision'], job.id, 'pilot-01', fact()['statement'], 'AWS migration',
+                'Built a fictional AWS modernization proof of concept.')
+        with self.assertRaises(ValueError):
+            self.ws.stage_wording(*args, False)
+        staged = self.ws.stage_wording(*args, True)
+        proposal = staged['facts'][-1]
+        self.assertFalse(proposal['verified_by_candidate'])
+        self.assertEqual(proposal['derived_from']['statement'], fact()['statement'])
+        self.assertEqual(proposal['derived_from']['job_quote'], 'AWS migration')
+        self.assertNotIn(proposal['id'], CandidateWorkspace.fact_bank(staged).public_claims())
+        changed = [dict(item) for item in staged['facts']]
+        changed[-1] = dict(changed[-1], derived_from=dict(proposal['derived_from'], fact_id='forged'))
+        with self.assertRaisesRegex(ValueError, 'provenance'):
+            self.ws.save(staged['revision'], staged['profile'], changed)
+        verified = self.ws.verify(staged['revision'], proposal['id'], True, True)
+        self.assertIn(proposal['id'], CandidateWorkspace.fact_bank(verified).public_claims())
+        self.assertEqual(verified['facts'][-1]['derived_from'], proposal['derived_from'])
+        with self.assertRaises(StaleRevision):
+            self.ws.stage_wording(*args, True)
+        with self.assertRaises(StaleRevision):
+            self.ws.stage_wording(verified['revision'], job.id, 'pilot-01', 'outdated statement',
+                                  'AWS migration', 'Fictional valid wording.', True)
+        with self.assertRaises(StaleRevision):
+            self.ws.stage_wording(verified['revision'], job.id, 'pilot-01', fact()['statement'],
+                                  'unrelated excerpt', 'Fictional valid wording.', True)
+
     def test_changed_fact_is_automatically_unverified(self):
         first = self.ws.save(0, preferences(), [fact()])
         confirmed = self.ws.verify(first["revision"], "pilot-01", True, True)
@@ -264,6 +294,34 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertNotIn("Private fictional project note", packet["resume_markdown"])
         self.assertEqual(packet["candidate_name"], "Fictional Candidate")
         self.assertTrue(self.api("GET", "/api/settings").json()["facts_configured"])
+
+    def test_staged_wording_needs_separate_verification_and_invalidates_packet(self):
+        imported = self.api('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']
+        draft = self.api('POST', f'/api/jobs/{self.job.id}/draft', {})
+        self.assertEqual(draft.status_code, 200)
+        path = f'/api/jobs/{self.job.id}/stage-ai-wording'
+        request = {'expected_revision': imported['revision'], 'fact_id': 'pilot-01',
+                   'source_statement': fact()['statement'], 'job_quote': 'AWS migration',
+                   'wording': 'Built a fictional AWS modernization proof of concept.', 'acknowledged': True}
+        self.assertEqual(self.api('POST', path, request | {'acknowledged': False}).status_code, 422)
+        staged = self.api('POST', path, request)
+        self.assertEqual(staged.status_code, 200, staged.text)
+        workspace = staged.json()['workspace']; proposal = workspace['facts'][-1]
+        self.assertFalse(proposal['verified_by_candidate'])
+        self.assertTrue(self.api('GET', f'/api/jobs/{self.job.id}/packet').json()['stale'])
+        self.assertEqual(self.api('POST', path, request).status_code, 409)
+        verified = self.api('POST', f"/api/workspace/facts/{proposal['id']}/verification", {
+            'expected_revision': workspace['revision'], 'verified': True, 'acknowledged': True})
+        self.assertEqual(verified.status_code, 200, verified.text)
+        available = self.api('GET', '/api/tailoring/facts').json()
+        payload = {'fact_ids': [proposal['id']], 'workspace_revision': verified.json()['workspace']['revision'],
+                   'facts_sha256': available['facts_sha256']}
+        tailored = self.api('POST', f'/api/jobs/{self.job.id}/tailored-draft', payload)
+        self.assertEqual(tailored.status_code, 200, tailored.text)
+        packet = self.api('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        self.assertIn(proposal['statement'], packet['resume_markdown'])
+        self.assertNotIn('Private fictional project note', packet['resume_markdown'])
+        self.assertIsNone(self.api('GET', f'/api/jobs/{self.job.id}/packet').json()['review'])
 
     def test_fact_revocation_invalidates_prior_approval_and_prevents_submission(self):
         saved = self.api("PUT", "/api/workspace", {
