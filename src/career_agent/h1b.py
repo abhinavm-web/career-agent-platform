@@ -7,6 +7,7 @@ import io
 import json
 import re
 import tempfile
+import unicodedata
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -20,6 +21,11 @@ DOL_URL = 'https://www.dol.gov/agencies/eta/foreign-labor/performance'
 STATUSES = {'certified', 'certified-withdrawn', 'denied', 'withdrawn'}
 XLSX_MAX_ROW = 1048576
 XLSX_MAX_COLUMN = 1024
+
+
+def employer_search_key(value):
+    """Broader discovery only; never use this key to join filing records."""
+    return ''.join(char for char in unicodedata.normalize('NFKC', value).casefold() if char.isalnum())
 
 
 def _xlsx_dimensions(workbook, sheet, progress=None):
@@ -546,20 +552,31 @@ class H1BResearch:
                 'next_offset': offset + 25 if offset + 25 < len(matches) else None,
                 'settings': settings}
 
-    def search(self, query, offset=0):
+    def search(self, query, offset=0, *, name_mode='literal'):
         query = text(query, 'Company search', 200)
         if len(query) < 2 or type(offset) is not int or offset < 0:
             raise ValueError('Use at least two characters and a nonnegative offset')
+        if name_mode not in ('literal', 'punctuation'):
+            raise ValueError('Unknown employer name search mode')
         settings = self.settings()
         # instr treats SQL wildcard characters literally. Search suggestions never imply an entity match.
         key = employer_key(query)
         employers = 'WITH employers AS (SELECT employer_key,employer FROM h1b_lca UNION ALL SELECT employer_key,employer FROM uscis_employers) '
-        total = self.conn.execute(employers + 'SELECT COUNT(DISTINCT employer_key) FROM employers WHERE instr(employer_key,?)>0', (key,)).fetchone()[0]
-        companies = self.conn.execute(employers + 'SELECT MIN(employer) AS employer FROM employers WHERE instr(employer_key,?)>0 GROUP BY employer_key ORDER BY employer_key LIMIT 25 OFFSET ?', (key, offset)).fetchall()
+        if name_mode == 'punctuation':
+            candidate_key = employer_search_key(query)
+            if len(candidate_key) < 2:
+                raise ValueError('Use at least two letters or digits for the broader employer search')
+            self.conn.create_function('h1b_search_key', 1, employer_search_key, deterministic=True)
+            names = employers + ', names AS (SELECT employer_key,MIN(employer) AS employer FROM employers GROUP BY employer_key) '
+            total = self.conn.execute(names + 'SELECT COUNT(*) FROM names WHERE instr(h1b_search_key(employer_key),?)>0', (candidate_key,)).fetchone()[0]
+            companies = self.conn.execute(names + 'SELECT employer FROM names WHERE instr(h1b_search_key(employer_key),?)>0 ORDER BY employer_key LIMIT 25 OFFSET ?', (candidate_key, offset)).fetchall()
+        else:
+            total = self.conn.execute(employers + 'SELECT COUNT(DISTINCT employer_key) FROM employers WHERE instr(employer_key,?)>0', (key,)).fetchone()[0]
+            companies = self.conn.execute(employers + 'SELECT MIN(employer) AS employer FROM employers WHERE instr(employer_key,?)>0 GROUP BY employer_key ORDER BY employer_key LIMIT 25 OFFSET ?', (key, offset)).fetchall()
         jobs = [self.job(job, settings) for job in self.store.list_jobs(limit=-1) if key in employer_key(job.company)]
         if not settings['include_unknown']:
             jobs = [job for job in jobs if job['policy'] != 'unknown']
         return {'companies': [self.company(row['employer'], settings) for row in companies],
                 'company_total': total, 'offset': offset, 'next_offset': offset + 25 if offset + 25 < total else None,
-                'jobs': jobs, 'settings': settings, 'coverage': self.coverage(),
+                'jobs': jobs, 'settings': settings, 'coverage': self.coverage(), 'name_mode': name_mode,
                 'warning': 'LCA and USCIS history are separate from current job policy. No records means unknown, not no sponsorship. Live checks are dated ATS observations, not hiring or sponsorship guarantees.'}

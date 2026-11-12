@@ -57,6 +57,8 @@ class USCISTests(unittest.TestCase):
         self.assertEqual(result['company_total'], 1)
         self.assertEqual(result['companies'][0]['recent_certified_cases'], 0)
         self.assertEqual(result['companies'][0]['uscis']['totals']['initial_approval'], 18)
+        self.assertEqual(research.search('Fictional.Corp', name_mode='punctuation')['company_total'], 1)
+        self.assertEqual(research.search('Fictional.Corp')['company_total'], 0)
 
     def test_invalid_and_suppressed_values_never_become_zero(self):
         self.records.import_bytes(hub_csv([{'Initial Approval': '*', 'City': ''}]), URL, 2025, '2025-09-30')

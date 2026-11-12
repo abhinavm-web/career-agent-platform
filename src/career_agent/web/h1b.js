@@ -260,17 +260,22 @@
     associationForm.className = "crm-form";
     const lookupLabel = node("label", "Find possible filing names"); lookupLabel.className = "field";
     const lookupInput = node("input"); lookupInput.value = job.company; lookupInput.maxLength = 200; lookupLabel.append(lookupInput);
+    const broadLabel = node("label"); broadLabel.className = "check-label";
+    const broad = node("input"); broad.type = "checkbox";
+    broadLabel.append(broad, document.createTextNode(" Ignore punctuation and spaces when finding possible names (may include unrelated entities)."));
     const lookup = node("button", "Search imported employer names"); lookup.type = "button"; lookup.className = "button";
     const lookupStatus = node("p"); lookupStatus.setAttribute("role", "status");
     const candidates = node("div");
     let lookupSequence = 0;
-    lookupInput.addEventListener("input", () => { lookupSequence++; candidates.replaceChildren(); lookupStatus.textContent = "Search to update possible names."; });
-    async function lookupPage(query, offset) {
+    const clearLookup = () => { lookupSequence++; candidates.replaceChildren(); lookupStatus.textContent = "Search to update possible names."; };
+    lookupInput.addEventListener("input", clearLookup);
+    broad.addEventListener("change", clearLookup);
+    async function lookupPage(query, offset, mode) {
       if (lookup.disabled) return;
       const request = ++lookupSequence;
       lookup.disabled = true; candidates.replaceChildren(); lookupStatus.textContent = "Searching local records…";
       try {
-        const result = await api("/api/h1b/search?q=" + encodeURIComponent(query) + "&offset=" + offset);
+        const result = await api("/api/h1b/search?q=" + encodeURIComponent(query) + "&offset=" + offset + "&name_mode=" + mode);
         if (!card.isConnected) return;
         if (request !== lookupSequence) return;
         const first = result.companies.length ? offset + 1 : 0;
@@ -287,12 +292,12 @@
           const pages = node("div");
           if (offset > 0) {
             const previous = node("button", "Previous employer names"); previous.type = "button";
-            previous.addEventListener("click", () => lookupPage(query, Math.max(0, offset - 25)));
+            previous.addEventListener("click", () => lookupPage(query, Math.max(0, offset - 25), mode));
             pages.append(previous);
           }
           if (Number.isInteger(result.next_offset)) {
             const next = node("button", "Next employer names"); next.type = "button";
-            next.addEventListener("click", () => lookupPage(query, result.next_offset));
+            next.addEventListener("click", () => lookupPage(query, result.next_offset, mode));
             pages.append(next);
           }
           candidates.append(pages);
@@ -300,7 +305,7 @@
       } catch (error) { if (request === lookupSequence) lookupStatus.textContent = error.message; }
       finally { lookup.disabled = false; }
     }
-    lookup.addEventListener("click", () => lookupPage(lookupInput.value, 0));
+    lookup.addEventListener("click", () => lookupPage(lookupInput.value, 0, broad.checked ? "punctuation" : "literal"));
     const employerLabel = node("label", "Imported legal employer name");
     employerLabel.className = "field";
     const employerInput = node("input"); employerInput.required = true; employerInput.maxLength = 300; employerInput.value = association?.employer || ""; employerLabel.append(employerInput);
@@ -313,7 +318,7 @@
     confirmLabel.append(confirm, document.createTextNode(" I understand this association is not independently verified."));
     const save = node("button", "Save association"); save.type = "submit"; save.className = "button";
     const message = node("p"); message.setAttribute("role", "status");
-    associationForm.append(lookupLabel, lookup, lookupStatus, candidates, employerLabel, noteLabel, confirmLabel, save, message);
+    associationForm.append(lookupLabel, broadLabel, lookup, lookupStatus, candidates, employerLabel, noteLabel, confirmLabel, save, message);
     if (reusable?.employer) {
       const suggestion = node("p", "Previously saved suggestion for the same displayed company name: " + reusable.employer + ". " + reusable.source_note + ". This is not independently verified and may not apply to this job.");
       const use = node("button", "Review saved suggestion"); use.type = "button";
