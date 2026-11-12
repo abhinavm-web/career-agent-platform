@@ -78,23 +78,43 @@ def title_level_evidence(job: Job, profile: dict) -> dict | None:
             "notice": "Literal title-phrase comparison only; titles and levels vary. No match does not establish seniority or suitability."}
 
 
+def _arrangement_label(description: str) -> tuple[str, str]:
+    """Return only exact, unambiguous labels; all other labeled text is unknown."""
+    labels = [line.strip() for line in description.splitlines() if re.match(
+        r"^(?:work arrangement|workplace type|work location type)\s*:", line.strip(), re.IGNORECASE)]
+    if not labels:
+        return "absent", ""
+    match = re.fullmatch(r"(?:work arrangement|workplace type|work location type)\s*:\s*(remote|hybrid|on[- ]site)\s*\.?",
+                         labels[0], re.IGNORECASE) if len(labels) == 1 else None
+    if not match:
+        return "ambiguous", ""
+    return match.group(1).casefold(), labels[0][:200]
+
+
+def remote_evidence(job: Job) -> dict[str, str]:
+    """Describe conflicting saved labels without claiming current arrangement."""
+    arrangement, quote = _arrangement_label(job.description)
+    if job.remote and arrangement in {"hybrid", "on-site", "on site"}:
+        return {"status": "conflicting", "detail": f"The saved job is marked remote, but the saved posting says {quote}. Confirm the arrangement with the employer."}
+    if job.remote and arrangement == "ambiguous":
+        return {"status": "ambiguous", "detail": "The saved job is marked remote, but work-arrangement labels are ambiguous or multiple. Confirm the arrangement with the employer."}
+    if job.remote:
+        return {"status": "source_marked", "detail": "The saved job is marked remote; confirm arrangement and geographic eligibility with the employer."}
+    return {"status": "unknown", "detail": "The saved remote flag is not set. Check the posting text and confirm the work arrangement with the employer."}
+
+
 def _remote_constraint(job: Job) -> dict[str, str]:
     """Compare only explicit, simple arrangement labels; other prose is unknown."""
-    labels = [line.strip() for line in job.description.splitlines() if re.match(
-        r"^(?:work arrangement|workplace type|work location type)\s*:", line.strip(), re.IGNORECASE)]
+    arrangement, quote = _arrangement_label(job.description)
     prefix = {"constraint": "Fully remote required"}
-    if labels:
-        match = re.fullmatch(r"(?:work arrangement|workplace type|work location type)\s*:\s*(remote|hybrid|on[- ]site)\s*\.?",
-                             labels[0], re.IGNORECASE) if len(labels) == 1 else None
-        if not match:
-            return {**prefix, "status": "unknown", "detail":
-                    "The saved posting has ambiguous or multiple work-arrangement labels. "
-                    "Review the original posting and confirm the location and arrangement with the employer."}
-        arrangement = match.group(1).casefold()
-        quote = labels[0][:200]
-        if arrangement == "remote":
-            return {**prefix, "status": "source_marked", "detail":
-                    f"Saved posting: {quote}. This is a source label, not confirmation of geographic eligibility; verify with the employer."}
+    if arrangement == "ambiguous":
+        return {**prefix, "status": "unknown", "detail":
+                "The saved posting has ambiguous or multiple work-arrangement labels. "
+                "Review the original posting and confirm the location and arrangement with the employer."}
+    if arrangement == "remote":
+        return {**prefix, "status": "source_marked", "detail":
+                f"Saved posting: {quote}. This is a source label, not confirmation of geographic eligibility; verify with the employer."}
+    if arrangement != "absent":
         conflict = " The source also marks this role remote, so the signals conflict." if job.remote else ""
         return {**prefix, "status": "flagged", "detail":
                 f"Saved posting: {quote}.{conflict} This may not meet your fully remote preference; verify the current arrangement with the employer."}
@@ -161,15 +181,17 @@ def score_job(job: Job, profile: CandidateProfile) -> Fit:
     matches = tuple(label for key, label in unique_skills.items() if contains_phrase(text, key))
     unmentioned_candidate_skills = tuple(label for key, label in unique_skills.items() if not contains_phrase(text, key))
     skill_points = round(50 * len(matches) / len(skills)) if skills else 0
-    place_ok = profile.allow_remote and job.remote
-    place_ok = place_ok or any(
-        contains_location(job.location, loc)
-        for loc in profile.preferred_locations if loc.strip()
-    )
-    location_points = 10 if place_ok else 0
+    arrangement, _ = _arrangement_label(job.description)
+    remote_uncertain = job.remote and arrangement not in {"absent", "remote"}
+    remote_match = profile.allow_remote and job.remote and not remote_uncertain
+    location_match = any(contains_location(job.location, loc)
+                         for loc in profile.preferred_locations if loc.strip())
+    location_points = 10 if remote_match or location_match else 0
     location_note = (
-        "remote is marked, but geographic eligibility still needs verification" if profile.allow_remote and job.remote else
-        "a preferred location appears in the posting" if place_ok else
+        "a preferred location appears in the posting; remote signals conflict or are ambiguous, so verify the arrangement" if location_match and remote_uncertain else
+        "remote signals conflict or are ambiguous; remote credit withheld, verify the arrangement" if profile.allow_remote and remote_uncertain else
+        "remote is marked, but geographic eligibility still needs verification" if remote_match else
+        "a preferred location appears in the posting" if location_match else
         "no location preference configured; work arrangement was not matched" if not profile.preferred_locations else
         "location is unspecified; work arrangement was not matched" if not job.location.strip() else
         "no preferred location or confirmed remote match; verify the posting"

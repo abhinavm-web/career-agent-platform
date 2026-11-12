@@ -39,6 +39,27 @@ class RemoteConstraintTests(unittest.TestCase):
         self.assertEqual(self.review('We support hybrid collaboration with other offices.', remote=False)['status'], 'unknown')
         self.assertEqual(self.review('No arrangement information', remote=True)['status'], 'source_marked')
 
+    def test_conflicting_or_ambiguous_remote_signals_do_not_earn_remote_only_credit(self):
+        profile = CandidateProfile(('Engineer',), (), (), True)
+        baseline = replace(self.job, description='Work arrangement: Remote')
+        self.assertEqual(score_job(baseline, profile).score, 50)
+        for text in ('Work arrangement: Hybrid', 'Workplace type: On-site',
+                     'Work arrangement: Remote or Hybrid',
+                     'Work arrangement: Remote\nWorkplace type: Hybrid'):
+            with self.subTest(text=text):
+                fit = score_job(replace(self.job, description=text), profile)
+                self.assertEqual(fit.score, 40)
+                self.assertIn('remote credit withheld', ' '.join(fit.reasons))
+                self.assertIn('verify', ' '.join(fit.reasons))
+        self.assertEqual(score_job(replace(self.job, description='No arrangement label'), profile).score, 50)
+
+    def test_preferred_location_can_match_but_conflicting_remote_is_disclosed(self):
+        profile = CandidateProfile(('Engineer',), (), ('New York',), True)
+        fit = score_job(replace(self.job, description='Work arrangement: Hybrid'), profile)
+        self.assertEqual(fit.score, 50)
+        self.assertIn('preferred location appears', ' '.join(fit.reasons))
+        self.assertIn('remote signals conflict or are ambiguous', ' '.join(fit.reasons))
+
     def test_constraint_is_optional_and_does_not_change_score(self):
         job = replace(self.job, description='Work arrangement: Hybrid')
         profile = CandidateProfile(('Engineer',), (), ('New York',), True)

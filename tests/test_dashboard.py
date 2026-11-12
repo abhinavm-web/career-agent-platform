@@ -1066,6 +1066,16 @@ class DashboardTests(unittest.TestCase):
             415,
         )
 
+    def test_board_explains_conflicting_remote_signals_and_withholds_remote_credit(self):
+        job = replace(fake_job('https://example.invalid/jobs/conflict'), description='Work arrangement: Hybrid\nPython and AWS')
+        with Store(self.db) as store: store.add_jobs([job])
+        result = self.call('GET', '/api/jobs?limit=100').json()['jobs']
+        row = next(item for item in result if item['id'] == job.id)
+        self.assertEqual(row['fit_score'], 90)
+        self.assertEqual(row['remote_evidence']['status'], 'conflicting')
+        self.assertIn('Work arrangement: Hybrid', row['remote_evidence']['detail'])
+        self.assertIn('remote credit withheld', ' '.join(row['fit_reasons']))
+
     def test_overview_and_relevance(self):
         jobs = self.call("GET", "/api/jobs")
         self.assertEqual(jobs.status_code, 200)

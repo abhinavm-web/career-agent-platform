@@ -253,6 +253,7 @@
       const signal = sponsorshipLabel(job.sponsorship_status);
       lower.append(chip(signal[0], signal[1]));
       if (job.imported_sponsorship_history?.sources?.length) lower.append(chip("Imported employer history", "amber"));
+      if (["conflicting", "ambiguous"].includes(job.remote_evidence?.status)) lower.append(chip("Remote details need review", "amber"));
       if (job.constraint_evidence?.some((row) => row.status === "flagged")) lower.append(chip("Constraint flagged", "amber"));
       else if (job.constraint_evidence?.some((row) => row.status === "unknown")) lower.append(chip("Constraint unknown", "amber"));
       if (job.source) lower.append(chip("Source: " + job.source));
@@ -366,7 +367,9 @@
     const info = node("div", "info-grid");
     const facts = [
       ["LOCATION", job.location || "Not specified"],
-      ["WORK ARRANGEMENT", job.remote ? "Remote" : "Not confirmed remote"],
+      ["WORK ARRANGEMENT", job.remote_evidence?.status === "conflicting" ? "Conflicting remote signals" :
+        job.remote_evidence?.status === "ambiguous" ? "Remote marked; arrangement unclear" :
+        job.remote ? "Saved as remote" : "Not confirmed remote"],
       ["TRACKING", job.application_stage],
       ["SOURCE", job.source || "Manual"],
     ];
@@ -376,6 +379,7 @@
       info.append(cell);
     }
     detail.append(info);
+    if (job.remote_evidence?.detail) detail.append(node("p", "muted", job.remote_evidence.detail));
     if (job.discovery_observations?.length) {
       const discovery = section("Discovery history");
       discovery.append(node("p", "muted", "These are times your searches returned this URL, not proof that the posting is open, current, or unchanged."));
