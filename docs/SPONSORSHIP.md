@@ -26,6 +26,8 @@ Sponsorship statuses:
 
 A DOL LCA is an employer labor condition filing, not an approval of a worker's H-1B petition, a commitment to sponsor a new employee, or legal advice. A company can sponsor some roles and not others. Name matching is deliberately exact after case/whitespace normalization. Subsidiaries, alternate legal names, and acquired companies require separate human research.
 
+The posting classifier treats an affirmative sponsorship statement without an immigration, visa, H-1B, employment-based, or work-authorization reference in the same sentence as conditional. For example, sponsorship of an event is not evidence of visa sponsorship. The classifier is heuristic: mixed topics, context split across sentences, and unrecognized phrasing may still need manual review.
+
 Never automatically answer screening questions about citizenship, status, petitions, or future sponsorship. Consult qualified immigration counsel about individual circumstances.
 
 ## Future scope

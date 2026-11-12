@@ -134,7 +134,7 @@ class PolicyTests(unittest.TestCase):
             'Visa sponsorship is available.': 'possible',
             'Visa sponsorship is available; remote work is not available.': 'possible',
             'Visa sponsorship is available, but remote work is not available.': 'possible',
-            'We cannot offer remote work but we can sponsor.': 'possible',
+            'We cannot offer remote work but we can sponsor.': 'conditional',
             'H-1B sponsorship is available for new applicants. H-1B transfers are supported.': 'possible',
             'H-1B sponsorship is available for new applicants. H-1B transfers only.': 'conflicting',
             'H-1B transfers are supported.': 'transfer_supported',
@@ -149,7 +149,7 @@ class PolicyTests(unittest.TestCase):
             'We are not able to provide sponsorship.': 'excluded',
             'Must be a U.S. citizen.': 'excluded',
             'U.S. citizens only.': 'excluded',
-            'We can sponsor. No visa sponsorship for this position.': 'conflicting',
+            'We can sponsor. No visa sponsorship for this position.': 'excluded',
             'Visa sponsorship available, but not for this role.': 'conflicting',
             'H-1B transfers only.': 'transfer_only',
             'H-1B transfers accepted if already selected.': 'conditional',
@@ -169,6 +169,17 @@ class PolicyTests(unittest.TestCase):
         for description, expected in examples.items():
             with self.subTest(description=description):
                 self.assertEqual(h1b_policy(description)['policy'], expected)
+
+    def test_generic_sponsorship_is_not_an_immigration_commitment(self):
+        for text in ('We can sponsor events.', 'Sponsorship is available for conferences.',
+                     'We will sponsor.', 'We can sponsor candidates for professional events.'):
+            with self.subTest(text=text):
+                result = h1b_policy(text)
+                self.assertEqual(result['policy'], 'conditional')
+                self.assertFalse(result['potential_match'])
+                self.assertIn(text, result['quotes'])
+        self.assertEqual(h1b_policy('We can sponsor employment-based visas.')['policy'], 'possible')
+        self.assertEqual(h1b_policy('We sponsor events. No visa sponsorship for this role.')['policy'], 'excluded')
 
     def test_transfer_preference_never_claims_new_sponsorship(self):
         self.assertFalse(h1b_policy('H-1B transfers only.', 'new')['potential_match'])
