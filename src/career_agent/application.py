@@ -25,6 +25,7 @@ HEADINGS = {
     "certifications": "Certifications",
 }
 FORMAT_VERSION = 2
+MAX_TAILORED_FACTS = 40
 
 
 def relevance(job: Job, fact: VerifiedFact) -> int:
@@ -119,10 +120,10 @@ def build_packet(
         selected = select_facts(job, bank)
     else:
         claims = {fact.fact_id: fact for fact in bank.facts}
-        if (not isinstance(tailored_fact_ids, list) or not 1 <= len(tailored_fact_ids) <= 12
+        if (not isinstance(tailored_fact_ids, list) or not 1 <= len(tailored_fact_ids) <= MAX_TAILORED_FACTS
                 or not all(isinstance(item, str) and item in claims for item in tailored_fact_ids)
                 or len(set(tailored_fact_ids)) != len(tailored_fact_ids)):
-            raise ValueError('Select 1–12 distinct verified career facts')
+            raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
         selected = tuple(sorted((claims[item] for item in tailored_fact_ids), key=lambda fact: section_order.index(fact.section)))
     selected_ids = {fact.fact_id for fact in selected}
     fit = score_job(job, preferences)
