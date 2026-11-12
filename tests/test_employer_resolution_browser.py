@@ -125,7 +125,10 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                         expect(second.get_by_label('Imported legal employer name')).to_have_value('Fictional Co LLC')
                         expect(second.get_by_label('I understand this association is not independently verified.')).not_to_be_checked()
                         second.get_by_label('I understand this association is not independently verified.').check()
-                        second.get_by_role('button', name='Save association').click()
+                        with page.expect_response(lambda response: response.request.method == 'PUT'
+                                and response.url.endswith('/h1b/employer')) as saved:
+                            second.get_by_role('button', name='Save association').click()
+                        self.assertEqual(saved.value.status, 200)
                         expect(second).to_contain_text('Candidate-provided employer association, not independently verified')
                         page.reload(); page.get_by_role('button', name='H-1B research', exact=True).click()
                         second = page.locator('#h1b-opportunities-results .panel').filter(has_text='Second role')
