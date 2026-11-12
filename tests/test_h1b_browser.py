@@ -50,6 +50,10 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-refresh-status')).to_be_focused()
                         expect(page.locator('#h1b-refresh-status')).to_contain_text('2,000', timeout=8000)
                         expect(page.locator('#h1b-refresh-announcement')).to_contain_text('2,000')
+                        observer = browser.new_page(); observer.goto(f'http://127.0.0.1:{port}')
+                        observer.locator('#nav-h1b').click()
+                        expect(observer.locator('#h1b-active-import')).to_contain_text('validating workbook rows')
+                        expect(observer.locator('#h1b-active-import')).to_contain_text('not a completed import')
                         advance.set()
                         expect(page.locator('#h1b-refresh-status')).to_contain_text('4,000', timeout=8000)
                         expect(page.locator('#h1b-refresh-announcement')).to_contain_text('2,000')
@@ -58,6 +62,8 @@ class H1BBrowserTests(unittest.TestCase):
                         finish.set()
                         expect(page.locator('#h1b-refresh-status')).to_contain_text('1 added')
                         expect(page.locator('#h1b-refresh-announcement')).to_contain_text('1 added')
+                        expect(observer.locator('#h1b-active-import')).to_contain_text('outcome is unknown', timeout=8000)
+                        expect(observer.locator('#h1b-active-import')).not_to_contain_text('1 added')
                     finally:
                         advance.set(); applying.set(); finish.set(); browser.close()
             finally:

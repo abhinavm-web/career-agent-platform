@@ -83,6 +83,37 @@
     get("h1b-unknown").checked = result.settings.include_unknown;
     coverage(result.coverage);
   }
+  // Reconnect to a workbook operation started in another tab or before a
+  // reload. The progress endpoint has no durable outcome or operation ID.
+  let observingImport = false;
+  async function observeImport() {
+    if (observingImport) return;
+    observingImport = true;
+    let sawActive = false, lastPhase = null;
+    const labels = {uploading: "receiving a local workbook", downloading: "downloading a workbook",
+      opening: "opening a workbook", scanning: "checking workbook structure",
+      reading: "validating workbook rows", applying: "applying validated rows"};
+    try {
+      while (true) {
+        let progress;
+        try { progress = await api('/api/h1b/import-progress'); }
+        catch (_) {
+          if (sawActive) get('h1b-active-import').textContent = 'Unable to check the import. Its outcome is unknown; reconnect and inspect import history.';
+          break;
+        }
+        if (progress.phase === 'idle') {
+          if (sawActive) get('h1b-active-import').textContent = 'The observed workbook operation is no longer active. Its outcome is unknown here; refresh coverage and inspect import history before retrying.';
+          break;
+        }
+        sawActive = true;
+        if (progress.phase !== lastPhase) {
+          get('h1b-active-import').textContent = 'A workbook operation is active: ' + (labels[progress.phase] || 'processing') + '. Progress is not a completed import. Avoid starting another import.';
+          lastPhase = progress.phase;
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    } finally { observingImport = false; }
+  }
   function companyCard(company) {
     const card = node("section");
     card.className = "panel profile-editor";
@@ -431,6 +462,7 @@
     }
   }
   get("nav-h1b").addEventListener("click", async () => {
+    observeImport();
     try { await load(); await opportunities(); if (get("h1b-query").value.trim()) await search(); }
     catch (error) { status(error.message); }
   });
