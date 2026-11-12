@@ -115,15 +115,20 @@
       }
     } finally { observingImport = false; }
   }
+  function lcaSummary(company) {
+    if (company.lca_data_status === "no_data") return "No DOL LCA records have been imported; employer filing history is unknown. Use Data administration to load a source.";
+    if (company.lca_data_status === "no_exact_match") return "No exact-name DOL LCA records were found in the imported data; filing history remains unknown. Check the legal employer and possible name variants.";
+    if (company.lca_data_status === "outside_window") return "Exact-name DOL records are stored, but none fall in the selected fiscal-year window starting " + company.min_year + ". Review older records or adjust the preference.";
+    return "Certified LCA cases in imported data since FY " + company.min_year + ": " + company.recent_certified_cases + ". These are cases, not open jobs or unique workers; coverage is incomplete.";
+  }
   function companyCard(company) {
     const card = node("section");
     card.className = "panel profile-editor";
     card.append(node("h3", company.employer));
-    card.append(node("p", "Exact name matching ignores case and whitespace only. Affiliates and aliases are not merged. Recent certified cases: " + company.recent_certified_cases + ". These are LCA cases, not open jobs or unique workers."));
+    card.append(node("p", "Exact name matching ignores case and whitespace only. Affiliates and aliases are not merged. " + lcaSummary(company)));
     const counts = node("ul");
     for (const row of company.counts) counts.append(node("li", "FY " + row.fiscal_year + " · " + row.case_status + ": " + row.cases));
     card.append(counts);
-    if (!company.counts.length) card.append(node("p", "No cases in the configured fiscal-year window. Sponsorship remains unknown."));
     const details = node("details");
     details.append(node("summary", "Latest stored records (up to 20; may predate the selected window)"));
     for (const row of company.records) {
@@ -136,7 +141,9 @@
       const decisions = node("details");
       decisions.append(node("summary", "USCIS historical decisions (separate from LCAs)"));
       decisions.append(node("p", company.uscis.warning));
-      if (!company.uscis.records.length) decisions.append(node("p", "No exact-name USCIS records in the selected window. This is unknown, not evidence of no sponsorship."));
+      if (company.uscis.data_status === "no_data") decisions.append(node("p", "No USCIS snapshots have been imported; decision history is unknown. Use Data administration to load a source."));
+      else if (company.uscis.data_status === "outside_window") decisions.append(node("p", "No USCIS snapshots are imported for the selected fiscal-year window starting " + company.uscis.min_year + "."));
+      else if (company.uscis.data_status === "no_exact_match") decisions.append(node("p", "No exact-name USCIS records were found in the imported snapshots for the selected window. This is unknown, not evidence of no sponsorship."));
       for (const row of company.uscis.records) {
         const entry = node("p", "FY " + row.fiscal_year + " · " + row.city + ", " + row.state + " · NAICS " + row.naics +
           " · initial approvals/denials: " + (row.initial_approval ?? "unknown") + "/" + (row.initial_denial ?? "unknown") +
@@ -249,7 +256,7 @@
     card.append(policyNotes(job));
     const association = job.employer_association;
     const reusable = job.company_association;
-    card.append(node("p", "Recent certified LCA cases for " + job.history.employer + " in local imports: " + job.history.recent_certified_cases + ". Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
+    card.append(node("p", "Historical DOL lookup for " + job.history.employer + ": " + lcaSummary(job.history) + " Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
     if (association?.employer) card.append(node("p", "Candidate-provided employer association, not independently verified · " + association.employer + " · " + association.source_note + " · " + association.changed_at + ". Confirm the actual legal entity before relying on these records."));
     const historyDetails = node("details");
     historyDetails.append(node("summary", "View imported employer records"), companyCard(job.history));
@@ -458,7 +465,12 @@
       status(result.company_total + " matching employer names · " + result.jobs.length + " stored jobs. " + result.warning);
       const results = get("h1b-results");
       results.append(node("h3", "Employer filing history"));
-      if (!result.companies.length) results.append(node("p", "No employer records found in this local dataset. Try the legal entity name; this does not mean the company never sponsors."));
+      if (!result.companies.length) {
+        if (!result.coverage.records && !(result.coverage.uscis_snapshots || []).length) {
+          const empty = node("p", "No DOL LCA or USCIS records have been imported; historical sponsorship is unknown. ");
+          const admin = node("a", "Go to data administration"); admin.href = "#h1b-data-admin-heading"; empty.append(admin); results.append(empty);
+        } else results.append(node("p", "No employer records found in this local dataset. Try the legal entity name; this does not mean the company never sponsors."));
+      }
       for (const company of result.companies) results.append(companyCard(company));
       results.append(node("h3", "Jobs in your workspace"));
       if (!result.jobs.length) results.append(node("p", "No matching stored jobs with these preferences. Use Opportunity board search to discover jobs; no live job search was run here."));

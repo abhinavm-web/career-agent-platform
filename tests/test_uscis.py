@@ -38,6 +38,13 @@ class USCISTests(unittest.TestCase):
         self.addCleanup(self.store.connection.close)
         self.records = USCISRecords(self.store)
 
+    def test_company_distinguishes_missing_snapshots_window_and_employer(self):
+        self.assertEqual(self.records.company('Fictional Corp', 2025)['data_status'], 'no_data')
+        self.records.import_bytes(hub_csv(), URL, 2025, '2025-03-31')
+        self.assertEqual(self.records.company('Fictional Corp', 2026)['data_status'], 'outside_window')
+        self.assertEqual(self.records.company('Other Corp', 2025)['data_status'], 'no_exact_match')
+        self.assertEqual(self.records.company('Fictional Corp', 2025)['data_status'], 'in_window')
+
     def test_snapshot_replacement_not_addition_and_entity_groups(self):
         first = hub_csv([{}, {'City': 'Other', 'Initial Approval': '5'}, {}])
         self.assertEqual(self.records.import_bytes(first, URL, 2025, '2025-03-31')['rows'], 2)

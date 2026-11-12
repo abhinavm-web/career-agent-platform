@@ -189,6 +189,23 @@ class ResearchTests(unittest.TestCase):
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
 
+    def test_company_distinguishes_empty_data_missing_name_and_old_only(self):
+        self.assertEqual(self.research.company('Fictional Employer')['lca_data_status'], 'no_data')
+        self.ingest([{'EMPLOYER_NAME': 'Other Corp', 'CASE_NUMBER': 'I-200-25001-000001'}])
+        self.assertEqual(self.research.company('Fictional Employer')['lca_data_status'], 'no_exact_match')
+        self.ingest([{'EMPLOYER_NAME': 'Fictional Employer', 'CASE_NUMBER': 'I-200-21001-000002',
+                      'DECISION_DATE': '2021-04-15'}])
+        old = self.research.company('Fictional Employer')
+        self.assertEqual(old['lca_data_status'], 'outside_window')
+        self.assertEqual(len(old['records']), 1)
+        self.assertEqual(old['min_year'], 2024)
+        self.ingest([{'EMPLOYER_NAME': 'Fictional Employer', 'CASE_NUMBER': 'I-200-25001-000003',
+                      'CASE_STATUS': 'Denied'}])
+        current = self.research.company('Fictional Employer')
+        self.assertEqual(current['lca_data_status'], 'in_window')
+        self.assertEqual(current['recent_certified_cases'], 0)
+        self.assertEqual(current['counts'][0]['case_status'], 'denied')
+
     def test_temporal_exclusion_is_in_the_restricted_opportunity_filter(self):
         job = Job.from_mapping({'company': 'Fictional Employer', 'title': 'Engineer',
             'job_url': 'https://example.invalid/role', 'description':

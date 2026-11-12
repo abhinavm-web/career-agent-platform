@@ -118,7 +118,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                         expect(first).to_contain_text('Previously saved suggestion')
                         page.get_by_role('button', name='Find opportunities', exact=True).click()
                         second = page.locator('#h1b-opportunities-results .panel').filter(has_text='Second role')
-                        expect(second).to_contain_text('Recent certified LCA cases for Fictional Co in local imports')
+                        expect(second).to_contain_text('Historical DOL lookup for Fictional Co: No exact-name DOL LCA records')
                         expect(second).not_to_contain_text('Candidate-provided employer association')
                         second.get_by_text('Associate an imported legal employer', exact=True).click()
                         second.get_by_role('button', name='Review saved suggestion').click()
