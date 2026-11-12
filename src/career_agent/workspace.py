@@ -35,6 +35,7 @@ def blank_workspace() -> dict[str, Any]:
             "allow_remote": True,
             "require_remote": False,
             "excluded_companies": [],
+            "minimum_annual_base_usd": None,
         },
         "facts": [],
     }
@@ -43,7 +44,7 @@ def blank_workspace() -> dict[str, Any]:
 def _validate_profile(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("profile must be an object")
-    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies"}:
+    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies", "minimum_annual_base_usd"}:
         raise ValueError("Unknown profile field")
     name = value.get("name", "")
     headline = value.get("headline", "")
@@ -73,6 +74,10 @@ def _validate_profile(value: Any) -> dict[str, Any]:
             not all(isinstance(x, str) and 0 < len(x.strip()) <= 100 for x in exclusions)):
         raise ValueError("excluded_companies must contain at most 40 nonempty names of 100 characters")
     profile["excluded_companies"] = list(dict.fromkeys(item.strip() for item in exclusions))
+    minimum = value.get("minimum_annual_base_usd")
+    if minimum is not None and (type(minimum) is not int or not 1 <= minimum <= 10_000_000):
+        raise ValueError("Minimum annual base salary must be a whole USD amount from 1 to 10,000,000, or empty")
+    profile["minimum_annual_base_usd"] = minimum
     return profile
 
 

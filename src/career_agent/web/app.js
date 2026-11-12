@@ -776,7 +776,8 @@
       preferred_locations: linesFromText(byId("career-locations").value),
       allow_remote: byId("career-remote").checked,
       require_remote: byId("career-require-remote").checked,
-      excluded_companies: linesFromText(byId("career-excluded-companies").value)
+      excluded_companies: linesFromText(byId("career-excluded-companies").value),
+      minimum_annual_base_usd: byId("career-minimum-base").value.trim() ? Number(byId("career-minimum-base").value) : null
     };
   }
 
@@ -802,6 +803,7 @@
     byId("career-remote").checked = p.allow_remote;
     byId("career-require-remote").checked = p.require_remote;
     byId("career-excluded-companies").value = p.excluded_companies.join("\n");
+    byId("career-minimum-base").value = p.minimum_annual_base_usd == null ? "" : String(p.minimum_annual_base_usd);
     state.editingFactId = draft.editingFactId;
     byId("fact-form-heading").textContent = draft.editingFactId
       ? "Edit fact " + draft.editingFactId : "Add career fact";
@@ -860,6 +862,7 @@
     byId("career-remote").checked = profile.allow_remote;
     byId("career-require-remote").checked = profile.require_remote || false;
     byId("career-excluded-companies").value = (profile.excluded_companies || []).join("\n");
+    byId("career-minimum-base").value = profile.minimum_annual_base_usd == null ? "" : String(profile.minimum_annual_base_usd);
     byId("legacy-import").hidden = workspace.revision !== 0 || !state.settings.legacy_import_available;
     const list = byId("career-facts-list");
     list.replaceChildren();

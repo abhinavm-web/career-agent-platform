@@ -256,8 +256,9 @@
             <label class="check-label"><input id="career-remote" type="checkbox"> Include fully remote roles</label>
             <label class="check-label"><input id="career-require-remote" type="checkbox"> Fully remote is required</label>
             <label>Exclude employers by exact name (one per line)<textarea id="career-excluded-companies" rows="3" placeholder="Example Company"></textarea></label>
+            <label>Minimum annual base salary in USD (optional)<input id="career-minimum-base" type="number" min="1" max="10000000" step="1" placeholder="120000"></label>
           </div>
-          <p class="muted">Required remote and excluded employer names are reviewed separately from the preference score. Remote scope and employer identity still need confirmation.</p>
+          <p class="muted">Required remote, employer exclusions, and minimum annual base salary are reviewed separately from the preference score. Confirm remote scope, employer identity, and compensation directly.</p>
           <div class="form-footer"><span class="muted">Changing preferences does not automatically verify a career achievement.</span><button type="submit" class="button button-primary">Save preferences</button></div>
         </form>
         <div class="panel profile-editor">

@@ -866,6 +866,17 @@ test("career profile can add and separately verify a fact through the browser co
   assert.match(harness.get("career-facts-list").textContent, /Candidate verified/);
 });
 
+test("salary minimum saves and can be cleared as an optional constraint", async () => {
+  const h = createHarness(); await flush();
+  await h.get("nav-profile").click(); await flush();
+  h.get("career-minimum-base").value = "150000";
+  await h.get("career-profile-form").handlers.submit({preventDefault() {}}); await flush();
+  assert.equal(h.getWorkspace().profile.minimum_annual_base_usd, 150000);
+  h.get("career-minimum-base").value = "";
+  await h.get("career-profile-form").handlers.submit({preventDefault() {}}); await flush();
+  assert.equal(h.getWorkspace().profile.minimum_annual_base_usd, null);
+});
+
 
 test("saving preferences or a fact preserves unsaved changes in the other editor", async () => {
   const harness = createHarness();

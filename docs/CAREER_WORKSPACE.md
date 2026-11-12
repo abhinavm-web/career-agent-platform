@@ -19,6 +19,8 @@ Open http://127.0.0.1:8765/ and choose **Career profile**. Enter name, professio
 
 Optionally mark fully remote work as required and list exact employer names to exclude. An opportunity's **Your hard constraints** panel is separate from the keyword preference score and does not hide or reject jobs. A source-marked remote role still needs geographic confirmation; an unmarked one is unknown, not necessarily on-site. Employer exclusions match the saved display name after case and whitespace normalization; aliases and affiliated legal entities remain unknown. Edit your preferences to correct them.
 
+Optionally set a minimum annual base salary in USD. The app compares it only with a single, clearly labeled annual USD base salary line in the saved posting and quotes that line. Other formats, currencies, multiple pay amounts and missing data remain unknown. A range reaching your minimum does not promise an offer or establish eligibility for a particular pay band. Verify all compensation with the employer; pay observations do not change the match score or automatically hide jobs.
+
 New or modified facts are *not verified*. A separate explicit acknowledgement is necessary to mark each statement verified. **Only verified facts can enter generated résumés or cover notes.** Modifying a statement, category, keywords, or private evidence note revokes that verification until you acknowledge the revised statement again.
 
 The current source note is only returned inside the local authenticated workspace. It is never inserted into the outward-facing draft.
