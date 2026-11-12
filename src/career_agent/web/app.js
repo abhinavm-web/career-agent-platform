@@ -637,12 +637,14 @@
         try {
           const capture = JSON.parse(originalCapture);
           if (!capture || Array.isArray(capture) || typeof capture !== "object") throw new Error("Invalid browser capture.");
+          if (capture.text_source !== undefined && capture.text_source !== "structured_description") throw new Error("Invalid browser capture source.");
           const result = await api("/api/jobs/" + job.id + "/capture-preview", "POST", {format: capture.format, url: capture.url, selection: capture.selection});
           if (!editor.isConnected || state.selectedId !== job.id) return;
           if (captureInput.value !== originalCapture || input.value !== originalDescription) throw new Error("Editor changed while checking; review and try again.");
           if (result.job_id !== job.id || typeof result.description !== "string") throw new Error("Capture did not match this job.");
           input.value = result.description; acknowledged.checked = false;
-          captureStatus.textContent = "Text loaded into the editor only. Review it and confirm before saving.";
+          if (capture.text_source === "structured_description" && !source.value.trim()) source.value = "Structured JobPosting on captured page; source not independently verified.";
+          captureStatus.textContent = capture.text_source === "structured_description" ? "Structured page text loaded into the editor only. It may be incomplete or describe another job; compare with the original and confirm before saving." : "Text loaded into the editor only. Review it and confirm before saving.";
         } catch (error) { captureStatus.textContent = error instanceof SyntaxError ? "Paste a valid browser capture." : error.message; }
         finally { captureButton.disabled = false; submit.disabled = false; }
       });
@@ -2311,6 +2313,7 @@
           typeof capture.selection !== "string" || capture.selection.length > 50000) throw new Error("Invalid browser capture.");
       const url = new URL(capture.url);
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("Use an HTTP or HTTPS job URL without credentials.");
+      if (capture.text_source !== undefined && capture.text_source !== "structured_description") throw new Error("Invalid browser capture source.");
       const metadata = capture.metadata;
       if (metadata !== undefined && (!metadata || Array.isArray(metadata) || typeof metadata !== "object" ||
           Object.keys(metadata).some(key => !["job_title", "company"].includes(key)) ||
@@ -2322,7 +2325,7 @@
       if ((title.value || jobUrl.value || description.value || company.value || location.value || remote.checked) && !window.confirm("Replace the title, URL and description? Existing company, location and remote status stay as entered; a blank company may be filled from page metadata.")) return;
       title.value = metadata?.job_title?.trim() || capture.title; jobUrl.value = capture.url; description.value = capture.selection;
       if (!company.value && metadata?.company?.trim()) company.value = metadata.company.trim();
-      status.textContent = "Fields filled. Page-supplied details are unverified; review title, company, location, remote status and description before saving.";
+      status.textContent = (capture.text_source === "structured_description" ? "Structured page text filled. It may be incomplete or describe another job. " : "Fields filled. ") + "Page-supplied details are unverified; review title, company, location, remote status and description before saving.";
     } catch (error) { status.textContent = error instanceof SyntaxError ? "Paste a valid browser capture." : error.message; }
   });
   byId("close-add-job").addEventListener("click", () => {
