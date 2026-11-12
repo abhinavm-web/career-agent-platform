@@ -83,6 +83,31 @@ class ResearchTests(unittest.TestCase):
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
 
+    def test_import_history_is_atomic_persistent_and_distinguishes_observed_dates(self):
+        rows = [{}, {'CASE_STATUS': 'Denied', 'DECISION_DATE': '2025-05-01'},
+                {'VISA_CLASS': 'E-3 Australian'}]
+        self.ingest(rows)
+        first = self.research.coverage()['lca_imports'][0]
+        self.assertEqual((first['first_decision'], first['last_decision']), ('2025-04-15', '2025-05-01'))
+        self.assertEqual(first['counts']['added'], 2)
+        self.assertEqual(first['counts']['other_visas_skipped'], 1)
+        self.assertEqual(len(first['selected_fields_sha256']), 64)
+        self.ingest(rows)
+        repeat = self.research.coverage()['lca_imports'][0]
+        self.assertEqual(repeat['selected_fields_sha256'], first['selected_fields_sha256'])
+        self.assertEqual(repeat['counts']['duplicates'], 2)
+        with self.assertRaises(ValueError):
+            self.ingest([{'CASE_NUMBER': 'I-200-25123-999999'}, {'CASE_NUMBER': 'invalid'}])
+        with self.assertRaisesRegex(ValueError, 'no data rows'):
+            self.ingest([])
+        self.assertEqual(len(self.research.coverage()['lca_imports']), 2)
+        self.assertEqual(self.research.coverage()['records'], 2)
+        reopened = Store(Path(self.tmp.name) / 'test.sqlite3')
+        try:
+            self.assertEqual(H1BResearch(reopened).coverage()['lca_imports'][0], repeat)
+        finally:
+            reopened.connection.close()
+
     def test_job_employer_association_is_explicit_versioned_and_reversible(self):
         job = Job.from_mapping({'company': 'Fictional Brand', 'title': 'Engineer',
                                 'job_url': 'https://example.invalid/job', 'description': 'No visa sponsorship.'})
