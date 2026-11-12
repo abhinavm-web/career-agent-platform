@@ -336,6 +336,14 @@
       info.append(cell);
     }
     detail.append(info);
+    if (job.discovery_observations?.length) {
+      const discovery = section("Discovery history");
+      discovery.append(node("p", "muted", "These are times your searches returned this URL, not proof that the posting is open, current, or unchanged."));
+      for (const row of job.discovery_observations) {
+        discovery.append(node("p", "", row.source + " · first returned " + row.first_seen + " · last returned " + row.last_seen + " · " + row.observation_count + " search(es)"));
+      }
+      detail.append(discovery);
+    }
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
     actions.append(button("Analyze with AI", "button", () => {
@@ -866,6 +874,10 @@
         chip(fact.verified_by_candidate ? "Candidate verified" : "Not verified", fact.verified_by_candidate ? "teal" : "amber")
       );
       card.append(heading, node("p", "", fact.statement));
+      if (fact.derived_from) {
+        card.append(node("small", "muted", "AI wording source fact " + fact.derived_from.fact_id + ": " + fact.derived_from.statement));
+        card.append(node("small", "muted", "Source posting excerpt: " + fact.derived_from.job_quote));
+      }
       card.append(node("small", "muted", "Private evidence: " + fact.source_note));
       const actions = node("div", "button-row");
       actions.append(button("Edit", "button", () => editFact(fact)));
@@ -1666,6 +1678,7 @@
     const existing = state.workspace.facts.find((fact) => fact.id === state.editingFactId);
     const id = existing ? existing.id : "fact-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12);
     const updated = {
+      ...(existing?.derived_from ? {derived_from: existing.derived_from} : {}),
       id,
       section: byId("fact-category").value,
       statement: byId("fact-statement").value.trim(),

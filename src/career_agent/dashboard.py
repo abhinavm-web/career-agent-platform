@@ -201,7 +201,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
                  records: tuple, workspace_revision: int, posting_checks: PostingChecks,
-                 constraints: dict) -> dict:
+                 discovery_observations: list[dict], constraints: dict) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
@@ -215,6 +215,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "remote": job.remote,
             "url": job.url,
             "source": job.source,
+            "discovery_observations": discovery_observations,
             "live_check_supported": posting_target(job.url) is not None,
             "live_check": posting_checks.latest(job.id),
             "description": job.description,
@@ -527,6 +528,20 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=409, detail=str(error)) from error
         return {"workspace": updated}
 
+    @app.post("/api/jobs/{job_id}/stage-ai-wording")
+    async def stage_ai_wording(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'expected_revision', 'fact_id', 'source_statement', 'job_quote', 'wording', 'acknowledged'}:
+            raise ValueError('A reviewed suggestion and its source are required')
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            try:
+                updated = CandidateWorkspace(store).stage_wording(data['expected_revision'], job_id,
+                    data['fact_id'], data['source_statement'], data['job_quote'], data['wording'], data['acknowledged'])
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return {'workspace': updated}
+
     @app.post("/api/workspace/import")
     async def import_legacy_workspace(request: Request):
         data = await request.json()
@@ -556,9 +571,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
             posting_checks = PostingChecks(store)
             store.connection.execute('BEGIN')
             jobs, next_before = store.job_page(limit=limit, before=before)
+            observations = store.discovery_observations([job.id for job in jobs])
             items = [
                 job_view(store, job, profile, records, workspace["revision"], posting_checks,
-                         workspace["profile"] if workspace["revision"] else {})
+                         observations.get(job.id, []), workspace["profile"] if workspace["revision"] else {})
                 for job in jobs
             ]
         return {"jobs": items, "total": len(items), "next_before": next_before}
@@ -589,7 +605,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             except Exception as error:
                 raise HTTPException(status_code=502, detail="Job discovery failed. Sources may be unavailable or rate-limited; try again later.") from error
             with Store(config.db_path) as store:
-                added = store.add_jobs(jobs)
+                added = store.add_discovered_jobs(jobs)
             return {"found": len(jobs), "new": added, "duplicates": len(jobs) - added}
         finally:
             discovery_lock.release()

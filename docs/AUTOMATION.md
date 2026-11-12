@@ -10,6 +10,8 @@ The worker runs for the lifetime of the server, even with no browser open. It do
 
 Each run uses a persisted LangGraph: **discover → normalize/deduplicate → import**. JobSpy runs in an isolated child process with a two-minute deadline. The parent can kill a stalled scraper. Imports validate the schedule and lease, and commit jobs plus an idempotency receipt in one transaction. URL-based duplicate detection preserves existing job descriptions and reviewed applications; it does not automatically merge different URLs for the same role or establish posting freshness.
 
+Successful manual and scheduled JobSpy imports record the first and latest time each reported source returned a URL, plus the number of searches that returned it. Duplicate rows from the same source in one search count once; other sources remain separate. Inspect this history in the opportunity details. An observed return is not an independent live availability check, and is not evidence that the posting is current or unchanged. Earlier imports and manually added opportunities have no retroactive discovery history. Empty, failed, stopped, or discarded runs do not refresh the history.
+
 Run history shows returned/new counts, timestamps and completed/failed/inconclusive/interrupted states. Empty JobSpy results are inconclusive: some source adapters return empty data on errors. Positive results may also be incomplete. Failed or empty runs back off (at least the configured interval, with exponential backoff up to one day). No missing result is interpreted as a closed vacancy. Detailed upstream exception text is not retained.
 
 ## Durable application preparation

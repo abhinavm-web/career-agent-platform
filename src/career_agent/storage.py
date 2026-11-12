@@ -53,6 +53,12 @@ class Store:
                 source_note TEXT NOT NULL, changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(job_id, revision)
             );
+            CREATE TABLE IF NOT EXISTS job_discovery_observations(
+                job_id TEXT NOT NULL REFERENCES jobs(job_id), source TEXT NOT NULL,
+                first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+                observation_count INTEGER NOT NULL,
+                PRIMARY KEY(job_id, source)
+            );
         """)
 
     def __enter__(self) -> "Store":
@@ -76,6 +82,44 @@ class Store:
                 )
                 inserted += result.rowcount
         return inserted
+
+    def _record_discovery(self, jobs: list[Job]) -> int:
+        """Record returned rows within the caller's transaction, once per job/source."""
+        seen = set()
+        inserted = 0
+        for job in jobs:
+            key = (job.id, job.source)
+            if key in seen:
+                continue
+            seen.add(key)
+            result = self.connection.execute(
+                'INSERT OR IGNORE INTO jobs(job_id,company,title,location,url,description,source,remote) VALUES(?,?,?,?,?,?,?,?)',
+                (job.id, job.company, job.title, job.location, job.url, job.description, job.source, int(job.remote)))
+            inserted += result.rowcount
+            self.connection.execute('''
+                INSERT INTO job_discovery_observations(job_id,source,first_seen,last_seen,observation_count)
+                VALUES(?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now'),1)
+                ON CONFLICT(job_id,source) DO UPDATE SET
+                last_seen=excluded.last_seen, observation_count=observation_count+1
+            ''', key)
+        return inserted
+
+    def add_discovered_jobs(self, jobs: list[Job]) -> int:
+        """Atomically import jobs and record when a source returned each URL."""
+        with self.connection:
+            return self._record_discovery(jobs)
+
+    def discovery_observations(self, job_ids: list[str]) -> dict[str, list[dict]]:
+        if not job_ids:
+            return {}
+        placeholders = ','.join('?' for _ in job_ids)
+        rows = self.connection.execute(
+            f'SELECT job_id,source,first_seen,last_seen,observation_count FROM job_discovery_observations WHERE job_id IN ({placeholders}) ORDER BY last_seen DESC,source',
+            job_ids)
+        result: dict[str, list[dict]] = {}
+        for row in rows:
+            result.setdefault(row['job_id'], []).append({k: row[k] for k in ('source','first_seen','last_seen','observation_count')})
+        return result
 
     def list_jobs(self, limit: int = 100) -> list[Job]:
         rows = self.connection.execute(

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from career_agent.automation import Automation
 from career_agent.candidate import FactBank
-from career_agent.models import CandidateProfile
+from career_agent.models import CandidateProfile, Job
 from career_agent.storage import Store
 from career_agent.workflows import Workflows, inputs, signature
 from test_dashboard import fake_job, fake_fact_bank
@@ -50,6 +50,35 @@ class AutomationTests(unittest.TestCase):
         self.assertEqual([r['added'] for r in rows], [0, 1])
         with Store(self.db) as store:
             self.assertEqual(len(store.list_jobs()), 1)
+            observations = store.discovery_observations([fake_job().id])[fake_job().id]
+            self.assertEqual(len(observations), 1)
+            self.assertEqual(observations[0]['observation_count'], 2)
+            self.assertTrue(observations[0]['first_seen'].endswith('Z'))
+            self.assertGreaterEqual(observations[0]['last_seen'], observations[0]['first_seen'])
+
+    def test_discovery_keeps_distinct_sources_and_original_job_data(self):
+        self.auto.save(self.search)
+        original = fake_job()
+        with Store(self.db) as store:
+            store.add_jobs([original])
+        first = asdict(original) | {'source': 'indeed', 'description': 'Changed by source'}
+        second = asdict(original) | {'source': 'linkedin', 'description': 'Another source'}
+        with patch('career_agent.automation.fetch', return_value=[first, first, second]):
+            self.assertTrue(self.auto.tick())
+        with Store(self.db) as store:
+            self.assertEqual(store.get_job(original.id).description, original.description)
+            rows = store.discovery_observations([original.id])[original.id]
+            self.assertEqual({(r['source'], r['observation_count']) for r in rows}, {('indeed', 1), ('linkedin', 1)})
+            self.assertEqual(len(store.list_jobs()), 1)
+
+    def test_failed_discovery_import_rolls_back_jobs_and_observations(self):
+        job = fake_job()
+        malformed = Job(company='Fictional', title='Role', location='', url='not a URL')
+        with Store(self.db) as store:
+            with self.assertRaises(ValueError):
+                store.add_discovered_jobs([job, malformed])
+            self.assertEqual(store.list_jobs(), [])
+            self.assertEqual(store.discovery_observations([job.id]), {})
 
     def test_pause_during_fetch_discards_results_and_lease_blocks_second_worker(self):
         sid = self.auto.save(self.search)['id']
@@ -61,6 +90,7 @@ class AutomationTests(unittest.TestCase):
             self.auto.tick()
         with Store(self.db) as store:
             self.assertEqual(store.list_jobs(), [])
+            self.assertEqual(store.discovery_observations([fake_job().id]), {})
         self.assertEqual(self.auto.list()['runs'][0]['status'], 'failed')
 
     def test_empty_and_failed_sources_are_not_zero_vacancy_claims(self):

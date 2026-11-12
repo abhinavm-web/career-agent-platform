@@ -306,6 +306,18 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+test('discovery history is visible without claiming a job is current', async () => {
+  const job = {...fakeJob(ID_A, 'Role Alpha'), discovery_observations: [{
+    source: '<fictional source>', first_seen: '2026-01-01T00:00:00Z',
+    last_seen: '2026-01-02T00:00:00Z', observation_count: 2
+  }]};
+  const h = createHarness({jobsOverride: [job]}); await flush();
+  h.get('job-list').children[0].click();
+  assert.match(h.get('detail-panel').textContent, /<fictional source>/);
+  assert.match(h.get('detail-panel').textContent, /last returned 2026-01-02/);
+  assert.match(h.get('detail-panel').textContent, /not proof that the posting is open/);
+});
+
 test('hard constraint warnings appear separately from the score', async () => {
   const job = {...fakeJob(ID_A, 'Role Alpha'), constraint_evidence: [
     {constraint: 'Excluded employer names', status: 'flagged', detail: 'Exact name match'},
