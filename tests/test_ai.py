@@ -225,6 +225,85 @@ class AITests(unittest.TestCase):
 
 @unittest.skipUnless(all(importlib.util.find_spec(m) for m in ('anthropic', 'openai', 'boto3', 'httpx')), 'Install optional AI dependencies')
 class SDKContracts(unittest.TestCase):
+    def test_http_response_cap_rejects_oversized_or_compressed_without_echo_or_retry(self):
+        import httpx
+        route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
+        requests, reads, closed = [], [], []
+        class Stream(httpx.SyncByteStream):
+            def __iter__(self):
+                for index in range(4):
+                    reads.append(index)
+                    yield b'x' * (400 * 1024)
+            def close(self): closed.append(True)
+        def oversized(request):
+            requests.append(request)
+            return httpx.Response(200, headers={'content-type': 'application/json'}, stream=Stream())
+        def client(handler):
+            return httpx.Client(transport=ai._bounded_transport(httpx.MockTransport(handler)), trust_env=False)
+        with patch('career_agent.ai._transport', side_effect=lambda: client(oversized)):
+            with self.assertRaises(ValueError) as error: ai.complete(route, 'fictional private input')
+        self.assertIn('size limit', str(error.exception))
+        self.assertNotIn('fictional private', str(error.exception))
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0].headers['accept-encoding'], 'identity')
+        self.assertEqual(reads, [0, 1, 2])
+        self.assertTrue(closed)
+        for headers, phrase in [({'content-length': str(2 * 1024 * 1024)}, 'size limit'),
+                                ({'content-encoding': 'gzip'}, 'compressed response')]:
+            with self.subTest(headers=headers):
+                seen = []
+                def handler(request):
+                    seen.append(request)
+                    return httpx.Response(200, headers=headers, stream=Stream())
+                with patch('career_agent.ai._transport', side_effect=lambda: client(handler)):
+                    with self.assertRaises(ValueError) as error: ai.complete(route, 'fictional private input')
+                self.assertIn(phrase, str(error.exception))
+                self.assertEqual(len(seen), 1)
+                self.assertNotIn('fictional private', str(error.exception))
+
+    def test_oversized_anthropic_and_azure_errors_are_bounded_and_sanitized(self):
+        import httpx
+        routes = [{'provider': 'anthropic', 'model': 'fictional'},
+                  {'provider': 'azure', 'model': 'fictional', 'base_url': 'https://fictional.openai.azure.com/openai/v1'}]
+        class Stream(httpx.SyncByteStream):
+            def __iter__(self): yield b'private-provider-error'
+        for route in routes:
+            seen = []
+            def handler(request):
+                seen.append(request)
+                return httpx.Response(429, headers={'content-length': str(2 * 1024 * 1024)}, stream=Stream())
+            with self.subTest(provider=route['provider']), patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fictional-key', 'AZURE_OPENAI_API_KEY': 'fictional-key'}), \
+                    patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=ai._bounded_transport(httpx.MockTransport(handler)), trust_env=False)):
+                with self.assertRaises(ValueError) as error: ai.complete(route, 'fictional private prompt')
+                self.assertIn('size limit', str(error.exception))
+                self.assertNotIn('private', str(error.exception))
+                self.assertEqual(len(seen), 1)
+
+    def test_bounded_transport_accepts_small_sdk_responses_across_providers(self):
+        import httpx
+        for provider in ('ollama', 'azure', 'anthropic'):
+            requests = []
+            class Stream(httpx.SyncByteStream):
+                def __iter__(self):
+                    value = ({'id': 'msg_fictional', 'type': 'message', 'role': 'assistant',
+                        'model': 'fictional', 'content': [{'type': 'text', 'text': 'OK'}],
+                        'stop_reason': 'end_turn', 'stop_sequence': None,
+                        'usage': {'input_tokens': 1, 'output_tokens': 1}} if provider == 'anthropic' else
+                        {'id': 'fictional', 'object': 'chat.completion', 'created': 0, 'model': 'fictional',
+                         'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': 'OK'}}]})
+                    yield json.dumps(value).encode()
+            def handler(request):
+                requests.append(request)
+                return httpx.Response(200, headers={'content-type': 'application/json'}, stream=Stream())
+            route = {'provider': provider, 'model': 'fictional'}
+            if provider == 'ollama': route['base_url'] = 'http://127.0.0.1:11434/v1'
+            if provider == 'azure': route['base_url'] = 'https://fictional.openai.azure.com/openai/v1'
+            with self.subTest(provider=provider), patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fictional-test-key', 'AZURE_OPENAI_API_KEY': 'fictional-test-key'}), \
+                    patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=ai._bounded_transport(httpx.MockTransport(handler)), trust_env=False)):
+                self.assertEqual(ai.complete(route, 'fictional prompt'), 'OK')
+                self.assertEqual(requests[0].headers['accept-encoding'], 'identity')
+                self.assertEqual(len(requests), 1)
+
     def test_provider_reported_model_is_bounded_untrusted_metadata(self):
         import httpx
         route = {'provider': 'lmstudio', 'model': 'alias', 'base_url': 'http://127.0.0.1:1234/v1'}
