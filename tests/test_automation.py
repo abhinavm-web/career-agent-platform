@@ -97,7 +97,7 @@ class AutomationTests(unittest.TestCase):
             self.assertEqual(status()['description_comparison'], 'matches')
             self.assertTrue(status()['description_observed_at'].endswith('Z'))
             self.assertEqual(store.add_discovered_jobs([replace(job, description='  ORIGINAL\nPython skills. ')]), 0)
-            self.assertEqual(status()['description_comparison'], 'matches')
+            self.assertEqual(status()['description_comparison'], 'differs')
             self.assertEqual(store.add_discovered_jobs([replace(job, description='New SQL skills.')]), 0)
             self.assertEqual(status()['description_comparison'], 'differs')
             self.assertEqual(store.get_job(job.id).description, 'Original Python skills.')
@@ -117,6 +117,24 @@ class AutomationTests(unittest.TestCase):
             observation = store.discovery_observations([job.id])[job.id][0]
             self.assertEqual(observation['description_comparison'], 'unknown')
             self.assertIsNone(observation['description_observed_at'])
+
+    def test_legacy_normalized_description_hash_is_unknown_until_reobserved(self):
+        import hashlib
+        job = replace(fake_job(), description='Requirements: Python\nPreferred: AWS')
+        with Store(self.db) as store:
+            store.add_discovered_jobs([job])
+            legacy = hashlib.sha256(' '.join(job.description.casefold().split()).encode()).hexdigest()
+            with store.connection:
+                store.connection.execute('UPDATE job_discovery_descriptions SET description_sha256=? WHERE job_id=?',
+                                         (legacy, job.id))
+            status = lambda: store.discovery_observations([job.id])[job.id][0]
+            self.assertEqual(status()['description_comparison'], 'unknown')
+            self.assertIsNotNone(status()['description_observed_at'])
+            store.add_discovered_jobs([replace(job, description='Requirements: Python Preferred: AWS')])
+            self.assertEqual(status()['description_comparison'], 'differs')
+            self.assertEqual(store.get_job(job.id).description, job.description)
+            store.add_discovered_jobs([job])
+            self.assertEqual(status()['description_comparison'], 'matches')
 
     def test_failed_discovery_import_rolls_back_jobs_and_observations(self):
         job = fake_job()

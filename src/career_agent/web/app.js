@@ -379,7 +379,7 @@
         if (row.description_comparison === "differs") {
           discovery.append(node("p", "", "Source text observed " + row.description_observed_at + " differs from the saved description. It may be partial or outdated; inspect the original posting before relying on the draft."));
         } else if (row.description_comparison === "matches") {
-          discovery.append(node("p", "muted", "Source text observed " + row.description_observed_at + " matched the saved description ignoring case and whitespace; this does not verify the current posting."));
+          discovery.append(node("p", "muted", "Source text observed " + row.description_observed_at + " exactly matched the saved description; this does not verify the current posting."));
         } else {
           discovery.append(node("p", "muted", "Description comparison unavailable for this source or latest observation."));
         }
