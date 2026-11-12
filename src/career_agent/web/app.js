@@ -1740,7 +1740,15 @@
         row.append(form);
         name.control.focus();
       });
-      row.append(edit);
+      const remove = button("Remove contact", "button", async () => {
+        if (remove.disabled || !window.confirm("Remove this contact? Linked follow-up tasks remain but will no longer identify this contact. Copies in backups and database remnants may remain.")) return;
+        remove.disabled = true;
+        try {
+          await crmPost("/api/jobs/" + item.id + "/crm/contacts/" + contact.contact_id + "/remove",
+            {acknowledged: true}, "Contact removed. Linked follow-ups were kept without a contact.");
+        } finally { remove.disabled = false; }
+      });
+      row.append(edit, remove);
       contacts.append(row);
     }
     const contactForm = node("form", "crm-form");

@@ -363,6 +363,33 @@ class CRMStoreTests(unittest.TestCase):
         self.assertEqual(task["contact_name"], "Corrected name")
         self.assertEqual(self.store.stage_of(self.job.id), "discovered")
 
+    def test_remove_contact_preserves_tasks_and_rejects_inconsistent_links(self):
+        contact = self.crm.add_contact(self.job.id, 'Fictional recruiter')
+        contact_id = contact['contact_id']
+        task = self.crm.add_followup(self.job.id, 'Fictional task', '2027-01-01', contact_id)
+        self.crm.update_followup(task['followup_id'], due_date='2027-01-02')
+        for job_id, ack in ((self.job.id, False), (self.job.id, 1), (self.second.id, True)):
+            with self.assertRaises(ValueError):
+                self.crm.remove_contact(job_id, contact_id, ack)
+        with self.store.connection:
+            self.store.connection.execute('INSERT INTO crm_followups(job_id,contact_id,title,due_date) VALUES(?,?,?,?)',
+                                          (self.second.id, contact_id, 'Inconsistent', '2027-01-01'))
+        with self.assertRaisesRegex(ValueError, 'inconsistent'):
+            self.crm.remove_contact(self.job.id, contact_id, True)
+        self.assertEqual(self.crm.followups(self.job.id)[0]['contact_id'], contact_id)
+        with self.store.connection:
+            self.store.connection.execute('DELETE FROM crm_followups WHERE job_id=?', (self.second.id,))
+        result = self.crm.remove_contact(self.job.id, contact_id, True)
+        self.assertEqual(result['followups_detached'], 1)
+        self.assertEqual(self.crm.contacts(self.job.id), [])
+        saved = self.crm.followups(self.job.id)[0]
+        self.assertIsNone(saved['contact_id'])
+        self.assertEqual(saved['title'], 'Fictional task')
+        self.assertEqual(saved['due_date'], '2027-01-02')
+        self.assertTrue(self.crm.export_history()['records']['followup_events'])
+        with self.assertRaises(ValueError):
+            self.crm.remove_contact(self.job.id, contact_id, True)
+
     def test_reschedule_complete_and_no_automatic_sending(self):
         task = self.crm.add_followup(self.job.id, "Check recruiter response", "2026-11-20")
         task_id = task["followup_id"]
@@ -640,6 +667,17 @@ class CRMApiTests(unittest.TestCase):
         self.assertEqual(len(details["contacts"]), 1)
         self.assertEqual(details["contacts"][0]["name"], "Updated recruiter")
         self.assertEqual(details["contacts"][0]["email"], "new@example.invalid")
+
+    def test_contact_removal_api_requires_acknowledgement_and_job_owner(self):
+        contact_id = self.api('POST', f'/api/jobs/{self.job.id}/crm/contacts', {'name': 'Fictional'}).json()['contact_id']
+        path = f'/api/jobs/{self.job.id}/crm/contacts/{contact_id}/remove'
+        self.assertEqual(self.api('POST', path, {'acknowledged': True}, token='bad').status_code, 403)
+        for body in ({}, {'acknowledged': 1}, {'acknowledged': False}, {'acknowledged': True, 'extra': 1}):
+            self.assertEqual(self.api('POST', path, body).status_code, 422)
+        other = f'/api/jobs/{self.second.id}/crm/contacts/{contact_id}/remove'
+        self.assertEqual(self.api('POST', other, {'acknowledged': True}).status_code, 422)
+        self.assertEqual(self.api('POST', path, {'acknowledged': True}).json()['followups_detached'], 0)
+        self.assertEqual(self.api('POST', path, {'acknowledged': True}).status_code, 422)
 
     def test_priority_and_interview_api_boundaries(self):
         for suffix, body in (("priority", {"priority": "high"}),

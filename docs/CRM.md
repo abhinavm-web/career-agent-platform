@@ -35,7 +35,7 @@ Saved notes are append-only in this version: add another note for a correction. 
 
 ## Recruiter contacts
 
-For each opportunity, enter a recruiter's or referrer's name, optional role, email and contextual note. Choose **Edit contact** to correct these fields, then **Save contact**, or **Cancel** to discard edits. Linked follow-up tasks retain the same contact and display its updated name. Contact edits replace the current fields; this MVP does not keep a contact revision history. The system never sends mail to contacts. Removal and consent-based account integrations are future work.
+For each opportunity, enter a recruiter's or referrer's name, optional role, email and contextual note. Choose **Edit contact** to correct these fields, then **Save contact**, or **Cancel** to discard edits. Linked follow-up tasks retain the same contact and display its updated name. Contact edits replace the current fields; this MVP does not keep a contact revision history. **Remove contact** requires confirmation and detaches the contact from linked follow-ups while retaining the tasks and their histories. Deleting a contact does not erase copies in earlier backups, free pages or SQLite remnants; names manually included in other notes or task titles also remain. The system never sends mail to contacts. Consent-based account integrations are future work.
 
 ## Follow-up tasks
 
@@ -82,4 +82,4 @@ The product vision and future requirements are in [PRD](PRD.md), feature **F07**
 
 ## Later improvements
 
-Contact removal, opt-in reminders, structured outcome reasons, event export/deletion, richer funnel analytics, and permitted email/calendar integrations. Any hosted edition requires encrypted storage, authentication, data governance and security review.
+Opt-in reminders, structured outcome reasons, event export/deletion, richer funnel analytics, and permitted email/calendar integrations. Any hosted edition requires encrypted storage, authentication, data governance and security review.
