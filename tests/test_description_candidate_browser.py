@@ -39,6 +39,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list button').first).to_contain_text('AI Transformation Manager')
                         page.get_by_label('Sort opportunities', exact=True).select_option('recent')
                         recent = page.locator('#job-list button').first
@@ -79,6 +80,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.on('dialog', lambda dialog: dialog.accept())
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Fictional engineer')
                         page.locator('#discover-site-indeed').uncheck(); page.locator('#discover-site-zip').uncheck()
@@ -95,6 +97,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                         page.locator('#filter').select_option('source-text-review')
                         expect(page.locator('#visible-count')).to_have_text('1 opportunity')
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
+                        page.get_by_role('tab', name='Overview').click()
                         page.get_by_text('Correct saved description', exact=True).click()
                         page.get_by_text('Review returned source descriptions', exact=True).click()
                         page.get_by_role('button', name='Load saved source text').click()
@@ -105,7 +108,10 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                         expect(editor.get_by_label('Corrected job description')).to_have_value(observed.description)
                         with Store(db) as store: self.assertEqual(store.get_job(job.id).description, job.description)
                         editor.get_by_label('I reviewed this corrected description.').check()
-                        editor.get_by_role('button', name='Save corrected description').click()
+                        with page.expect_response(lambda response: response.request.method == 'PUT'
+                                and response.url.endswith('/description')) as saved:
+                            editor.get_by_role('button', name='Save corrected description').click()
+                        self.assertEqual(saved.value.status, 200)
                         expect(page.locator('#visible-count')).to_have_text('0 opportunities')
                         with Store(db) as store:
                             self.assertEqual(store.get_job(job.id).description, observed.description)
@@ -141,6 +147,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.locator('#filter').select_option('missing-description')
                         expect(page.locator('#visible-count')).to_have_text('2 opportunities')
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
@@ -154,6 +161,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                         expect(page.locator('#visible-count')).to_have_text('1 opportunity')
                         expect(page.locator('#job-list')).not_to_contain_text('Other role')
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
+                        page.get_by_role('tab', name='Overview').click()
                         page.get_by_text('Correct saved description', exact=True).click()
                         page.get_by_text('Review returned source descriptions', exact=True).click()
                         page.get_by_role('button', name='Load saved source text').click()

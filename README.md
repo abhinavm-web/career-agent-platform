@@ -50,13 +50,15 @@ and submit it. You can also add an opportunity manually.
 1. Open **Career profile**, enter your goals and review extracted résumé lines.
    Save each accurate statement and then explicitly verify it. AI-suggested wording
    also needs your review and separate verification.
-2. On **Opportunity board**, use **Find jobs with JobSpy** or add a job manually.
+2. Start from **Home** to see profile readiness, saved roles and local follow-ups.
+   On **Opportunity board**, use **Find jobs with JobSpy** or add a job manually.
    **Saved searches** can run while the server is running after you opt in. Source
    results can be incomplete. Review constraints and the original posting.
 3. In **H-1B research**, download a supported DOL workbook or import a local DOL
    workbook/CSV or USCIS CSV, and associate an employer when needed. Historical filings
    are not a job-specific sponsorship commitment; unknowns require employer confirmation.
-4. Create and review a draft from verified facts. Approve the current version before
+4. Open a role and use **Overview**, **Fit**, **Sponsorship**, and **Application**
+   to review evidence and prepare a draft. Create and review a draft from verified facts. Approve the current version before
    exporting. Apply yourself on the employer site, then record your actual
    submission in the tracker. The app does not submit applications.
 

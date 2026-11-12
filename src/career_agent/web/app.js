@@ -7,8 +7,8 @@
   const root = document.getElementById("app");
   const token = root.dataset.session;
   const state = {
-    jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null,
-    packet: null, packetRequestSequence: 0, filter: "all", search: "", sort: "score", screen: "jobs",
+    jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null, detailTab: "overview",
+    packet: null, packetRequestSequence: 0, filter: "all", search: "", sort: "score", screen: "home",
     workspace: null, editingFactId: null,
     crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0, refreshSequence: 0, boardTruncated: false,
     boardFilters: {location: "", source: "", remote: "all", sponsor: "all", freshness: "all"}
@@ -95,7 +95,7 @@
 
   function showScreen(screen) {
     state.screen = screen;
-    const screens = {jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker", h1b: "H-1B research", automation: "Saved searches", ai: "AI analysis"};
+    const screens = {home: "Home", settings: "Settings & data", jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker", h1b: "H-1B research", automation: "Saved searches", ai: "AI analysis"};
     for (const name of Object.keys(screens)) {
       byId(name + "-screen").hidden = screen !== name;
       byId("nav-" + name).classList.toggle("active", screen === name);
@@ -130,6 +130,22 @@
     byId("open-profile").hidden = ready;
     byId("setup-find-jobs").hidden = hasJobs;
     byId("setup-add-job").hidden = hasJobs;
+    byId("home-jobs-count").textContent = state.overview.total_jobs ?? 0;
+    byId("home-submitted-count").textContent = state.overview.submitted_recorded ?? 0;
+    byId("home-next-title").textContent = ready ? (hasJobs ? "Review your opportunities" : "Find your first opportunity") : "Build your career profile";
+    byId("home-next-description").textContent = ready ? (hasJobs ? "Compare saved roles and prepare your next application." : "Search job sources or add a role you found.") : "Add your goals and verify your experience to prepare application drafts.";
+    byId("home-next").textContent = ready ? (hasJobs ? "Review saved roles" : "Find opportunities") : "Open career profile";
+    byId("home-next").dataset.destination = ready ? "jobs" : "profile";
+    const recommendations = byId("home-recommendations");
+    recommendations.replaceChildren();
+    const roles = state.jobs.filter((job) => job.application_stage !== "submitted");
+    if (ready) roles.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+    for (const job of roles.slice(0, 3)) {
+      const item = button("", "home-followup", () => { showScreen("jobs"); selectJob(job.id); });
+      item.append(node("strong", "", job.title + " · " + job.company), node("small", "", ready && job.fit_score != null ? (!job.description?.trim() ? "Incomplete keyword score " : "Keyword score ") + job.fit_score + "/100 · review fit" : "Saved role · review details"));
+      recommendations.append(item);
+    }
+    if (!roles.length) recommendations.append(node("p", "muted", "No unsubmitted roles to review. Search job sources or add an opportunity to begin."));
   }
 
   function postingDeadline(value) {
@@ -283,10 +299,17 @@
       if (editor?.open && description && (description.value !== description.defaultValue || source?.value || capture?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
     }
+    if (state.selectedId !== id) state.detailTab = "overview";
     state.selectedId = id;
     state.packet = null;
     renderJobs();
     renderDetail();
+    if (state.screen === "jobs" && window.matchMedia?.("(max-width: 1050px)").matches) {
+      const detail = byId("detail-panel");
+      detail.setAttribute("tabindex", "-1");
+      detail.scrollIntoView?.({behavior: "smooth", block: "start"});
+      detail.focus?.({preventScroll: true});
+    }
     const initialWorkspaceRevision = state.workspace?.revision ?? null;
     const initialDescriptionRevision = state.jobs.find((job) => job.id === id)?.description_revision ?? 0;
     await loadPacket(id);
@@ -383,7 +406,36 @@
       info.append(cell);
     }
     detail.append(info);
-    if (job.remote_evidence?.detail) detail.append(node("p", "muted", job.remote_evidence.detail));
+    const tabList = node("div", "detail-jump");
+    tabList.setAttribute("role", "tablist"); tabList.setAttribute("aria-label", "Job workspace");
+    const panes = {}, tabs = {};
+    const sections = [["overview", "Overview"], ["fit", "Fit"], ["sponsorship", "Sponsorship"], ["application", "Application"]];
+    function activateTab(key, focus = false) {
+      state.detailTab = key;
+      for (const [name] of sections) {
+        const active = name === key;
+        panes[name].hidden = !active;
+        tabs[name].setAttribute("aria-selected", String(active));
+        tabs[name].setAttribute("tabindex", active ? "0" : "-1");
+      }
+      if (focus) tabs[key].focus();
+    }
+    for (const [key, title] of sections) {
+      const tab = button(title, "detail-jump-button", () => activateTab(key));
+      const pane = node("div", "detail-tab-panel");
+      tab.id = "job-tab-" + key; pane.id = "job-pane-" + key;
+      tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", pane.id);
+      pane.setAttribute("role", "tabpanel"); pane.setAttribute("aria-labelledby", tab.id);
+      tab.addEventListener("keydown", (event) => {
+        const index = sections.findIndex(([name]) => name === key);
+        const target = event.key === "ArrowRight" ? (index + 1) % sections.length : event.key === "ArrowLeft" ? (index + sections.length - 1) % sections.length : event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : -1;
+        if (target >= 0) { event.preventDefault(); activateTab(sections[target][0], true); }
+      });
+      tabs[key] = tab; panes[key] = pane; tabList.append(tab);
+    }
+    detail.append(tabList, ...sections.map(([key]) => panes[key]));
+    activateTab(state.detailTab);
+    if (job.remote_evidence?.detail) panes.overview.append(node("p", "muted", job.remote_evidence.detail));
     if (job.discovery_observations?.length) {
       const discovery = section("Discovery history");
       discovery.append(node("p", "muted", "These are times your searches returned this URL, not proof that the posting is open, current, or unchanged."));
@@ -408,11 +460,11 @@
           discovery.append(node("p", "muted", "Description comparison unavailable for this source or latest observation."));
         }
       }
-      detail.append(discovery);
+      panes.overview.append(discovery);
     }
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
-    actions.append(button("Analyze with AI", "button", () => {
+    const openJobAI = () => {
       if (byId("ai-job").value !== job.id) {
         byId("ai-results").replaceChildren();
         byId("ai-consent").checked = false;
@@ -420,8 +472,9 @@
       }
       byId("ai-job").dataset.requestedJob = job.id;
       byId("nav-ai").click();
-    }));
-    detail.append(actions);
+    };
+    actions.append(button("Analyze with AI", "button", openJobAI));
+    panes.overview.append(actions);
 
     const duplicates = section("Possible duplicate postings");
     duplicates.id = "possible-duplicates"; duplicates.dataset.jobId = job.id;
@@ -451,7 +504,7 @@
       finally { duplicateButton.disabled = false; }
     });
     duplicates.append(duplicateButton, duplicateResults);
-    detail.append(duplicates);
+    panes.overview.append(duplicates);
 
     const availability = section("Posting availability");
     const availabilityStatus = node("div", "availability-status");
@@ -496,9 +549,10 @@
       availability.append(node("p", "", "Live checks support Greenhouse and Lever postings. Check the original posting manually."));
     }
     availability.append(node("p", "", "A listed posting is not a guarantee of current hiring or sponsorship."));
-    detail.append(availability);
+    panes.overview.append(availability);
 
     const sponsor = section("Sponsorship assessment");
+    sponsor.id = "job-sponsorship";
     const sponsorBox = node("div", "sponsorship-box");
     const label = sponsorshipLabel(job.sponsorship_status);
     sponsorBox.append(chip(label[0], label[1]), node("p", "", job.sponsorship_reason));
@@ -513,7 +567,7 @@
       byId("h1b-query").value = job.company;
       byId("nav-h1b").click();
     }));
-    detail.append(sponsor);
+    panes.sponsorship.append(sponsor);
 
     if (job.constraint_evidence?.length) {
       const constraints = section("Your hard constraints");
@@ -522,7 +576,7 @@
         const label = row.status === "flagged" ? "Flagged" : row.status === "source_marked" ? "Source marked" : "Unknown";
         constraints.append(node("strong", "", row.constraint + " — " + label), node("p", "", row.detail));
       }
-      detail.append(constraints);
+      panes.fit.append(constraints);
     }
 
     if (job.title_level_evidence) {
@@ -533,7 +587,7 @@
         ? "Preferred title phrase found: " + evidence.matched_phrases.join(", ")
         : "No preferred title phrase found; level remains unknown."));
       preference.append(node("p", "muted", evidence.notice));
-      detail.append(preference);
+      panes.fit.append(preference);
     }
 
     if (job.fit_reasons && job.fit_reasons.length) {
@@ -542,7 +596,7 @@
       const ul = node("ul");
       for (const reason of job.fit_reasons) ul.append(node("li", "", reason));
       fit.append(ul);
-      detail.append(fit);
+      panes.fit.append(fit);
     }
 
     const evidence = section("Review explicit requirements");
@@ -579,7 +633,7 @@
       finally {evidenceButton.disabled = false;}
     });
     evidence.append(evidenceButton, evidenceResult);
-    detail.append(evidence);
+    panes.fit.append(evidence);
 
     const preparation = section("Interview preparation");
     preparation.id = "interview-preparation";
@@ -612,9 +666,10 @@
       } catch (error) { if (preparation.isConnected) prepResult.textContent = "Unable to build preparation guide: " + error.message; }
       finally { prepButton.disabled = false; }
     });
-    preparation.append(prepButton, prepResult); detail.append(preparation);
+    preparation.append(prepButton, prepResult); panes.application.append(preparation);
 
     const desc = section("Job description");
+    desc.id = "job-overview";
     desc.append(node("p", "description", job.description || "No description saved."));
     if (!job.description?.trim()) desc.append(node("p", "muted", "Matching and sponsorship analysis cannot assess missing posting text. Open the original posting and use the description editor below to add text you have reviewed."));
     if (job.description_correction) {
@@ -723,11 +778,19 @@
     } else {
       desc.append(node("p", "muted", "The posting and reviewed packet are locked after submission is recorded."));
     }
-    detail.append(desc);
+    panes.overview.append(desc);
 
     const drafts = section("Application preparation");
+    drafts.id = "job-application";
     const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
     drafts.append(p);
+    const workflowActions = node("div", "button-row");
+    workflowActions.append(button("Analyze this role with AI", "button", openJobAI), button("Track application progress", "button", async () => {
+      showScreen("tracker");
+      await loadCRM();
+      if (state.screen === "tracker") await selectCRMJob(job.id);
+    }));
+    drafts.append(workflowActions);
     const missingProfile = state.settings.profile_configured === false;
     const missingFacts = state.settings.facts_configured === false;
     if (job.application_stage !== "submitted" && (missingProfile || missingFacts)) {
@@ -827,7 +890,7 @@
       choose.append(load, choices, status); drafts.append(choose);
       }
     }
-    detail.append(drafts);
+    panes.application.append(drafts);
     if (state.packet) renderPacket(detail, job, state.packet);
   }
 
@@ -1942,6 +2005,57 @@
     }
   }
 
+  async function loadHome() {
+    const list = byId("home-followups");
+    list.replaceChildren(node("p", "muted", "Loading local follow-ups…"));
+    try {
+      const summary = await api("/api/crm");
+      if (state.screen !== "home") return;
+      list.replaceChildren();
+      if (!summary.open_followups?.length) list.append(node("p", "muted", "No pending follow-ups. Add one from the application tracker when you need it."));
+      for (const task of (summary.open_followups || []).slice(0, 3)) {
+        const item = button("", "home-followup", async () => {
+          showScreen("tracker");
+          await loadCRM();
+          if (state.screen === "tracker") await selectCRMJob(task.job_id);
+        });
+        item.append(node("strong", "", task.title), node("small", "", task.due_date + " · " + task.company));
+        list.append(item);
+      }
+      if (summary.open_followup_count > 3) list.append(node("p", "muted", "Open the application tracker to see all follow-ups."));
+    } catch (error) { if (state.screen === "home") list.replaceChildren(node("p", "muted", "Unable to load follow-ups: " + error.message)); }
+  }
+  byId("nav-home").addEventListener("click", () => { showScreen("home"); loadHome(); });
+  byId("nav-settings").addEventListener("click", () => showScreen("settings"));
+  byId("settings-models").addEventListener("click", () => byId("nav-ai").click());
+  byId("settings-searches").addEventListener("click", () => byId("nav-automation").click());
+  byId("settings-records").addEventListener("click", () => {
+    byId("nav-h1b").click();
+    byId("h1b-data-admin-heading").scrollIntoView?.({behavior: "smooth", block: "start"});
+  });
+  byId("settings-profile-export").addEventListener("click", () => {
+    byId("nav-profile").click();
+    const target = byId("career-export");
+    const details = target.closest("details");
+    if (details) details.open = true;
+    target.scrollIntoView?.({behavior: "smooth", block: "center"});
+    target.focus();
+  });
+  byId("profile-start-resume").addEventListener("click", () => {
+    const input = byId("resume-file");
+    const panel = input.closest("details");
+    if (panel) panel.open = true;
+    input.scrollIntoView?.({behavior: "smooth", block: "center"});
+    input.focus();
+  });
+  byId("profile-start-preferences").addEventListener("click", () => {
+    byId("career-profile-form").scrollIntoView?.({behavior: "smooth", block: "start"});
+    byId("career-name").focus();
+  });
+  byId("home-next").addEventListener("click", () => byId("nav-" + (byId("home-next").dataset.destination || "profile")).click());
+  byId("home-jobs").addEventListener("click", () => byId("nav-jobs").click());
+  byId("home-tracker").addEventListener("click", () => byId("nav-tracker").click());
+  byId("home-h1b").addEventListener("click", () => byId("nav-h1b").click());
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
   byId("nav-h1b").addEventListener("click", () => showScreen("h1b"));
   byId("nav-automation").addEventListener("click", () => {showScreen("automation"); byId("automation-panel").open = true; byId("automation-refresh").click();});
@@ -2457,5 +2571,5 @@
     } catch (error) {notice(error.message, true);}
   });
 
-  refresh();
+  refresh().then(() => { if (state.screen === "home") loadHome(); });
 })();

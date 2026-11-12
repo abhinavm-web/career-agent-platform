@@ -48,6 +48,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.locator('#nav-h1b').click()
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
                         page.locator('#h1b-captured').fill('2025-06-01')
@@ -90,6 +91,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.locator('#nav-h1b').click()
                         page.locator('#h1b-query').fill('Fictional Employer')
                         page.get_by_role('button', name='Search company records and jobs').click()
@@ -158,6 +160,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.locator('#nav-h1b').click()
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
                         page.locator('#h1b-refresh-url').fill('https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx')
@@ -227,8 +230,10 @@ class H1BBrowserTests(unittest.TestCase):
                             };
                         ''')
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Fictional role')
                         page.get_by_role('button', name='View Fictional role at Fictional Co').click()
+                        page.get_by_role('tab', name='Overview').click()
                         page.get_by_text('Correct saved description', exact=True).click()
                         editor = page.locator('#job-description-editor')
                         editor.locator('textarea').nth(0).fill('Revised fictional description.')
@@ -283,6 +288,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#visible-count')).to_have_text('505 opportunities', timeout=30000)
                         page.locator('#search').fill('Rare oldest role')
                         expect(page.locator('#visible-count')).to_have_text('1 opportunity')
@@ -323,6 +329,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Listed at check')
                         page.get_by_role('button', name='View Role at Fictional Co').click()
                         expect(page.locator('#detail-panel')).to_contain_text('Listed at check')
@@ -377,6 +384,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Listed at check')
                         page.get_by_role('button', name='H-1B research', exact=True).click()
                         results = page.locator('#h1b-opportunities-results')
@@ -413,6 +421,7 @@ class H1BBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         expect(page.locator('#profile-prompt')).to_be_visible()
                         page.get_by_label('Sort opportunities', exact=True).select_option('recent')
                         expect(page.locator('#board-sort')).to_have_value('recent')
@@ -490,6 +499,7 @@ class H1BBrowserTests(unittest.TestCase):
                         errors = []
                         page.on('pageerror', lambda error: errors.append(str(error)))
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='H-1B research', exact=True).click()
                         expect(page.get_by_role('heading', name='Data administration')).to_be_visible()
                         release = {'source_url': 'https://www.dol.gov/agencies/eta/foreign-labor/performance',

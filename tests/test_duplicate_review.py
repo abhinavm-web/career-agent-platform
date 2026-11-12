@@ -100,6 +100,7 @@ class DuplicateBrowserTests(unittest.TestCase):
                             return originalFetch(...args);
                           };""")
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.locator('#job-list button').first.click()
                         expect(page.locator('#detail-panel')).to_contain_text('second-board')
                         page.get_by_role('button', name='Find possible duplicates').click()

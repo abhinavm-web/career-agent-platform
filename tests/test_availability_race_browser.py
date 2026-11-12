@@ -56,6 +56,7 @@ class AvailabilityRaceBrowserTests(unittest.TestCase):
                         page.route('**/api/jobs/*/live-check', lambda route: route.fulfill(
                             status=502, content_type='application/json', body='{"detail":"Fictional check failed"}'))
                         page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Role at Fictional Co').click()
                         page.get_by_role('button', name='Check live availability').click()
                         expect(page.locator('#detail-panel')).to_contain_text('Fictional check failed')
