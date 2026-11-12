@@ -1325,11 +1325,16 @@ def create_app(config: DashboardConfig) -> FastAPI:
         with Store(config.db_path) as store:
             return ApplicationCRM(store).summary()
 
+    @app.get("/api/crm/followups")
+    def crm_pending_followups(offset: int = 0):
+        with Store(config.db_path) as store:
+            return ApplicationCRM(store).pending_followups(offset)
+
     @app.get("/api/jobs/{job_id}/crm")
-    def crm_details(job_id: str):
+    def crm_details(job_id: str, followup_offset: int = 0):
         with Store(config.db_path) as store:
             _get_job(store, job_id)
-            return ApplicationCRM(store).details(job_id)
+            return ApplicationCRM(store).details(job_id, followup_offset)
 
     @app.post("/api/jobs/{job_id}/crm/stage")
     async def crm_change_stage(job_id: str, request: Request):

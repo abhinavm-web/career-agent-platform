@@ -40,6 +40,26 @@ class CRMStoreTests(unittest.TestCase):
         self.store.add_jobs([self.job, self.second])
         self.crm = ApplicationCRM(self.store)
 
+    def test_followup_pages_include_all_open_and_job_history_without_overlap(self):
+        tasks = [self.crm.add_followup(self.job.id, f'Task {i:03d}', '2026-12-01') for i in range(105)]
+        self.crm.update_followup(tasks[0]['followup_id'], complete=True)
+        self.crm.update_followup(tasks[1]['followup_id'], cancel=True)
+        self.assertEqual(self.crm.summary()['open_followup_count'], 103)
+        first = self.crm.pending_followups()
+        second = self.crm.pending_followups(20)
+        last = self.crm.pending_followups(100)
+        self.assertEqual((first['total'], len(first['tasks']), first['next_offset']), (103, 20, 20))
+        self.assertEqual((len(last['tasks']), last['next_offset']), (3, None))
+        self.assertFalse({t['followup_id'] for t in first['tasks']} & {t['followup_id'] for t in second['tasks']})
+        detail = self.crm.details(self.job.id)
+        later = self.crm.details(self.job.id, 100)
+        self.assertEqual((detail['followup_total'], len(detail['followups']), detail['followup_next_offset']), (105, 100, 100))
+        self.assertEqual((later['followup_offset'], len(later['followups']), later['followup_next_offset']), (100, 5, None))
+        self.assertEqual(sum(bool(t['completed_at'] or t['cancelled']) for t in later['followups']), 2)
+        for offset in (-1, True, 2**63):
+            with self.subTest(offset=offset), self.assertRaises(ValueError): self.crm.pending_followups(offset)
+            with self.subTest(offset=offset), self.assertRaises(ValueError): self.crm.details(self.job.id, offset)
+
     def test_review_suggestions_use_recorded_active_stage_and_pending_tasks(self):
         now = datetime.now(timezone.utc)
         old = (now - timedelta(days=15)).strftime('%Y-%m-%d %H:%M:%S')
@@ -465,6 +485,19 @@ class CRMApiTests(unittest.TestCase):
         if body is None:
             return self.client.request(method, path, headers=headers)
         return self.client.request(method, path, headers=headers, json=body)
+
+    def test_followup_paging_api_is_local_and_validated(self):
+        self.assertEqual(self.client.get('/api/crm/followups').status_code, 403)
+        for offset in ('-1', '9999999999999999999999'):
+            self.assertEqual(self.api('GET', '/api/crm/followups?offset=' + offset).status_code, 422)
+            self.assertEqual(self.api('GET', f'/api/jobs/{self.job.id}/crm?followup_offset=' + offset).status_code, 422)
+        with Store(self.db) as store:
+            crm = ApplicationCRM(store)
+            for i in range(21): crm.add_followup(self.job.id, f'Fictional {i}', '2027-01-01')
+        result = self.api('GET', '/api/crm/followups?offset=20')
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual((result.json()['total'], len(result.json()['tasks'])), (21, 1))
+        self.assertEqual(self.api('GET', f'/api/jobs/{self.job.id}/crm').json()['followup_total'], 21)
 
     def test_api_auth_and_basic_tracking(self):
         self.assertEqual(self.client.get("/api/crm").status_code, 403)

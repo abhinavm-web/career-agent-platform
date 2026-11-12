@@ -339,17 +339,37 @@ class ApplicationCRM:
             raise
         return {"followup_id": row["followup_id"], "action": action, "due_date": new_date}
 
-    def followups(self, job_id: str) -> list[dict]:
+    def followups(self, job_id: str, offset: int = 0) -> list[dict]:
         self.store.get_job(job_id)
+        self._validate_followup_offset(offset)
         rows = self.conn.execute(
             "SELECT f.followup_id,f.title,f.due_date,f.completed_at,f.created_at,"
             " f.contact_id,c.name AS contact_name,"
             " EXISTS(SELECT 1 FROM crm_followup_events e WHERE e.followup_id=f.followup_id AND e.action='cancelled') AS cancelled FROM crm_followups f"
             " LEFT JOIN crm_contacts c ON c.contact_id=f.contact_id"
-            " WHERE f.job_id=? ORDER BY (f.completed_at IS NOT NULL OR cancelled),f.due_date LIMIT 100",
-            (job_id,),
+            " WHERE f.job_id=? ORDER BY (f.completed_at IS NOT NULL OR cancelled),f.due_date,f.followup_id LIMIT 100 OFFSET ?",
+            (job_id, offset),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    @staticmethod
+    def _validate_followup_offset(offset):
+        if type(offset) is not int or not 0 <= offset <= 9223372036854775807:
+            raise ValueError('Use a nonnegative supported follow-up offset')
+
+    def pending_followups(self, offset: int = 0) -> dict:
+        """Return a bounded page of local open tasks, ordered by due date and ID."""
+        self._validate_followup_offset(offset)
+        where = (" FROM crm_followups f JOIN jobs j ON j.job_id=f.job_id "
+                 "WHERE f.completed_at IS NULL AND NOT EXISTS (SELECT 1 FROM crm_followup_events e "
+                 "WHERE e.followup_id=f.followup_id AND e.action='cancelled')")
+        total = self.conn.execute('SELECT COUNT(*)' + where).fetchone()[0]
+        rows = self.conn.execute("SELECT f.followup_id,f.job_id,f.title,f.due_date,"
+            "j.company,j.title AS job_title" + where + " ORDER BY f.due_date,f.followup_id LIMIT 20 OFFSET ?", (offset,)).fetchall()
+        today = date.today().isoformat()
+        return {'tasks': [{**dict(row), 'overdue': row['due_date'] < today} for row in rows],
+                'offset': offset, 'total': total, 'next_offset': offset + 20 if offset + len(rows) < total else None,
+                'today': today}
 
     def priority(self, job_id: str) -> str:
         self.store.get_job(job_id)
@@ -388,8 +408,10 @@ class ApplicationCRM:
             (job_id,),
         ).fetchall()]
 
-    def details(self, job_id: str) -> dict:
+    def details(self, job_id: str, followup_offset: int = 0) -> dict:
+        self._validate_followup_offset(followup_offset)
         job = self.store.get_job(job_id)
+        count = self.conn.execute('SELECT COUNT(*) FROM crm_followups WHERE job_id=?', (job_id,)).fetchone()[0]
         return {
             "job_id": job_id,
             "job": {"id": job.id, "title": job.title, "company": job.company},
@@ -399,7 +421,9 @@ class ApplicationCRM:
             "stage_events": self.stage_history(job_id),
             "correction_option": self.correction_option(job_id),
             "contacts": self.contacts(job_id),
-            "followups": self.followups(job_id),
+            "followups": self.followups(job_id, followup_offset),
+            "followup_offset": followup_offset, "followup_total": count,
+            "followup_next_offset": followup_offset + 100 if followup_offset + 100 < count else None,
             "priority": self.priority(job_id),
             "priority_events": [dict(row) for row in self.conn.execute(
                 "SELECT * FROM crm_priority_events WHERE job_id=? ORDER BY event_id DESC", (job_id,),
@@ -498,15 +522,15 @@ class ApplicationCRM:
                                               'stage': stage, 'recorded_on': recorded.isoformat(), 'days': days})
         rows = self.conn.execute(
             "SELECT f.followup_id,f.job_id,f.title,f.due_date,"
-            " j.company,j.title AS job_title "
+            " j.company,j.title AS job_title, COUNT(*) OVER() AS total "
             "FROM crm_followups f JOIN jobs j ON j.job_id=f.job_id "
             "WHERE f.completed_at IS NULL AND NOT EXISTS (SELECT 1 FROM crm_followup_events e WHERE e.followup_id=f.followup_id AND e.action='cancelled') ORDER BY f.due_date,f.followup_id LIMIT 50"
         ).fetchall()
         today = date.today().isoformat()
-        upcoming = [{**dict(row), "overdue": row["due_date"] < today} for row in rows]
+        upcoming = [{**{key: row[key] for key in row.keys() if key != "total"}, "overdue": row["due_date"] < today} for row in rows]
         return {
             "stages": counts, "job_stages": job_stages,
-            "open_followups": upcoming, "today": today,
+            "open_followups": upcoming, "open_followup_count": rows[0]["total"] if rows else 0, "today": today,
             "outcomes": self.outcomes(),
             "review_suggestions": sorted(review_candidates, key=lambda row: (-row['days'], row['job_id']))[:20],
             "review_suggestion_count": len(review_candidates),
