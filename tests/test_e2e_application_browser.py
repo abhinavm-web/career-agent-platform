@@ -175,6 +175,37 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#tracker-screen')).to_contain_text('Data Analyst')
                         page.locator('#nav-h1b').click()
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('Fictional Analytics LLC')
+
+                        # An offline backup and restore must preserve the same
+                        # reviewed journey in a separate workspace, not just
+                        # produce an archive that passes a checksum.
+                        server.should_exit = True; thread.join(timeout=10); self.assertFalse(thread.is_alive()); sock.close()
+                        from career_agent.backup import create_backup, restore_backup, verify_backup
+                        archive = root / 'fictional-backup.zip'
+                        create_backup(config.db_path, config.packet_dir, archive, offline=True)
+                        self.assertTrue(verify_backup(archive)['verified'])
+                        restored = restore_backup(archive, root / 'restored', offline=True)
+                        restored_config = DashboardConfig(db_path=Path(restored['database']), packet_dir=Path(restored['packet_dir']))
+                        app = create_app(restored_config)
+                        sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+                        server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+                        thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+                        for _ in range(100):
+                            if server.started: break
+                            time.sleep(0.05)
+                        self.assertTrue(server.started)
+                        page.goto(f'http://127.0.0.1:{port}')
+                        expect(page.locator('#count-submitted')).to_have_text('1')
+                        page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
+                        expect(page.locator('#detail-panel')).to_contain_text('Submission recorded from your attestation')
+                        expect(page.locator('#detail-panel')).to_contain_text('A fictional suggested rewrite.')
+                        page.locator('#nav-profile').click()
+                        expect(page.locator('.career-fact').filter(has_text='A fictional suggested rewrite.')).to_contain_text('Candidate verified')
+                        page.locator('#nav-h1b').click()
+                        expect(page.locator('#h1b-coverage')).to_contain_text('1 imported H-1B cases')
+                        expect(page.locator('#h1b-opportunities-results')).to_contain_text('Fictional Analytics LLC')
+                        page.locator('#nav-tracker').click()
+                        expect(page.locator('#tracker-screen')).to_contain_text('Data Analyst')
                         self.assertEqual(external_requests, [])
                     finally:
                         browser.close()

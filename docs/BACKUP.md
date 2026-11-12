@@ -118,3 +118,10 @@ existing workspace is overwritten. Verify the restored workspace before making
 it your primary copy, and restart with any original external configuration
 files you still use. This is an offline portability tool, not automated backup,
 at-rest encryption, multi-user hosting, or a guarantee against disk failure.
+
+An optional Chromium integration test exercises a fictional application journey
+through a stopped-server backup, verification, restore and browser restart. It
+checks a reviewed packet, candidate-verified fact, recorded submission, tracker
+entry and imported H-1B association. Job discovery and model responses are
+mocked, and external browser requests are blocked; the test does not validate
+live providers or the completeness of a particular user's backup.
