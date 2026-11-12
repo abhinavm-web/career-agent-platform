@@ -10,6 +10,38 @@ from pathlib import Path
 
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class CaptureBrowserTests(unittest.TestCase):
+    def test_structured_capture_reads_only_a_single_inert_job_description(self):
+        from playwright.sync_api import sync_playwright, expect
+        popup = (Path(__file__).resolve().parents[1] / 'browser-companion' / 'popup.js').read_text(encoding='utf-8')
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page()
+                page.route('https://example.invalid/**', lambda route: route.fulfill(status=200, content_type='text/html', body='''
+                    <title>Fictional role</title><button id="capture">Selected</button>
+                    <button id="capture-structured">Structured</button><p id="status"></p>
+                    <script type="application/ld+json">{"@type":"JobPosting","title":"Engineer",
+                    "hiringOrganization":{"name":"Fictional Co"},"description":"<p>Build &amp; review</p><script>window.unsafeRan=true<\\/script><ul><li>Python</li></ul>"}</script>'''))
+                page.goto('https://example.invalid/job')
+                page.evaluate('''() => {
+                    window.copiedCapture = null; window.pageReads = 0;
+                    Object.defineProperty(navigator, 'clipboard', {value: {writeText: async value => { window.copiedCapture = value; }}});
+                    window.chrome = {tabs: {query: async () => [{id: 1}]}, scripting: {executeScript: async ({func, args}) => {
+                      window.pageReads++; return [{result: func(...args)}];
+                    }}};
+                }''')
+                page.add_script_tag(content=popup)
+                self.assertEqual(page.evaluate('window.pageReads'), 0)
+                page.locator('#capture-structured').click()
+                expect(page.locator('#status')).to_contain_text('Copied structured')
+                capture = json.loads(page.evaluate('window.copiedCapture'))
+                self.assertEqual(capture['selection'], 'Build & review\nPython')
+                self.assertEqual(capture['text_source'], 'structured_description')
+                self.assertEqual(capture['metadata']['company'], 'Fictional Co')
+                self.assertFalse(page.evaluate('Boolean(window.unsafeRan)'))
+            finally:
+                browser.close()
+
     def test_capture_requires_review_and_preserves_unsaved_fields(self):
         import uvicorn
         from playwright.sync_api import sync_playwright, expect
@@ -81,13 +113,15 @@ class CaptureBrowserTests(unittest.TestCase):
                         editor.get_by_role('button', name='Fill description from capture').click()
                         expect(editor).to_contain_text('Capture URL does not match')
                         expect(description).to_have_value(capture['selection'])
-                        capture_field.fill(json.dumps({**capture, 'selection': 'Updated fictional description.'}))
+                        capture_field.fill(json.dumps({**capture, 'selection': 'Updated fictional description.', 'text_source': 'structured_description'}))
                         page.once('dialog', lambda dialog: dialog.dismiss())
                         editor.get_by_role('button', name='Fill description from capture').click()
                         expect(description).to_have_value(capture['selection'])
                         page.once('dialog', lambda dialog: dialog.accept())
                         editor.get_by_role('button', name='Fill description from capture').click()
                         expect(description).to_have_value('Updated fictional description.')
+                        expect(editor.get_by_label('Source note (optional)')).to_have_value('Structured JobPosting on captured page; source not independently verified.')
+                        expect(editor).to_contain_text('may be incomplete or describe another job')
                         with Store(db) as store:
                             self.assertEqual(store.get_job(jobs[0].id).description, capture['selection'])
                         checkbox = editor.get_by_label('I reviewed this corrected description.')

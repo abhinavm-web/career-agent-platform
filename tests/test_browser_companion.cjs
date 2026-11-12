@@ -15,14 +15,40 @@ test('manifest limits page access to the active tab', () => {
 
 function harness(data, scripts = null) {
   const button = {disabled: false, addEventListener: (_name, fn) => { button.click = fn; }};
+  const structured = {disabled: false, addEventListener: (_name, fn) => { structured.click = fn; }};
   const status = {textContent: ''}; let copied = null, reads = 0;
-  const chrome = {tabs: {query: async () => [{id: 42}]}, scripting: {executeScript: async options => { reads++; return [{result: scripts === null ? data : options.func()}]; }}};
+  const chrome = {tabs: {query: async () => [{id: 42}]}, scripting: {executeScript: async options => { reads++; return [{result: scripts === null ? data : options.func(...options.args)}]; }}};
   const navigator = {clipboard: {writeText: async value => { copied = value; }}};
-  vm.runInNewContext(source, {document: {getElementById: id => id === 'capture' ? button : status,
-    title: data.title, querySelectorAll: () => scripts.map(textContent => ({textContent}))},
+  vm.runInNewContext(source, {document: {getElementById: id => id === 'capture' ? button : id === 'capture-structured' ? structured : status,
+    title: data.title, querySelectorAll: () => scripts.map(textContent => ({textContent})),
+    createElement: () => ({set innerHTML(value) { this.content = {childNodes: [{nodeType: 3, nodeValue: value}]}; }})},
     location: {href: data.url}, window: {getSelection: () => ({toString: () => data.selection})}, chrome, navigator, URL});
-  return {button, status, value: () => copied, reads: () => reads};
+  return {button, structured, status, value: () => copied, reads: () => reads};
 }
+
+test('structured description is explicitly requested and ambiguous postings are rejected', async () => {
+  const data = {title: 'Fictional role', url: 'https://example.invalid/job', selection: 'Unrelated selected text'};
+  const posting = {'@type': 'JobPosting', title: 'Engineer', description: 'Fictional description'};
+  const h = harness(data, [JSON.stringify(posting)]);
+  assert.equal(h.reads(), 0);
+  await h.structured.click();
+  assert.equal(JSON.parse(h.value()).selection, 'Fictional description');
+  assert.equal(JSON.parse(h.value()).text_source, 'structured_description');
+  const ambiguous = harness(data, [JSON.stringify([posting, posting])]);
+  await ambiguous.structured.click();
+  assert.equal(ambiguous.value(), null);
+  assert.match(ambiguous.status.textContent, /No single usable structured/);
+  for (const invalid of [
+    {'@type': 'JobPosting', title: 'Engineer'},
+    {'@type': 'JobPosting', description: 'x'.repeat(50001)},
+    {'@type': 'JobPosting', description: 'Invalid\0text'},
+  ]) {
+    const rejected = harness(data, [JSON.stringify(invalid)]);
+    await rejected.structured.click();
+    assert.equal(rejected.value(), null);
+    assert.ok(rejected.status.textContent);
+  }
+});
 
 test('captures only after click and never sends or saves the page', async () => {
   const h = harness({title: 'Fictional role', url: 'https://example.invalid/job', selection: 'Fictional requirement'});
