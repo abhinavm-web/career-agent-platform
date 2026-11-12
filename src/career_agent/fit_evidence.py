@@ -17,6 +17,18 @@ HEADINGS = {
     'about you': 'candidate_context', "what you'll bring": 'candidate_context',
 }
 
+NEGATED_LEVEL = re.compile(
+    r"\b(?:not|never|isn't|aren't|no longer)\s+(?:strictly\s+|necessarily\s+|absolutely\s+)?"
+    r"(?:required|mandatory|essential|necessary|preferred)\b"
+    r"|\bnot\s+(?:a\s+)?(?:requirement|prerequisite)\b"
+    r"|\bno\s+(?:prior\s+)?(?:experience|degree|certification|education)\s+(?:is\s+)?(?:required|necessary)\b",
+    re.IGNORECASE,
+)
+OPTIONAL_UNDER_REQUIRED = re.compile(
+    r'\b(?:optional|preferred|nice[ -]to[ -]have|a plus|may be waived|may be substituted|or equivalent)\b',
+    re.IGNORECASE,
+)
+
 
 def requirement_evidence(description: str, facts: list[dict]) -> dict:
     """Extract explicit section bullets; keyword links suggest, never establish, fit."""
@@ -88,6 +100,14 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
         if len(rows) == 25:
             truncated = True
             break
-        rows.append({'category': section, 'source_heading': source_heading, 'quote': quote, 'suggested_facts': matches})
+        normalized_quote = ' '.join(quote.replace('’', "'").split())
+        uncertain = section in {'required', 'preferred'} and (
+            bool(NEGATED_LEVEL.search(normalized_quote)) or
+            (section == 'required' and bool(OPTIONAL_UNDER_REQUIRED.search(normalized_quote))))
+        row = {'category': 'unspecified' if uncertain else section, 'source_heading': source_heading,
+               'quote': quote, 'suggested_facts': matches}
+        if uncertain:
+            row['classification_note'] = 'The excerpt contains optional or negated wording; confirm its requirement level with the employer.'
+        rows.append(row)
     return {'requirements': rows, 'truncated': truncated,
-            'notice': 'Literal section excerpts and keyword links only. Candidate-related sections and unspecified qualifications are not labeled required or preferred. Review relevance and confirm requirements with the employer; missing matches do not establish a qualification gap.'}
+            'notice': 'Literal section excerpts and keyword links only. Candidate-related sections and unspecified qualifications are not labeled required or preferred. Some conflicting wording is recognized, but other qualifiers may be missed. Review relevance and confirm requirements with the employer; missing matches do not establish a qualification gap.'}

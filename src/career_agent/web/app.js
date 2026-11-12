@@ -551,6 +551,7 @@
           const label = row.category === "required" ? "Labeled required" : row.category === "preferred" ? "Labeled preferred" : row.category === "candidate_context" ? "Candidate-related section; level unspecified" : "Qualification level unspecified";
           item.append(node("strong", "", label));
           if (row.source_heading && row.source_heading !== row.quote) item.append(node("p", "muted", "Section heading: " + row.source_heading));
+          if (row.classification_note) item.append(node("p", "muted", row.classification_note));
           item.append(node("blockquote", "", row.quote));
           if (!row.suggested_facts.length) item.append(node("p", "", "No verified fact matched by keyword; evidence remains unknown."));
           for (const fact of row.suggested_facts) item.append(node("p", "", "Potentially relevant verified fact " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));

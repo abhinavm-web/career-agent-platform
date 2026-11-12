@@ -38,7 +38,7 @@ class CaptureBrowserTests(unittest.TestCase):
                     time.sleep(.05)
                 self.assertTrue(server.started)
                 posting = {'@type': 'JobPosting', 'title': 'Engineer', 'hiringOrganization': {'name': 'Fictional Co'},
-                           'description': '<p>Overview</p><img src="https://tracking.invalid/pixel"><h2>Requirements</h2><ul><li><p>Python\n experience</p></li><li>Works with teams</li></ul>'}
+                           'description': '<p>Overview</p><img src="https://tracking.invalid/pixel"><h2>Requirements</h2><ul><li><p>Python\n experience</p></li><li>Rust is not required</li></ul>'}
                 body = ('<title>Engineer</title><button id="capture">Selected</button>'
                         '<button id="capture-structured">Structured</button><p id="status"></p>'
                         '<script type="application/ld+json">' + json.dumps(posting) + '</script>')
@@ -58,7 +58,7 @@ class CaptureBrowserTests(unittest.TestCase):
                         page.add_script_tag(content=popup); page.locator('#capture-structured').click()
                         expect(page.locator('#status')).to_contain_text('Copied structured')
                         captured = page.evaluate('window.copiedCapture')
-                        self.assertEqual(json.loads(captured)['selection'], 'Overview\nRequirements\n- Python experience\n- Works with teams')
+                        self.assertEqual(json.loads(captured)['selection'], 'Overview\nRequirements\n- Python experience\n- Rust is not required')
                         page.wait_for_timeout(100)
                         self.assertEqual(attempted, [])
                         page.goto(f'http://127.0.0.1:{port}')
@@ -82,6 +82,10 @@ class CaptureBrowserTests(unittest.TestCase):
                         expect(evidence).to_contain_text('Labeled required')
                         expect(evidence).to_contain_text('- Python experience')
                         expect(evidence).to_contain_text('Potentially relevant verified fact experience-01')
+                        qualified = evidence.locator('.fit-evidence-item').filter(has_text='Rust is not required')
+                        expect(qualified).to_contain_text('Qualification level unspecified')
+                        expect(qualified).to_contain_text('optional or negated wording')
+                        expect(qualified).not_to_contain_text('Labeled required')
                     finally:
                         browser.close()
             finally:
