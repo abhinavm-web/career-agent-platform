@@ -129,6 +129,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                         return JSONResponse({"detail": "Use application/json"}, status_code=415)
                     limit = (
                         10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
+                        5 * 1024 * 1024 if request.url.path == "/api/workspace/import-portable" else
                         3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
                         WORKSPACE_BODY_LIMIT
                         if request.url.path == "/api/workspace" and request.method == "PUT"
@@ -699,6 +700,34 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def workspace_history():
         with Store(config.db_path) as store:
             return {"revisions": CandidateWorkspace(store).history()}
+
+    @app.get("/api/workspace/export")
+    def export_portable_workspace():
+        with Store(config.db_path) as store:
+            document = CandidateWorkspace(store).portable_export()
+        return Response(json.dumps(document, ensure_ascii=False, indent=2), media_type='application/json',
+                        headers={'Content-Disposition': 'attachment; filename="career-profile.json"'})
+
+    @app.post("/api/workspace/import-portable")
+    async def import_portable_workspace(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'document', 'acknowledged'}:
+            raise ValueError('Provide a profile export and acknowledgement')
+        document = data['document']
+        if isinstance(document, dict) and 'profile' in document and 'facts' in document:
+            try:
+                editable = json.dumps({'expected_revision': 999999999999, 'profile': document['profile'],
+                    'facts': document['facts']}, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+            except UnicodeError:
+                raise ValueError('Profile contains invalid Unicode') from None
+            if len(editable) > WORKSPACE_BODY_LIMIT:
+                raise ValueError('Profile exceeds the workspace editing limit; use a full backup to restore it')
+        with Store(config.db_path) as store:
+            try:
+                imported = CandidateWorkspace(store).import_portable(data['document'], data['acknowledged'])
+            except StaleRevision:
+                raise HTTPException(status_code=409, detail='Workspace already exists; profile import would overwrite it') from None
+        return {'workspace': imported}
 
     @app.put("/api/workspace")
     async def save_workspace(request: Request):

@@ -1125,6 +1125,8 @@
     byId("career-excluded-companies").value = (profile.excluded_companies || []).join("\n");
     byId("career-minimum-base").value = profile.minimum_annual_base_usd == null ? "" : String(profile.minimum_annual_base_usd);
     byId("legacy-import").hidden = workspace.revision !== 0 || !state.settings.legacy_import_available;
+    byId("career-portable-import").hidden = workspace.revision !== 0;
+    byId("career-export").disabled = workspace.revision === 0;
     const list = byId("career-facts-list");
     list.replaceChildren();
     if (!workspace.facts.length) {
@@ -1233,6 +1235,44 @@
     } catch (error) {notice(error.message, true);}
     finally {setWorkspaceMutationBusy(false);}
   }
+
+  byId("career-export").addEventListener("click", async () => {
+    const control = byId("career-export"), status = byId("career-portable-status");
+    if (control.disabled || workspaceMutationBusy) return;
+    control.disabled = true;
+    try {
+      const response = await fetch('/api/workspace/export', {headers: {'X-Session-Token': token}, cache: 'no-store', credentials: 'same-origin'});
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(typeof error.detail === 'string' ? error.detail : 'Profile export failed');
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a'); link.href = url; link.download = 'career-profile.json';
+      document.body.append(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+      status.textContent = 'Profile downloaded. It contains private data and is not encrypted or a full backup.';
+    } catch (error) { status.textContent = error.message; }
+    finally { control.disabled = !state.workspace || state.workspace.revision === 0; }
+  });
+
+  byId("career-import").addEventListener("click", async () => {
+    if (workspaceMutationBusy || !state.workspace || state.workspace.revision !== 0) return;
+    const file = byId("career-import-file").files[0], status = byId("career-portable-status");
+    if (!file || !file.size || file.size > 4 * 1024 * 1024) { status.textContent = 'Choose a nonempty profile JSON file up to 4 MB.'; return; }
+    if (!window.confirm('Import this file into the empty saved profile? Unsaved editor text will be replaced, and all imported facts will require verification again.')) return;
+    setWorkspaceMutationBusy(true);
+    try {
+      let document;
+      try { document = JSON.parse(await file.text()); } catch (_) { throw new Error('Choose a valid career profile JSON export.'); }
+      const result = await api('/api/workspace/import-portable', 'POST', {document, acknowledged: true});
+      state.workspace = result.workspace;
+      renderWorkspace([]);
+      resetFactEditor();
+      await refresh(undefined, false);
+      status.textContent = 'Profile imported locally. Review and verify each fact before using it in a draft.';
+      byId("career-import-file").value = '';
+    } catch (error) { status.textContent = error.status === 409 ? 'A saved profile already exists. Reload before continuing; nothing was overwritten.' : error.message; }
+    finally { setWorkspaceMutationBusy(false); }
+  });
 
 
   function crmInput(label, name, type, required, maxlength) {

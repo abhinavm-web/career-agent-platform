@@ -263,6 +263,17 @@
           <span id="profile-revision" class="config-pill">Not saved yet</span>
         </div>
         <p class="muted">These details are stored in your local SQLite database, not in Git. Storage is not encrypted. Only individually verified facts can appear in generated application drafts.</p>
+        <details class="panel profile-editor">
+          <summary>Export or import career profile</summary>
+          <p class="muted">Export the current profile and facts, including contact details, private source notes and any AI wording source excerpts, to an unencrypted JSON file. This is not a full backup: jobs, application history, previous revisions and documents are excluded. Keep the file private.</p>
+          <button id="career-export" type="button" class="button">Download career profile JSON</button>
+          <div id="career-portable-import">
+            <p class="muted">Import only into an empty saved profile. Imported facts and their provenance are retained but all facts require verification again. Unsaved editor text will be replaced.</p>
+            <label class="block-label">Career profile JSON<input id="career-import-file" type="file" accept=".json,application/json"></label>
+            <button id="career-import" type="button" class="button">Import profile for review</button>
+          </div>
+          <p id="career-portable-status" role="status" aria-live="polite"></p>
+        </details>
         <div id="legacy-import" class="panel profile-import" hidden>
           <strong>Existing career files found</strong>
           <p class="muted">You can copy the configured profile and verified fact bank into this editable workspace. Your original files will not be changed.</p>
