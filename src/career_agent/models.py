@@ -17,6 +17,15 @@ def as_text(value: object) -> str:
     return "" if result.lower() in {"nan", "none", "<na>"} else result
 
 
+def first_text(record: dict[str, object], *keys: str) -> str:
+    """Choose the first nonmissing textual field without testing scalar truthiness."""
+    for key in keys:
+        value = as_text(record.get(key))
+        if value:
+            return value
+    return ""
+
+
 def posting_date(value: object) -> str | None:
     """Accept an unambiguous source date only; do not infer from relative text or timestamps."""
     value = as_text(value)
@@ -69,15 +78,15 @@ class Job:
 
     @classmethod
     def from_mapping(cls, record: dict[str, object], source: str = "csv") -> "Job":
-        company = as_text(record.get("company") or record.get("company_name"))
-        title = as_text(record.get("title") or record.get("job_title"))
-        url = as_text(record.get("job_url") or record.get("url") or record.get("job_url_direct"))
+        company = first_text(record, "company", "company_name")
+        title = first_text(record, "title", "job_title")
+        url = first_text(record, "job_url", "url", "job_url_direct")
         if not company or not title:
             raise ValueError("Job requires company and title")
         raw_remote = record.get("is_remote", record.get("remote", False))
         remote = raw_remote is True or str(raw_remote).strip().lower() in {"1", "true", "yes"}
         posted = posting_date(record.get('reported_posted_date', record.get('date_posted')))
-        status = record.get('posted_date_status')
+        status = as_text(record.get('posted_date_status'))
         status = (status if status in ('partial', 'conflicting') and (posted is not None or status == 'conflicting')
                   else 'reported' if posted else 'missing')
         if status == 'conflicting':
@@ -88,7 +97,7 @@ class Job:
             location=as_text(record.get("location")),
             url=canonical_url(url),
             description=as_text(record.get("description")),
-            source=as_text(record.get("site") or record.get("source")) or source,
+            source=first_text(record, "site", "source") or source,
             remote=remote,
             reported_posted_date=posted, posted_date_status=status,
         )
