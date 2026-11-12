@@ -38,10 +38,18 @@ In PowerShell, from the project directory (replace paths as needed):
 
 The destination directory must already exist; the archive must not. The chosen
 packet directory must already exist, even when empty. The backup checks that
-every published workflow job has a corresponding packet file. This catches
-common wrong-directory mistakes, but cannot establish that a directory is
-complete for legacy/custom packets or that matching files have the intended
-version. Check the path carefully. The archive is created atomically and an
+each job with a published workflow has a valid packet whose job ID and fingerprint
+match its latest published workflow. It rejects missing, altered, oversized, or
+older workflow packets rather than silently archiving inconsistent review state.
+Published workflow packets are limited to 8 MiB for this validation.
+When published workflows exist, their sibling workflow checkpoint database is
+required as well; otherwise a restored review could not resume. The check confirms
+the database is present and structurally readable, not that every individual
+graph checkpoint can be resumed; test a restored workspace before relying on it.
+If a legacy tool overwrote a workflow-managed packet, reconcile the packet or
+resume the current workflow before backup. Other legacy/custom packets are copied
+without interpreting their contents; their completeness cannot be established.
+Check the path carefully. The archive is created atomically and an
 existing destination is never overwritten. The
 archive contains SHA-256 file checksums. Without `--encrypted` it is unencrypted. It excludes external
 legacy `--profile`, `--facts`, and `--filings` files, AI route configuration,
@@ -57,8 +65,8 @@ Test an archive without replacing or changing your workspace:
 ```
 
 Omit `--encrypted` for an unencrypted ZIP. Verification performs a temporary
-restore, checking authentication for encrypted archives, paths, checksums and
-SQLite integrity. It removes the temporary directory afterward. `--temp-dir`
+restore, checking authentication for encrypted archives, paths, checksums,
+SQLite integrity and published-workflow packet consistency. It removes the temporary directory afterward. `--temp-dir`
 must name an existing directory on a trusted, encrypted disk; if omitted, the
 operating system's temporary directory is used. Temporary files include
 plaintext, and disk traces may remain. Verification does not prove that omitted
@@ -71,7 +79,8 @@ To restore, keep the app stopped and choose a **new, non-existing** directory:
 .\.venv\Scripts\python.exe -m career_agent.cli --db private/restored-workspace/workspace.sqlite3 serve --packet-dir private/restored-workspace/packets
 ```
 
-Restore verifies the manifest, file checksums, safe paths and SQLite integrity.
+Restore verifies the manifest, file checksums, safe paths, SQLite integrity and
+published-workflow packet consistency.
 It refuses an existing destination. If validation or extraction fails after
 creating the new directory, partial files remain there for inspection; no
 existing workspace is overwritten. Verify the restored workspace before making

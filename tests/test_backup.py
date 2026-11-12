@@ -1,14 +1,17 @@
 """Offline archive tests use fictional records and temporary workspaces only."""
 import json
+import hashlib
 import importlib.util
 import sqlite3
 import tempfile
 import unittest
 import zipfile
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 from career_agent.backup import create_backup, restore_backup, verify_backup
+from career_agent.application import packet_fingerprint
 from career_agent.cli import main
 
 
@@ -122,6 +125,91 @@ class BackupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Published workflow packets are missing'):
             create_backup(self.db, self.packets, self.archive, offline=True)
         self.assertFalse(self.archive.exists())
+
+    def test_workflow_packets_must_match_latest_published_version(self):
+        def packet(text):
+            data = {'version': 2, 'job_id': 'job-1', 'resume_markdown': text}
+            data['packet_sha256'] = packet_fingerprint(data)
+            return data
+        older, current = packet('Older fictional draft'), packet('Current fictional draft')
+        path = self.packets / 'job-1.json'
+        path.write_text(json.dumps(current), encoding='utf-8')
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.execute('CREATE TABLE workflow_runs (job_id TEXT, packet_sha256 TEXT)')
+            db.executemany('INSERT INTO workflow_runs VALUES (?, ?)', [
+                ('job-1', older['packet_sha256']), ('job-1', current['packet_sha256']),
+                ('job-1', None)])  # A newer queued run has not published a packet.
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        self.assertTrue(verify_backup(self.archive, temp_dir=self.root)['verified'])
+        # Unrelated legacy/custom files remain opaque, even if they are not packets.
+        self.assertEqual((self.packets / 'abc.json').read_text(), '{"fictional":true}')
+        path.write_text(json.dumps(older), encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'latest published workflow'):
+            create_backup(self.db, self.packets, self.root / 'stale.zip', offline=True)
+        self.assertFalse((self.root / 'stale.zip').exists())
+        path.write_text('{invalid', encoding='utf-8')
+        with self.assertRaisesRegex(ValueError, 'published workflow packet is invalid'):
+            create_backup(self.db, self.packets, self.root / 'invalid.zip', offline=True)
+        path.write_text(json.dumps(current), encoding='utf-8')
+        with patch('career_agent.backup.MAX_WORKFLOW_PACKET', 1):
+            with self.assertRaisesRegex(ValueError, 'published workflow packet is invalid'):
+                create_backup(self.db, self.packets, self.root / 'oversized.zip', offline=True)
+        self.db.with_suffix('.workflows.sqlite3').unlink()
+        with self.assertRaisesRegex(ValueError, 'require the sibling workflow checkpoint database'):
+            create_backup(self.db, self.packets, self.root / 'no-checkpoint.zip', offline=True)
+        self.assertFalse((self.root / 'no-checkpoint.zip').exists())
+
+    def test_restore_rejects_old_archive_with_inconsistent_workflow_packet(self):
+        packet = {'version': 2, 'job_id': 'job-1', 'resume_markdown': 'Current fictional draft'}
+        packet['packet_sha256'] = packet_fingerprint(packet)
+        (self.packets / 'job-1.json').write_text(json.dumps(packet), encoding='utf-8')
+        with closing(sqlite3.connect(self.db)) as db, db:
+            db.execute('CREATE TABLE workflow_runs (job_id TEXT, packet_sha256 TEXT)')
+            db.execute('INSERT INTO workflow_runs VALUES (?, ?)', ('job-1', packet['packet_sha256']))
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        with zipfile.ZipFile(self.archive) as source:
+            contents = {name: source.read(name) for name in source.namelist()}
+        packet['resume_markdown'] = 'Older fictional draft'
+        packet['packet_sha256'] = packet_fingerprint(packet)
+        contents['packets/job-1.json'] = json.dumps(packet).encode('utf-8')
+        manifest = json.loads(contents['manifest.json'])
+        manifest['files']['packets/job-1.json'] = {
+            'size': len(contents['packets/job-1.json']),
+            'sha256': hashlib.sha256(contents['packets/job-1.json']).hexdigest()}
+        contents['manifest.json'] = json.dumps(manifest).encode('utf-8')
+        old_archive = self.root / 'old-inconsistent.zip'
+        with zipfile.ZipFile(old_archive, 'w') as output:
+            for name, value in contents.items():
+                output.writestr(name, value)
+        with self.assertRaisesRegex(ValueError, 'Backup verification failed'):
+            verify_backup(old_archive, temp_dir=self.root)
+        with self.assertRaisesRegex(ValueError, 'Restore failed'):
+            restore_backup(old_archive, self.root / 'inconsistent-restore', offline=True)
+
+    @unittest.skipUnless(importlib.util.find_spec('langgraph'), 'Install durable graph support')
+    def test_restored_workflow_can_resume_review_from_real_checkpoint(self):
+        from career_agent.candidate import FactBank
+        from career_agent.models import CandidateProfile
+        from career_agent.storage import Store
+        from career_agent.workflows import Workflows, inputs, signature
+        from test_dashboard import fake_fact_bank, fake_job
+
+        job = fake_job()
+        with Store(self.db) as store:
+            store.add_jobs([job])
+        state = inputs(job, CandidateProfile(('AI Lead',), ('Python',), (), True),
+                       FactBank.parse(fake_fact_bank()), ())
+        run = Workflows(self.db, self.packets).start(state)
+        create_backup(self.db, self.packets, self.archive, offline=True)
+        destination = self.root / 'real-workflow-restored'
+        result = restore_backup(self.archive, destination, offline=True)
+        restored = Workflows(result['database'], result['packet_dir'])
+        decision = {'approved': True, 'reviewed': True, 'packet_sha256': run['packet']['packet_sha256']}
+        reviewed = restored.advance(run['run_id'], signature(state), decision)
+        self.assertEqual(reviewed['status'], 'approved_for_manual_submission')
+        with Store(result['database']) as store:
+            self.assertEqual(store.stage_of(job.id), 'discovered')
+            self.assertEqual(store.latest_review(job.id)['packet_sha256'], run['packet']['packet_sha256'])
 
     def test_empty_packet_directory_restores_as_directory(self):
         (self.packets / 'abc.json').unlink()
