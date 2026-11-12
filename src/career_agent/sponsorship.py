@@ -149,6 +149,14 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
                 is_negative = True
             else:
                 is_conditional = True
+        # An exception to a restriction is not a blanket refusal. Only handle
+        # an adjacent "unless" clause here; other formulations remain unknown
+        # or retain their existing classification and always need review.
+        exception = re.search(r'\b(?:sponsorship|sponsor|h-?1b(?!1))\b[^;.!?]{0,120}\bunless\b', value)
+        if exception and ';' not in value and not re.search(r'\b(?:but|however)\b', value):
+            if is_negative or transfer_excluded:
+                is_negative = False
+                is_conditional = True
         if is_negative and not no_requirement:
             negative.append(sentence)
             if is_positive and re.search(r'\b(?:but|however)\b', value):
