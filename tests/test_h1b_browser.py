@@ -527,7 +527,7 @@ class H1BBrowserTests(unittest.TestCase):
                             expect(page.locator('#ai-run')).to_be_enabled()
                             expect(page.locator('#ai-results')).to_be_empty()
                             started, release = threading.Event(), threading.Event()
-                            def delayed(_route, _prompt):
+                            def delayed(_route, _prompt, *, json_schema=None):
                                 started.set()
                                 if not release.wait(5): raise RuntimeError('Timed out waiting for test')
                                 return '{"requirements":[]}'
