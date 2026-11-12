@@ -834,6 +834,39 @@ class DashboardTests(unittest.TestCase):
         self.assertNotEqual(replacement['packet']['packet_sha256'], fingerprint)
         self.assertIsNone(replacement['review'])
 
+    def test_tailored_draft_supports_forty_verified_facts_and_new_review(self):
+        from career_agent.resume_docx import resume_docx
+        from docx import Document
+        import io
+
+        data = fake_fact_bank()
+        data['facts'] = [{**data['facts'][0], 'id': f'experience-{i:02d}',
+                          'statement': f'Fictional achievement number {i:02d}.'}
+                         for i in range(1, 42)]
+        self.facts_path.write_text(json.dumps(data))
+        options = self.call('GET', '/api/tailoring/facts').json()
+        self.assertEqual(options['max_facts'], 40)
+        ids = [fact['id'] for fact in options['facts']]
+        payload = {'fact_ids': ids[:40], 'workspace_revision': 0, 'facts_sha256': options['facts_sha256']}
+        path = f'/api/jobs/{self.job.id}/tailored-draft'
+        self.assertEqual(self.call('POST', path, {**payload, 'fact_ids': ids}).status_code, 422)
+        result = self.call('POST', path, payload)
+        self.assertEqual(result.status_code, 200, result.text)
+        packet = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()['packet']
+        self.assertEqual(packet['selected_fact_ids'], ids[:40])
+        self.assertEqual(packet['omitted_fact_ids'], ids[40:])
+        text = '\n'.join(p.text for p in Document(io.BytesIO(resume_docx(packet))).paragraphs)
+        self.assertIn('Fictional achievement number 40.', text)
+        self.assertNotIn('Fictional achievement number 41.', text)
+        approved = self.call('POST', f'/api/jobs/{self.job.id}/decision', {
+            'approved': True, 'acknowledged': True, 'packet_sha256': packet['packet_sha256']})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        revised = self.call('POST', path, {**payload, 'fact_ids': ids[:39]})
+        self.assertEqual(revised.status_code, 200, revised.text)
+        replacement = self.call('GET', f'/api/jobs/{self.job.id}/packet').json()
+        self.assertNotEqual(replacement['packet']['packet_sha256'], packet['packet_sha256'])
+        self.assertIsNone(replacement['review'])
+
     def test_tailored_layout_reorders_verified_facts_and_requires_new_review(self):
         data = fake_fact_bank()
         data['facts'].extend([

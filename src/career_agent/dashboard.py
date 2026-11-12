@@ -27,7 +27,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.concurrency import run_in_threadpool
 
-from .application import _reject_symlink_components, load_packet
+from .application import MAX_TAILORED_FACTS, _reject_symlink_components, load_packet
 from .candidate import FactBank, SECTIONS
 from . import ai
 from .ai_history import AIHistory, DailyRequestLimit, run_recorded
@@ -803,7 +803,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
         workspace = active_workspace()
         bank = CandidateWorkspace.fact_bank(workspace) if workspace["revision"] > 0 else configured_facts()
         facts = [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement} for fact in bank.facts]
-        return {'workspace_revision': workspace['revision'], 'facts': facts, 'facts_sha256': facts_hash(facts)}
+        return {'workspace_revision': workspace['revision'], 'facts': facts, 'facts_sha256': facts_hash(facts),
+                'max_facts': MAX_TAILORED_FACTS}
 
     def facts_hash(facts):
         return hashlib.sha256(json.dumps(facts, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
@@ -836,10 +837,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 )
         if selection is not None:
             verified = bank.public_claims()
-            if (not isinstance(selection, list) or not 1 <= len(selection) <= 12
+            if (not isinstance(selection, list) or not 1 <= len(selection) <= MAX_TAILORED_FACTS
                     or not all(isinstance(item, str) and item in verified for item in selection)
                     or len(set(selection)) != len(selection)):
-                raise ValueError('Select 1–12 distinct verified career facts')
+                raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
         if section_order is not None and (not isinstance(section_order, list) or len(section_order) != len(SECTIONS)
                 or not all(isinstance(item, str) and item in SECTIONS for item in section_order)
                 or len(set(section_order)) != len(SECTIONS) or selection is None):
@@ -866,7 +867,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if type(data['workspace_revision']) is not int or data['workspace_revision'] < 0:
             raise ValueError('Invalid profile revision')
         if not isinstance(data['fact_ids'], list):
-            raise ValueError('Select 1-12 distinct verified career facts')
+            raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
         if 'section_order' in data and not isinstance(data['section_order'], list):
             raise ValueError('Choose each resume section exactly once')
         if not isinstance(data['facts_sha256'], str) or len(data['facts_sha256']) != 64 or any(c not in '0123456789abcdef' for c in data['facts_sha256']):

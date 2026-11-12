@@ -565,7 +565,7 @@
       const choose = node("details", "tailoring-picker");
       choose.dataset.jobId = job.id;
       choose.append(node("summary", "", "Choose facts for a tailored draft"));
-      choose.append(node("p", "muted", "Select up to 12 verified facts and arrange sections and facts. Statements are copied verbatim; changes create a new draft that needs a fresh review."));
+      choose.append(node("p", "muted", "Select verified facts and arrange sections and facts. Statements are copied verbatim; changes create a new draft that needs a fresh review."));
       choose.append(node("p", "muted", "To change a statement, edit it in Career profile and verify the changed fact before including it."));
       const choices = node("div");
       const status = node("p", "muted"); status.setAttribute("role", "status");
@@ -574,6 +574,8 @@
         load.disabled = true;
         try {
           const result = await api("/api/tailoring/facts");
+          if (!Number.isInteger(result.max_facts) || result.max_facts < 1) throw new Error("Invalid selection limit; reload and try again.");
+          const limit = result.max_facts;
           const sections = ["experience", "projects", "skills", "education", "certifications"];
           const selected = [];
           let layoutBusy = false;
@@ -585,7 +587,7 @@
           }
           const submit = button("Create tailored draft", "button button-primary", async () => {
             const fact_ids = selected.filter((item) => item.box.checked).map((item) => item.id);
-            if (!fact_ids.length || fact_ids.length > 12) {status.textContent = "Select between 1 and 12 facts."; return;}
+            if (!fact_ids.length || fact_ids.length > limit) {status.textContent = "Select between 1 and " + limit + " facts."; return;}
             if (submit.disabled) return;
             submit.disabled = true; load.disabled = true; layoutBusy = true; renderLayout();
             selected.forEach((item) => {item.box.disabled = true;});
@@ -630,7 +632,7 @@
             choices.append(submit);
           }
           renderLayout();
-          status.textContent = result.facts.length ? "Choose the facts to include." : "No verified facts available.";
+          status.textContent = result.facts.length ? "Choose up to " + limit + " verified facts to include." : "No verified facts available.";
           submit.disabled = !result.facts.length;
         } catch (error) {status.textContent = error.message;}
         finally {load.disabled = false;}
