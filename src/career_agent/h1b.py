@@ -176,6 +176,12 @@ class H1BResearch:
                 changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(job_id,revision)
             );
+            CREATE TABLE IF NOT EXISTS h1b_company_links (
+                company_key TEXT NOT NULL, revision INTEGER NOT NULL,
+                company TEXT NOT NULL, employer TEXT NOT NULL, source_note TEXT NOT NULL,
+                changed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(company_key,revision)
+            );
         ''')
         from .uscis import USCISRecords
         from .posting_checks import PostingChecks
@@ -399,6 +405,44 @@ class H1BResearch:
         row = self.conn.execute('SELECT revision,employer,source_note,changed_at FROM h1b_employer_links WHERE job_id=? ORDER BY revision DESC LIMIT 1', (job_id,)).fetchone()
         return dict(row) if row else None
 
+    def company_link(self, company):
+        row = self.conn.execute('SELECT revision,employer,source_note,changed_at FROM h1b_company_links WHERE company_key=? ORDER BY revision DESC LIMIT 1', (employer_key(company),)).fetchone()
+        return dict(row) if row else None
+
+    def company_link_history(self, job):
+        rows = self.conn.execute('SELECT revision,employer,source_note,changed_at FROM h1b_company_links WHERE company_key=? ORDER BY revision DESC LIMIT 30', (employer_key(job.company),)).fetchall()
+        return {'company': job.company, 'association': dict(rows[0]) if rows else None,
+                'history': [dict(row) for row in rows]}
+
+    def link_company(self, job, data):
+        """Save a user-reviewed lookup for this exact displayed company name."""
+        if not isinstance(data, dict) or data.get('acknowledged') is not True:
+            raise ValueError('Confirm that this company association is candidate-provided and not independently verified')
+        revision, name, note = data.get('expected_revision'), data.get('employer'), data.get('source_note')
+        if type(revision) is not int or revision < 0:
+            raise ValueError('Expected company association revision must be a nonnegative integer')
+        if not isinstance(name, str) or len(name) > 300 or '\x00' in name:
+            raise ValueError('Employer name must be text of at most 300 characters')
+        name = name.strip()
+        note = text(note, 'Source note', 500)
+        company = text(job.company, 'Company', 300)
+        key = employer_key(company)
+        with self.conn:
+            self.conn.execute('BEGIN IMMEDIATE')
+            current = self.company_link(company)
+            if revision != (current['revision'] if current else 0):
+                raise ValueError('Company association changed; reload before editing')
+            if name:
+                row = self.conn.execute('''SELECT MIN(employer) FROM (
+                    SELECT employer FROM h1b_lca WHERE employer_key=? UNION ALL
+                    SELECT employer FROM uscis_employers WHERE employer_key=?)''', (employer_key(name), employer_key(name))).fetchone()
+                if not row or not row[0]:
+                    raise ValueError('Choose the exact legal employer name from imported DOL or USCIS records')
+                name = row[0]
+            self.conn.execute('INSERT INTO h1b_company_links(company_key,revision,company,employer,source_note) VALUES(?,?,?,?,?)',
+                              (key, revision + 1, company, name, note))
+        return self.company_link_history(job)
+
     def link_employer(self, job, data):
         """Save an explicitly selected imported entity; never assert legal equivalence."""
         if not isinstance(data, dict) or data.get('acknowledged') is not True:
@@ -431,11 +475,17 @@ class H1BResearch:
         from .posting_checks import target
         settings = settings or self.settings()
         association = self.employer_link(job.id)
-        history = self.company(association['employer'] if association and association['employer'] else job.company, settings)
+        company_association = self.company_link(job.company)
+        # A reusable association is only a suggestion. The same displayed name
+        # may describe different legal entities, especially for staffing firms.
+        employer = association['employer'] if association and association['employer'] else job.company
+        scope = 'job' if association is not None else 'exact_name'
+        history = self.company(employer, settings)
         policy = h1b_policy(job.description, settings['need'])
         return {**policy, 'id': job.id, 'company': job.company, 'title': job.title, 'url': job.url,
                 'live_check': self.posting_checks.latest(job.id), 'live_check_supported': target(job.url) is not None,
-                'location': job.location, 'history': history, 'employer_association': association, 'posting_freshness': 'not_revalidated',
+                'location': job.location, 'history': history, 'employer_association': association,
+                'company_association': company_association, 'association_scope': scope, 'posting_freshness': 'not_revalidated',
                 'eligibility': 'not_determined', 'need': settings['need']}
 
     def opportunities(self, query='', category='all', offset=0):

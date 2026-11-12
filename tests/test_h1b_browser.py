@@ -368,6 +368,21 @@ class H1BBrowserTests(unittest.TestCase):
                         page.on('pageerror', lambda error: errors.append(str(error)))
                         page.goto(f'http://127.0.0.1:{port}')
                         page.get_by_role('button', name='H-1B research', exact=True).click()
+                        expect(page.get_by_role('heading', name='Data administration')).to_be_visible()
+                        release = {'source_url': 'https://www.dol.gov/agencies/eta/foreign-labor/performance',
+                                   'checked_at': '2026-08-15T12:00:00+00:00', 'fiscal_year': 2026, 'quarter': 3,
+                                   'workbook_url': 'https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx',
+                                   'notice': 'Coverage is not independently verified.'}
+                        with patch('career_agent.dol_releases.check_dol_releases', return_value=release) as check:
+                            page.locator('#h1b-release-consent').check()
+                            page.get_by_role('button', name='Check DOL releases').click()
+                            expect(page.locator('#h1b-release-status')).to_contain_text('FY 2026 Q3')
+                            expect(page.locator('#h1b-coverage')).to_contain_text('0 imported')
+                            page.get_by_role('button', name='Use this workbook URL').click()
+                            expect(page.locator('#h1b-refresh-url')).to_have_value(release['workbook_url'])
+                            expect(page.locator('#h1b-refresh-consent')).not_to_be_checked()
+                            check.assert_called_once_with()
+                            page.get_by_text('Import public DOL LCA records', exact=True).click()
                         expect(page.locator('#h1b-coverage')).to_contain_text('0 imported')
                         expect(page.locator('#h1b-opportunities-status')).to_contain_text('2 matching opportunities')
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('Transfer role')

@@ -91,6 +91,18 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_release_check_requires_exact_consent_and_does_not_import(self):
+        path = '/api/h1b/check-dol-releases'
+        with patch('career_agent.dol_releases.check_dol_releases', return_value={'fiscal_year': 2026}) as check:
+            for payload in ({}, {'acknowledged': False}, {'acknowledged': 1}, {'acknowledged': True, 'url': 'https://evil.invalid'}):
+                self.assertEqual(self.call('POST', path, payload).status_code, 422)
+            self.assertEqual(self.call('POST', path, {'acknowledged': True}, token='bad').status_code, 403)
+            check.assert_not_called()
+            before = self.call('GET', '/api/h1b').json()['coverage']
+            self.assertEqual(self.call('POST', path, {'acknowledged': True}).json(), {'fiscal_year': 2026})
+            check.assert_called_once_with()
+            self.assertEqual(self.call('GET', '/api/h1b').json()['coverage'], before)
+
     def test_oversized_request_is_rejected(self):
         from career_agent.dashboard import API_BODY_LIMIT
 
@@ -505,6 +517,27 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(result.json()['history']['recent_certified_cases'], 1)
         self.assertEqual(self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()['employer_association']['employer'], 'Fictional Legal LLC')
         self.assertEqual(self.call('PUT', path, data).status_code, 422)
+
+    def test_h1b_company_suggestion_endpoint_requires_review(self):
+        from test_h1b import lca_csv
+        from career_agent.h1b import DOL_URL
+        self.call('POST', '/api/h1b/import', {'csv': lca_csv([{'EMPLOYER_NAME': 'Fictional Legal LLC'}]),
+                  'source_url': DOL_URL, 'captured_on': '2025-06-01', 'acknowledged': True})
+        path = f'/api/jobs/{self.job.id}/h1b/company-association'
+        data = {'employer': 'Fictional Legal LLC', 'source_note': 'Checked careers page',
+                'expected_revision': 0, 'acknowledged': True}
+        self.assertEqual(self.call('GET', path, token='bad').status_code, 403)
+        self.assertEqual(self.call('PUT', path, data, token='bad').status_code, 403)
+        self.assertEqual(self.call('PUT', path, {**data, 'acknowledged': False}).status_code, 422)
+        saved = self.call('PUT', path, data)
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()['association']['revision'], 1)
+        job = self.call('GET', f'/api/jobs/{self.job.id}/h1b').json()
+        self.assertEqual(job['company_association']['employer'], 'Fictional Legal LLC')
+        self.assertIsNone(job['employer_association'])
+        self.assertNotEqual(job['history']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(self.call('PUT', path, data).status_code, 422)
+        self.assertEqual(self.call('GET', path).json()['history'][0]['employer'], 'Fictional Legal LLC')
 
     def test_tracker_export_is_private_download_and_excludes_career_files(self):
         from career_agent.crm import ApplicationCRM

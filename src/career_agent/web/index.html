@@ -150,6 +150,15 @@
           <label class="check-label"><input id="h1b-unknown" type="checkbox" checked> Include unknown-policy jobs in company search</label>
           <button id="h1b-save" class="button" type="submit">Save H-1B preferences</button>
         </form>
+        <section class="panel profile-editor" aria-labelledby="h1b-data-admin-heading">
+          <h3 id="h1b-data-admin-heading">Data administration</h3>
+          <p class="muted">Manage the local historical-record index. Checking the official DOL page does not download or import a workbook. These controls do not create an administrator account.</p>
+          <p id="h1b-coverage" class="muted"></p>
+          <form id="h1b-release-check" class="crm-form">
+            <label class="check-label"><input id="h1b-release-consent" type="checkbox" required> Check the public DOL performance page for supported quarterly workbook links. No profile or job data is sent.</label>
+            <button id="h1b-release-submit" class="button" type="submit">Check DOL releases</button>
+            <p id="h1b-release-status" role="status" aria-live="polite"></p>
+          </form>
         <details class="panel profile-editor">
           <summary>Import public DOL LCA records</summary>
           <p class="muted">Choose a quarterly workbook from <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">DOL performance data</a>. You may explicitly download a supported direct DOL workbook URL or import a local XLSX (up to 512 MB) or CSV (up to 8 MB). Large imports can take several minutes.</p>
@@ -181,7 +190,7 @@
             <p id="uscis-status" aria-live="off" tabindex="-1"></p><span id="uscis-announcement" class="sr-only" role="status" aria-live="polite"></span>
           </form>
         </details>
-        <p id="h1b-coverage" class="muted"></p>
+        </section>
         <form id="h1b-search" class="panel crm-form">
           <label class="field">Company name<input id="h1b-query" type="search" minlength="2" maxlength="200" required placeholder="Legal employer or company name"></label>
           <button id="h1b-search-submit" class="button button-primary" type="submit">Search company records and jobs</button>

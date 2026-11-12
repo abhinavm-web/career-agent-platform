@@ -529,6 +529,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
             set_h1b_progress('idle', 0)
             h1b_import_lock.release()
 
+    @app.post('/api/h1b/check-dol-releases')
+    async def h1b_check_dol_releases(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm the public DOL release check')
+        from .dol_releases import check_dol_releases
+        return await run_in_threadpool(check_dol_releases)
+
     @app.post('/api/h1b/refresh-dol')
     async def h1b_refresh_dol(request: Request):
         data = await request.json()
@@ -610,6 +618,17 @@ def create_app(config: DashboardConfig) -> FastAPI:
         data = await request.json()
         with Store(config.db_path) as store:
             return H1BResearch(store).link_employer(_get_job(store, job_id), data)
+
+    @app.get("/api/jobs/{job_id}/h1b/company-association")
+    def h1b_company_association(job_id: str):
+        with Store(config.db_path) as store:
+            return H1BResearch(store).company_link_history(_get_job(store, job_id))
+
+    @app.put("/api/jobs/{job_id}/h1b/company-association")
+    async def h1b_link_company(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return H1BResearch(store).link_company(_get_job(store, job_id), data)
 
     @app.get("/api/settings")
     def settings():

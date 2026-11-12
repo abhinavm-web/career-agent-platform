@@ -152,6 +152,7 @@
     if (job.location) card.append(node("p", job.location));
     card.append(node("p", job.policy.replaceAll("_", " ") + " · " + job.reason));
     const association = job.employer_association;
+    const reusable = job.company_association;
     card.append(node("p", "Recent certified LCA cases for " + job.history.employer + " in local imports: " + job.history.recent_certified_cases + ". Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
     if (association?.employer) card.append(node("p", "Candidate-provided employer association, not independently verified · " + association.employer + " · " + association.source_note + " · " + association.changed_at + ". Confirm the actual legal entity before relying on these records."));
     const historyDetails = node("details");
@@ -162,6 +163,33 @@
     associationDetails.append(node("p", "Use an exact legal employer name from imported DOL or USCIS records after checking the entity. Your association is a research note, not proof of identity or sponsorship."));
     const associationForm = node("form");
     associationForm.className = "crm-form";
+    const lookupLabel = node("label", "Find possible filing names"); lookupLabel.className = "field";
+    const lookupInput = node("input"); lookupInput.value = job.company; lookupInput.maxLength = 200; lookupLabel.append(lookupInput);
+    const lookup = node("button", "Search imported employer names"); lookup.type = "button"; lookup.className = "button";
+    const lookupStatus = node("p"); lookupStatus.setAttribute("role", "status");
+    const candidates = node("div");
+    let lookupSequence = 0;
+    lookupInput.addEventListener("input", () => { lookupSequence++; candidates.replaceChildren(); lookupStatus.textContent = "Search to update possible names."; });
+    lookup.addEventListener("click", async () => {
+      if (lookup.disabled) return;
+      const query = lookupInput.value;
+      const request = ++lookupSequence;
+      lookup.disabled = true; candidates.replaceChildren(); lookupStatus.textContent = "Searching local records…";
+      try {
+        const result = await api("/api/h1b/search?q=" + encodeURIComponent(query));
+        if (!card.isConnected) return;
+        if (request !== lookupSequence) return;
+        lookupStatus.textContent = "Possible names only; compare legal entity and location before selecting. " + result.company_total + " results; first 25 shown.";
+        for (const company of result.companies) {
+          const select = node("button", "Use " + company.employer); select.type = "button";
+          select.addEventListener("click", () => { employerInput.value = company.employer; employerInput.focus(); });
+          const entry = node("p"); entry.append(select);
+          if (company.records?.length) entry.append(document.createTextNode(" · Example filing location: " + company.records[0].city + ", " + company.records[0].state));
+          candidates.append(entry);
+        }
+      } catch (error) { if (request === lookupSequence) lookupStatus.textContent = error.message; }
+      finally { lookup.disabled = false; }
+    });
     const employerLabel = node("label", "Imported legal employer name");
     employerLabel.className = "field";
     const employerInput = node("input"); employerInput.required = true; employerInput.maxLength = 300; employerInput.value = association?.employer || ""; employerLabel.append(employerInput);
@@ -174,7 +202,29 @@
     confirmLabel.append(confirm, document.createTextNode(" I understand this association is not independently verified."));
     const save = node("button", "Save association"); save.type = "submit"; save.className = "button";
     const message = node("p"); message.setAttribute("role", "status");
-    associationForm.append(employerLabel, noteLabel, confirmLabel, save, message);
+    associationForm.append(lookupLabel, lookup, lookupStatus, candidates, employerLabel, noteLabel, confirmLabel, save, message);
+    if (reusable?.employer) {
+      const suggestion = node("p", "Previously saved suggestion for the same displayed company name: " + reusable.employer + ". " + reusable.source_note + ". This is not independently verified and may not apply to this job.");
+      const use = node("button", "Review saved suggestion"); use.type = "button";
+      use.addEventListener("click", () => { employerInput.value = reusable.employer; noteInput.value = reusable.source_note; confirm.checked = false; employerInput.focus(); });
+      const forget = node("button", "Remove saved suggestion"); forget.type = "button";
+      forget.addEventListener("click", async () => {
+        if (forget.disabled || !window.confirm("Remove this saved company-name suggestion? Existing job associations remain unchanged.")) return;
+        forget.disabled = true;
+        try {
+          await api("/api/jobs/" + job.id + "/h1b/company-association", "PUT", {
+            employer: "", source_note: "Suggestion removed by candidate", expected_revision: reusable.revision, acknowledged: true
+          });
+          const updated = await api("/api/jobs/" + job.id + "/h1b");
+          if (card.isConnected) {
+            if (observationTimers.has(observation)) clearTimeout(observationTimers.get(observation));
+            observationTimers.delete(observation); card.replaceWith(jobCard(updated));
+          }
+        } catch (error) { message.textContent = error.message; }
+        finally { forget.disabled = false; }
+      });
+      associationForm.append(suggestion, use, forget);
+    }
     associationForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (save.disabled || !confirm.checked) return;
@@ -192,6 +242,24 @@
       finally { save.disabled = false; }
     });
     if (association?.employer) {
+      const remember = node("button", "Save as suggestion for this company name"); remember.type = "button";
+      remember.addEventListener("click", async () => {
+        if (remember.disabled || !window.confirm("Save this association as a suggestion for other jobs with the same displayed company name? Each job must still be reviewed and confirmed.")) return;
+        remember.disabled = true;
+        try {
+          await api("/api/jobs/" + job.id + "/h1b/company-association", "PUT", {
+            employer: association.employer, source_note: association.source_note,
+            expected_revision: reusable?.revision || 0, acknowledged: true
+          });
+          const updated = await api("/api/jobs/" + job.id + "/h1b");
+          if (card.isConnected) {
+            if (observationTimers.has(observation)) clearTimeout(observationTimers.get(observation));
+            observationTimers.delete(observation); card.replaceWith(jobCard(updated));
+          }
+        } catch (error) { message.textContent = error.message; }
+        finally { remember.disabled = false; }
+      });
+      associationForm.append(remember);
       const remove = node("button", "Remove association"); remove.type = "button"; remove.className = "button";
       remove.addEventListener("click", async () => {
         if (remove.disabled || !window.confirm("Remove this candidate-provided association? The job will again use its posted company name.")) return;
@@ -327,6 +395,30 @@
     } catch (error) { status(error.message); }
     finally { control.disabled = false; get("h1b-search-submit").disabled = false; }
   });
+  get("h1b-release-check").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const control = get("h1b-release-submit"), output = get("h1b-release-status");
+    if (control.disabled || !get("h1b-release-consent").checked) return;
+    control.disabled = true;
+    output.textContent = "Checking DOL release links… No records are being imported.";
+    try {
+      const result = await api("/api/h1b/check-dol-releases", "POST", {acknowledged: true});
+      output.replaceChildren();
+      output.append(node("span", "Latest recognized link: FY " + result.fiscal_year + " Q" + result.quarter +
+        " · checked " + result.checked_at + ". " + result.notice + " "));
+      output.append(link("Official release page", result.source_url), document.createTextNode(" "));
+      const use = node("button", "Use this workbook URL");
+      use.type = "button"; use.className = "button";
+      use.addEventListener("click", () => {
+        get("h1b-refresh-url").value = result.workbook_url;
+        get("h1b-refresh-dol").parentElement.open = true;
+        get("h1b-refresh-url").focus();
+      });
+      output.append(use);
+    } catch (error) { output.textContent = error.message; }
+    finally { control.disabled = false; get("h1b-release-consent").checked = false; }
+  });
+
   get("h1b-refresh-dol").addEventListener("submit", async (event) => {
     event.preventDefault();
     const control = get("h1b-refresh-submit");

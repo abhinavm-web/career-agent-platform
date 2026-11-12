@@ -205,6 +205,41 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(removed['employer_association']['revision'], 2)
         self.assertEqual(self.store.connection.execute('SELECT COUNT(*) FROM h1b_employer_links').fetchone()[0], 2)
 
+    def test_reusable_company_association_is_suggestion_only_and_versioned(self):
+        job = Job.from_mapping({'company': 'Fictional Brand', 'title': 'Engineer', 'job_url': 'https://example.invalid/job-1'})
+        same = Job.from_mapping({'company': ' fictional  BRAND ', 'title': 'Analyst', 'job_url': 'https://example.invalid/job-2'})
+        other = Job.from_mapping({'company': 'Fictional Brand Services', 'title': 'Engineer', 'job_url': 'https://example.invalid/job-3'})
+        self.store.add_jobs([job, same, other])
+        self.ingest([{'EMPLOYER_NAME': 'Fictional Legal LLC'}])
+        data = {'employer': ' fictional legal llc ', 'source_note': 'Careers page reviewed',
+                'expected_revision': 0, 'acknowledged': True}
+        for bad in ({**data, 'acknowledged': False}, {**data, 'source_note': ' '},
+                    {**data, 'employer': 'Unknown LLC'}, {**data, 'expected_revision': 1}):
+            with self.assertRaises(ValueError):
+                self.research.link_company(job, bad)
+        result = self.research.link_company(job, data)
+        self.assertEqual(result['association']['revision'], 1)
+        self.assertEqual(result['association']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(self.research.job(same)['company_association']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(self.research.job(same)['history']['recent_certified_cases'], 0)
+        self.assertEqual(self.research.job(same)['association_scope'], 'exact_name')
+        self.assertIsNone(self.research.job(other)['company_association'])
+        with self.assertRaisesRegex(ValueError, 'reload'):
+            self.research.link_company(same, data)
+        linked = self.research.link_employer(same, data)
+        self.assertEqual(linked['history']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(linked['association_scope'], 'job')
+        removed = self.research.link_company(same, {**data, 'employer': '', 'expected_revision': 1})
+        self.assertEqual(removed['association']['revision'], 2)
+        self.assertEqual([row['employer'] for row in removed['history']], ['', 'Fictional Legal LLC'])
+        self.assertEqual(self.research.job(same)['history']['employer'], 'Fictional Legal LLC')
+        self.assertEqual(self.research.job(job)['history']['recent_certified_cases'], 0)
+        reopened = Store(Path(self.tmp.name) / 'test.sqlite3')
+        try:
+            self.assertEqual(len(H1BResearch(reopened).company_link_history(job)['history']), 2)
+        finally:
+            reopened.connection.close()
+
     def test_original_workbook_import_preserves_dates_and_rolls_back_invalid_rows(self):
         try:
             from openpyxl import Workbook
