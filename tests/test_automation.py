@@ -272,6 +272,14 @@ class DurableWorkflowTests(unittest.TestCase):
             self.assertEqual(len(store.review_history()), 1)
             self.assertEqual(store.stage_of(self.job.id), 'discovered')
 
+    def test_start_does_not_insert_a_run_after_submission(self):
+        with Store(self.db) as store, store.connection:
+            store.connection.execute("INSERT INTO applications(job_id,stage,receipt) VALUES(?,'submitted','fictional')", (self.job.id,))
+        with self.assertRaisesRegex(ValueError, 'Submitted application is locked'):
+            self.manager.start(self.state)
+        self.assertEqual(self.manager.list(), [])
+        self.assertFalse(self.packets.exists())
+
     def test_failure_resumes_from_checkpoint(self):
         with patch('career_agent.graph_review.build_packet', side_effect=ValueError('injected failure')), self.assertRaises(ValueError):
             self.manager.start(self.state)
