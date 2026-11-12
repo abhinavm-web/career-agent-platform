@@ -357,6 +357,35 @@
     }));
     detail.append(actions);
 
+    const duplicates = section("Possible duplicate postings");
+    duplicates.append(node("p", "muted", "Compare saved postings with the same company, title and location. Different requisitions can share these details; nothing will be merged or removed."));
+    const duplicateResults = node("div");
+    duplicateResults.setAttribute("role", "status");
+    const duplicateButton = button("Find possible duplicates", "button", async () => {
+      if (duplicateButton.disabled) return;
+      duplicateButton.disabled = true;
+      duplicateResults.textContent = "Comparing saved opportunities…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/possible-duplicates");
+        if (state.selectedId !== job.id || result.job_id !== job.id) return;
+        duplicateResults.replaceChildren(node("p", "muted", result.reason));
+        if (!result.jobs.length) duplicateResults.append(node("p", "", "No possible duplicates found in the checked records. Similar postings may still exist."));
+        for (const other of result.jobs) {
+          const item = node("div", "fit-evidence-item");
+          item.append(node("strong", "", other.title + " · " + other.company),
+            node("p", "", other.location + " · Source: " + other.source + " · " + (other.submission_recorded ? "Submission recorded" : "No submission recorded")),
+            safeLink("View other original posting", other.url));
+          if (state.jobs.some((entry) => entry.id === other.job_id)) item.append(button("Open other saved opportunity", "button", () => selectJob(other.job_id)));
+          duplicateResults.append(item);
+        }
+        if (result.results_truncated) duplicateResults.append(node("p", "", "Showing the first 10 possible duplicates; additional matches exist."));
+        if (result.scan_limited) duplicateResults.append(node("p", "", "Only the 10,000 most recent saved opportunities were checked; older records may match."));
+      } catch (error) { duplicateResults.textContent = "Unable to compare saved opportunities: " + error.message; }
+      finally { duplicateButton.disabled = false; }
+    });
+    duplicates.append(duplicateButton, duplicateResults);
+    detail.append(duplicates);
+
     const availability = section("Posting availability");
     const availabilityStatus = node("div", "availability-status");
     availabilityStatus.setAttribute("role", "status");
