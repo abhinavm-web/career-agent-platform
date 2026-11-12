@@ -641,6 +641,27 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.research.search('Example', name_mode='unknown')
 
+    def test_broad_lookup_normalizes_distinct_employers_not_each_filing(self):
+        from career_agent.h1b import employer_search_key
+        rows = [(f'CASE-{i:05d}', f'Example-{i % 30:02d} LLC', f'example-{i % 30:02d} llc',
+                 2025, '2025-04-15', 'certified', 'City', 'NY', 'Engineer', DOL_URL,
+                 '2025-06-01', '2025-06-01T00:00:00Z') for i in range(6000)]
+        with self.store.connection:
+            self.store.connection.executemany('INSERT INTO h1b_lca VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', rows)
+        with patch('career_agent.h1b.employer_search_key', wraps=employer_search_key) as normalize:
+            first = self.research.search_employers('Example LLC', name_mode='punctuation', include_location=False)
+        self.assertEqual(first['company_total'], 0)
+        # One query key plus at most two normalizations per distinct name;
+        # the 6,000 filings must not drive thousands of Python calls.
+        self.assertLessEqual(normalize.call_count, 61)
+        with patch('career_agent.h1b.employer_search_key', wraps=employer_search_key) as normalize:
+            first = self.research.search_employers('Example', name_mode='punctuation', include_location=False)
+            second = self.research.search_employers('Example', 25, name_mode='punctuation', include_location=False)
+        self.assertEqual((first['company_total'], first['next_offset'], len(first['companies'])), (30, 25, 25))
+        self.assertEqual((second['company_total'], second['next_offset'], len(second['companies'])), (30, None, 5))
+        self.assertFalse({c['employer'] for c in first['companies']} & {c['employer'] for c in second['companies']})
+        self.assertLessEqual(normalize.call_count, 122)
+
     def test_broad_name_search_finds_jobs_without_joining_legal_entities(self):
         self.ingest([{'EMPLOYER_NAME': 'Example Inc'}, {'EMPLOYER_NAME': 'Example, Inc.'}])
         job = Job.from_mapping({'company': 'Example, Inc.', 'title': 'Engineer',
