@@ -48,6 +48,44 @@ def fake_job(url="https://example.invalid/jobs/alpha"):
 
 @unittest.skipUnless(HAS_WEB, 'Install test dependencies with pip install -e ".[web,dev]"')
 class DashboardTests(unittest.TestCase):
+    def test_board_imported_history_stays_separate_from_policy_and_respects_job_associations(self):
+        import io
+        from career_agent.h1b import DOL_URL, H1BResearch
+        from test_h1b import lca_csv
+        from test_uscis import hub_csv, URL
+        exact = Job.from_mapping({'company': 'Legal Corp', 'title': 'Engineer',
+            'job_url': 'https://example.invalid/exact', 'description': 'No visa sponsorship.'})
+        brand = Job.from_mapping({'company': 'Fictional Brand', 'title': 'Engineer',
+            'job_url': 'https://example.invalid/brand', 'description': ''})
+        suggested = Job.from_mapping({'company': 'Other Brand', 'title': 'Engineer',
+            'job_url': 'https://example.invalid/suggested', 'description': ''})
+        uscis_job = Job.from_mapping({'company': 'Fictional Corp', 'title': 'Engineer',
+            'job_url': 'https://example.invalid/uscis', 'description': ''})
+        with Store(self.db) as store:
+            store.add_jobs([exact, brand, suggested, uscis_job])
+            research = H1BResearch(store)
+            research.import_csv(io.StringIO(lca_csv([{'EMPLOYER_NAME': 'Legal Corp', 'CASE_STATUS': 'Denied'}])), DOL_URL, '2025-06-01')
+            research.uscis.import_bytes(hub_csv(), URL, 2025, '2025-03-31')
+            association = {'acknowledged': True, 'expected_revision': 0, 'employer': 'Legal Corp', 'source_note': 'Private fictional research'}
+            research.link_employer(brand, association)
+            research.link_company(suggested, association)
+        response = self.call('GET', '/api/jobs?limit=100')
+        self.assertEqual(response.status_code, 200, response.text)
+        jobs = {row['id']: row for row in response.json()['jobs']}
+        self.assertEqual(jobs[exact.id]['sponsorship_status'], 'explicit_exclusion')
+        self.assertEqual(jobs[exact.id]['imported_sponsorship_history'],
+                         {'employer': 'Legal Corp', 'sources': ['DOL LCA'], 'match': 'exact_name'})
+        self.assertEqual(jobs[brand.id]['imported_sponsorship_history']['match'], 'candidate_association')
+        self.assertEqual(jobs[brand.id]['imported_sponsorship_history']['employer'], 'Legal Corp')
+        self.assertEqual(jobs[uscis_job.id]['imported_sponsorship_history']['sources'], ['USCIS decisions'])
+        self.assertIsNone(jobs[suggested.id]['imported_sponsorship_history'])
+        self.assertNotIn('Private fictional research', json.dumps(response.json()))
+        with Store(self.db) as store:
+            H1BResearch(store).link_employer(brand, {'acknowledged': True, 'expected_revision': 1,
+                                                   'employer': '', 'source_note': 'Removed association'})
+        jobs = {row['id']: row for row in self.call('GET', '/api/jobs?limit=100').json()['jobs']}
+        self.assertIsNone(jobs[brand.id]['imported_sponsorship_history'])
+
     def test_sponsorship_policy_notes_are_scoped_and_do_not_change_posting_assessment(self):
         from career_agent.h1b import H1BResearch
         path = f'/api/jobs/{self.job.id}/h1b/policy-notes'

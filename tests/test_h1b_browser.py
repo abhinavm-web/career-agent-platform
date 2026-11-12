@@ -59,6 +59,12 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(results).not_to_contain_text('No DOL LCA or USCIS records have been imported')
                         with Store(db) as store:
                             self.assertEqual(store.connection.execute('SELECT COUNT(*) FROM h1b_lca').fetchone()[0], 1)
+                        page.locator('#nav-jobs').click(); page.locator('#refresh').click()
+                        page.locator('#filter').select_option('imported-history')
+                        expect(page.locator('#job-list')).to_contain_text('Imported employer history')
+                        page.locator('#job-list button').first.click()
+                        expect(page.locator('#detail-panel')).to_contain_text('DOL LCA · employer name: Fictional Employer')
+                        expect(page.locator('#detail-panel')).to_contain_text('do not establish current job sponsorship')
                     finally: browser.close()
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
