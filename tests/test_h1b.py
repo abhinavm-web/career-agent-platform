@@ -24,6 +24,20 @@ def lca_csv(rows):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_current_and_foreseeable_future_visa_exclusion(self):
+        exclusion = ('Guardian Life is not currently or in the foreseeable future sponsoring '
+                     'employment-based visas (e.g., such as an H-1B).')
+        for need in ('any', 'new', 'transfer'):
+            with self.subTest(need=need):
+                result = h1b_policy('We serve government sponsored programs. ' + exclusion, need)
+                self.assertEqual(result['policy'], 'excluded')
+                self.assertFalse(result['potential_match'])
+                self.assertTrue(any('not currently' in quote for quote in result['quotes']))
+        conflicting = h1b_policy(exclusion + ' Visa sponsorship is available.')
+        self.assertEqual(conflicting['policy'], 'conflicting')
+        self.assertEqual(h1b_policy('Will you require visa sponsorship now or in the future?')['policy'], 'conditional')
+        self.assertEqual(h1b_policy('We may sponsor employment-based visas in the future.')['policy'], 'conditional')
+
     def test_transfer_restriction_does_not_exclude_unspecified_new_sponsorship(self):
         for text in ('H-1B transfers are not supported.', 'No H-1B transfers.',
                      'We do not sponsor H-1B transfers.', 'We cannot accept H-1B transfers.'):
@@ -112,6 +126,16 @@ class ResearchTests(unittest.TestCase):
 
     def ingest(self, rows, captured='2025-06-01', url=DOL_URL):
         return self.research.import_csv(io.StringIO(lca_csv(rows)), url, captured)
+
+    def test_temporal_exclusion_is_in_the_restricted_opportunity_filter(self):
+        job = Job.from_mapping({'company': 'Fictional Employer', 'title': 'Engineer',
+            'job_url': 'https://example.invalid/role', 'description':
+            'We are not currently or in the foreseeable future sponsoring employment-based visas (e.g., such as an H-1B).'})
+        self.store.add_jobs([job])
+        results = self.research.opportunities(category='excluded')
+        self.assertEqual(results['counts']['excluded'], 1)
+        self.assertEqual(results['jobs'][0]['id'], job.id)
+        self.assertEqual(results['jobs'][0]['policy'], 'excluded')
 
     def test_dol_refresh_downloads_only_allowed_url_and_records_atomic_provenance(self):
         try:
