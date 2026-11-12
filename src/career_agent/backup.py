@@ -41,6 +41,28 @@ def _published_packets(db):
     '''))
 
 
+def _workspace_warnings(db, available):
+    """Report missing optional graph history and preserved external schedules."""
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    warnings = []
+    if 'discovery_imports' in tables and DATABASES[2] not in available:
+        if db.execute('SELECT 1 FROM discovery_imports LIMIT 1').fetchone():
+            warnings.append('Discovery checkpoint database is absent despite committed scheduled-search imports. Saved jobs, schedules, and import receipts remain, but graph checkpoint history cannot be restored.')
+    if 'discovery_schedules' in tables:
+        columns = {row[1] for row in db.execute('PRAGMA table_info(discovery_schedules)')}
+        if 'enabled' in columns:
+            count = db.execute('SELECT COUNT(*) FROM discovery_schedules WHERE enabled=1').fetchone()[0]
+            if count:
+                warnings.append(f'{count} saved search(es) remain enabled; starting the restored dashboard can contact job boards automatically.')
+    if 'workflow_runs' in tables and DATABASES[1] not in available:
+        columns = {row[1] for row in db.execute('PRAGMA table_info(workflow_runs)')}
+        if {'status', 'packet_sha256'} <= columns and db.execute(
+            "SELECT 1 FROM workflow_runs WHERE packet_sha256 IS NULL AND status IN ('queued','failed') LIMIT 1"
+        ).fetchone():
+            warnings.append('The workflow checkpoint database is absent while unpublished queued or failed runs exist. Some retries may restart from stored inputs rather than resume a checkpoint.')
+    return warnings
+
+
 def _validate_published_packets(published, packet_names, read_packet):
     if not published.keys() <= packet_names.keys():
         raise ValueError('Published workflow packets are missing from --packet-dir; choose the correct directory')
@@ -102,6 +124,8 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
             files.append((target, name))
         if published_packets and DATABASES[1] not in {name for _, name in files}:
             raise ValueError('Published workflows require the sibling workflow checkpoint database; restore it or reconcile the workspace before backup')
+        with closing(sqlite3.connect((temp_path / DATABASES[0]).resolve().as_uri() + '?mode=ro', uri=True)) as snapshot:
+            warnings = _workspace_warnings(snapshot, {name for _, name in files})
         files.extend((path, 'packets/' + path.name) for path in packet_files)
         if any(path.stat().st_size > MAX_FILE for path, _ in files):
             raise ValueError('A workspace file exceeds the backup file size limit')
@@ -143,7 +167,7 @@ def create_backup(db, packets, destination, *, offline=False, password=None):
         archive_path.chmod(0o600)
         # Atomic create-if-absent; hard link prevents replacing a concurrent file.
         os.link(archive_path, destination)
-    return {'archive': str(destination), 'files': len(files)}
+    return {'archive': str(destination), 'files': len(files), 'warnings': warnings}
 
 
 def restore_backup(archive_path, destination, *, offline=False, password=None):
@@ -214,6 +238,7 @@ def restore_backup(archive_path, destination, *, offline=False, password=None):
                                 raise ValueError('Restored database failed its integrity check')
                 with closing(sqlite3.connect((destination / DATABASES[0]).resolve().as_uri() + '?mode=ro', uri=True)) as db:
                     published = _published_packets(db)
+                    warnings = _workspace_warnings(db, files)
                 if published and DATABASES[1] not in files:
                     raise ValueError('Published workflows require a workflow checkpoint database')
                 packet_names = {PurePosixPath(name).name[:-5]: name for name in files if name.startswith('packets/')}
@@ -229,7 +254,7 @@ def restore_backup(archive_path, destination, *, offline=False, password=None):
     except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, KeyError, sqlite3.Error):
         raise ValueError('Invalid or corrupt backup archive') from None
     return {'directory': str(destination), 'database': str(destination / DATABASES[0]),
-            'packet_dir': str(destination / 'packets'), 'files': len(files)}
+            'packet_dir': str(destination / 'packets'), 'files': len(files), 'warnings': warnings}
 
 
 def verify_backup(archive_path, *, password=None, temp_dir=None):
@@ -241,4 +266,5 @@ def verify_backup(archive_path, *, password=None, temp_dir=None):
             if str(error).startswith('Restore failed; incomplete files'):
                 raise ValueError('Backup verification failed during extraction or integrity checks') from error
             raise
-        return {'archive': str(archive_path), 'verified': True, 'files': result['files']}
+        return {'archive': str(archive_path), 'verified': True, 'files': result['files'],
+                'warnings': result['warnings']}
