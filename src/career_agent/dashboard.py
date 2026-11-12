@@ -41,7 +41,7 @@ from .uscis import USCISRecords
 from .posting_checks import PostingChecks, check_posting, target as posting_target
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
-from .scoring import constraint_evidence, score_job
+from .scoring import constraint_evidence, score_job, title_level_evidence
 from .sponsor_evidence import load_filing_evidence, sponsorship_report
 from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
@@ -244,6 +244,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "fit_score": fit.score if fit is not None else None,
             "fit_reasons": list(fit.reasons) if fit is not None else [],
             "constraint_evidence": constraint_evidence(job, constraints),
+            "title_level_evidence": title_level_evidence(job, constraints),
             "sponsorship_status": sponsorship["status"],
             "sponsorship_reason": sponsorship["reason"],
             "packet_available": packet is not None,

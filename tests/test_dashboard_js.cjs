@@ -355,6 +355,18 @@ test('hard constraint warnings appear separately from the score', async () => {
   assert.match(h.get('detail-panel').textContent, /separate from the preference score/);
 });
 
+test('title-level preference displays literal evidence and unknown without score claims', async () => {
+  const job = {...fakeJob(ID_A, 'Role Alpha'), title_level_evidence: {
+    status: 'unknown', title: '<Fictional VP>', matched_phrases: [],
+    notice: 'No match does not establish seniority or suitability.'
+  }};
+  const h = createHarness({jobsOverride: [job]}); await flush();
+  h.get('job-list').children[0].click();
+  assert.match(h.get('detail-panel').textContent, /<Fictional VP>/);
+  assert.match(h.get('detail-panel').textContent, /level remains unknown/);
+  assert.match(h.get('detail-panel').textContent, /does not establish seniority/);
+});
+
 test('provider test needs explicit consent and sends no private data', async () => {
   const elements = new Map();
   const get = (id) => { if (!elements.has(id)) elements.set(id, new Element('div')); return elements.get(id); };
@@ -913,6 +925,17 @@ test("salary minimum saves and can be cleared as an optional constraint", async 
   h.get("career-minimum-base").value = "";
   await h.get("career-profile-form").handlers.submit({preventDefault() {}}); await flush();
   assert.equal(h.getWorkspace().profile.minimum_annual_base_usd, null);
+});
+
+test("title-level phrases persist as literal preferences and can be cleared", async () => {
+  const h = createHarness(); await flush();
+  await h.get("nav-profile").click(); await flush();
+  h.get("career-title-levels").value = "Director\nVP\nHead of";
+  await h.get("career-profile-form").handlers.submit({preventDefault() {}}); await flush();
+  assert.deepEqual(Array.from(h.getWorkspace().profile.preferred_title_levels), ['Director', 'VP', 'Head of']);
+  h.get("career-title-levels").value = "";
+  await h.get("career-profile-form").handlers.submit({preventDefault() {}}); await flush();
+  assert.deepEqual(Array.from(h.getWorkspace().profile.preferred_title_levels), []);
 });
 
 

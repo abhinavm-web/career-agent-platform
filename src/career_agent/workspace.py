@@ -36,6 +36,7 @@ def blank_workspace() -> dict[str, Any]:
             "require_remote": False,
             "excluded_companies": [],
             "minimum_annual_base_usd": None,
+            "preferred_title_levels": [],
         },
         "facts": [],
     }
@@ -44,7 +45,7 @@ def blank_workspace() -> dict[str, Any]:
 def _validate_profile(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("profile must be an object")
-    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies", "minimum_annual_base_usd"}:
+    if set(value) - {"name", "headline", *PROFILE_LISTS, "allow_remote", "require_remote", "excluded_companies", "minimum_annual_base_usd", "preferred_title_levels"}:
         raise ValueError("Unknown profile field")
     name = value.get("name", "")
     headline = value.get("headline", "")
@@ -78,6 +79,11 @@ def _validate_profile(value: Any) -> dict[str, Any]:
     if minimum is not None and (type(minimum) is not int or not 1 <= minimum <= 10_000_000):
         raise ValueError("Minimum annual base salary must be a whole USD amount from 1 to 10,000,000, or empty")
     profile["minimum_annual_base_usd"] = minimum
+    levels = value.get("preferred_title_levels", [])
+    if (not isinstance(levels, list) or len(levels) > 20 or
+            not all(isinstance(item, str) and 0 < len(item.strip()) <= 80 for item in levels)):
+        raise ValueError("Preferred title-level phrases must contain at most 20 nonempty phrases of 80 characters")
+    profile["preferred_title_levels"] = list(dict.fromkeys(item.strip() for item in levels))
     return profile
 
 
