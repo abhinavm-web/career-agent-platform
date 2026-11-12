@@ -359,6 +359,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def ai_routes():
         return {"routes": ai.catalog()}
 
+    @app.get("/api/ai/sample")
+    def ai_sample():
+        return ai.sample_inputs()
+
     @app.get("/api/ai/history")
     def ai_history():
         with Store(config.db_path) as store:
@@ -381,6 +385,20 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=409, detail="An AI request is already running")
         try:
             return await run_in_threadpool(run_recorded, config.db_path, data["route"], 'route_test', ai.test_route, data["route"], True, expected_route_fingerprint=fingerprint)
+        finally:
+            ai_lock.release()
+
+    @app.post("/api/ai/sample-analysis")
+    async def ai_sample_analysis(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {"route", "route_fingerprint", "acknowledged"} or data["acknowledged"] is not True:
+            raise ValueError('Confirm sending the fictional sample to the selected provider')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="An AI request is already running")
+        try:
+            return await run_in_threadpool(run_recorded, config.db_path, data['route'], 'sample_analysis',
+                ai.sample_analysis, data['route'], True, expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
 

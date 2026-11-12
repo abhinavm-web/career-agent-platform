@@ -408,6 +408,31 @@ def analyze(job, bank, route_name, acknowledged=False):
                        + _excerpt_scope_notice(route, excerpts))}
 
 
+def sample_inputs():
+    return {'title': 'Fictional Data Analyst',
+            'description': 'Required qualifications:\nExperience building Python data pipelines.',
+            'fact_id': 'sample-fact', 'fact_statement': 'Built a fictional Python data pipeline.'}
+
+
+def sample_analysis(route_name, acknowledged=False):
+    """Exercise the real analyst with fixed fictional inputs and no workspace data."""
+    from .candidate import FactBank
+    from .models import Job
+    if acknowledged is not True:
+        raise ValueError('Confirm sending the fictional sample to the selected provider')
+    sample = sample_inputs()
+    job = Job.from_mapping({'company': 'Fictional Example', 'title': sample['title'],
+        'job_url': 'https://example.invalid/fictional-sample',
+        'description': sample['description']})
+    bank = FactBank.parse({'name': 'Fictional Candidate', 'facts': [{
+        'id': sample['fact_id'], 'section': 'experience',
+        'statement': sample['fact_statement'], 'keywords': ['Python'],
+        'source_note': 'Fictional sample only', 'verified_by_candidate': True}]})
+    result = analyze(job, bank, route_name, True)
+    result['notice'] = 'Fictional sample only; no saved job or profile was used. A passing response does not establish model quality. ' + result['notice']
+    return result
+
+
 def tailoring_suggestions(job, bank, route_name, acknowledged=False):
     """Return non-persistent suggestions; citations do not prove semantic fidelity."""
     from .tailoring_checks import wording_review_warnings

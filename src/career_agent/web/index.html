@@ -415,6 +415,11 @@
           <label class="check-label"><input type="checkbox" id="ai-test-consent"> I agree to a test request to the selected provider. It sends a fixed test message, no job or profile; cloud requests may incur charges.</label>
           <button type="button" class="button" id="ai-test-route" disabled>Test model connection</button>
           <p id="ai-test-status" role="status" aria-live="polite"></p>
+          <details><summary>View fictional sample</summary><div id="ai-sample-input"></div></details>
+          <label class="check-label"><input type="checkbox" id="ai-sample-consent"> I agree to send the fictional job and career fact shown above to the selected provider. No saved job or profile is used; cloud requests may incur charges.</label>
+          <button type="button" class="button" id="ai-sample-run" disabled>Test fictional analysis</button>
+          <p id="ai-sample-status" role="status" aria-live="polite"></p>
+          <div id="ai-sample-results"></div>
           <label class="check-label"><input type="checkbox" id="ai-consent" required> I consent to sending these statements and this posting to the selected provider. Cloud requests may incur charges. A local server may itself forward requests; check its configuration.</label>
           <button type="submit" class="button button-primary" id="ai-run" disabled>Analyze requirements</button>
           <button type="submit" class="button" id="ai-tailor" disabled>Suggest résumé wording</button>
