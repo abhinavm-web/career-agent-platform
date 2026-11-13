@@ -336,12 +336,13 @@ class SDKContracts(unittest.TestCase):
                 'model': 'fictional', 'choices': [{'index': 0, 'finish_reason': 'stop',
                 'message': {'role': 'assistant', 'content': '{"suggestions":[]}'}}]})
         schema = {'type': 'object', 'properties': {'suggestions': {'type': 'array'}}}
-        route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
-        with patch('career_agent.ai._transport', side_effect=lambda: original(transport=httpx.MockTransport(handler))):
-            ai.complete(route, 'fictional prompt', json_schema=schema)
-        format = json.loads(requests[0].content)['response_format']
-        self.assertEqual(format['type'], 'json_schema')
-        self.assertEqual(format['json_schema']['schema'], schema)
+        for provider, port in [('ollama', 11434), ('lmstudio', 1234)]:
+            route = {'provider': provider, 'model': 'fictional', 'base_url': f'http://127.0.0.1:{port}/v1'}
+            with patch('career_agent.ai._transport', side_effect=lambda: original(transport=httpx.MockTransport(handler))):
+                ai.complete(route, 'fictional prompt', json_schema=schema)
+            response_format = json.loads(requests[-1].content)['response_format']
+            self.assertEqual(response_format['type'], 'json_schema')
+            self.assertEqual(response_format['json_schema']['schema'], schema)
 
     def test_incomplete_and_tool_responses_are_rejected(self):
         import httpx

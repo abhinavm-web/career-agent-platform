@@ -16,6 +16,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TailoringEvaluationTests(unittest.TestCase):
+    def test_unfaithful_rewrites_are_replaced_by_complete_source(self):
+        job = Job.from_mapping({'company': 'Fictional Co', 'title': 'AI lead',
+            'job_url': 'https://example.invalid/role', 'description': 'Lead finance planning.'})
+        sources = [
+            ('Built a platform planned to support approximately 5,000 users.', 'Built a platform supporting 5,000 users.'),
+            ('Led a training community of 500 professionals.', 'Partnered with Finance on budgets.'),
+        ]
+        route = {'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}
+        for source, invented in sources:
+            bank = FactBank.parse({'name': 'Fictional Candidate', 'facts': [{'id': 'fact-01', 'section': 'experience',
+                'statement': source, 'keywords': [], 'source_note': 'Fictional', 'verified_by_candidate': True}]})
+            output = {'suggestions': [{'fact_id': 'fact-01', 'job_quote': 'Lead finance planning.', 'wording': invented}]}
+            with self.subTest(invented=invented), patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)):
+                row = ai.tailoring_suggestions(job, bank, 'local', True)['suggestions'][0]
+            self.assertEqual(row['wording'], source)
+            self.assertIn('replaced', row['review_warnings'][0])
+
     def test_live_evaluation_requires_consent_and_only_sends_fictional_cases(self):
         route = {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}
         with patch('career_agent.live_tailoring_evaluation.ai.routes', return_value={'local': route}), \
@@ -49,10 +66,10 @@ class TailoringEvaluationTests(unittest.TestCase):
         report = evaluate(fixture)
         self.assertEqual((report['total'], report['unsupported_cases'], report['unsupported_with_warning'],
                           report['unsupported_without_warning'], report['supported_cases'], report['supported_with_warning']),
-                         (22, 15, 12, 3, 7, 2))
+                         (22, 15, 15, 0, 7, 5))
         by_id = {row['id']: row for row in report['cases']}
         self.assertTrue(by_id['new-skill']['warning_emitted'])
-        self.assertFalse(by_id['new-employer-blindspot']['warning_emitted'])
+        self.assertTrue(by_id['new-employer-blindspot']['warning_emitted'])
         self.assertTrue(by_id['supported-negation-paraphrase']['warning_emitted'])
         self.assertTrue(by_id['false-positive-format']['warning_emitted'])
         self.assertIn('not semantic validation', report['scope'])
@@ -86,6 +103,7 @@ class TailoringEvaluationTests(unittest.TestCase):
         with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)):
             result = ai.tailoring_suggestions(job, bank, 'local', True)
         self.assertTrue(result['suggestions'][0]['review_warnings'])
+        self.assertEqual(result['suggestions'][0]['wording'], 'Built a Python dashboard.')
         self.assertIn('absence of warnings do not prove', result['notice'])
         self.assertNotIn('Private fictional note', json.dumps(result))
 
