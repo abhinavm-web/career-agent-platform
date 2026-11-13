@@ -268,6 +268,30 @@ class ApplicationCRM:
             (job_id,),
         ).fetchall()]
 
+    def remove_contact(self, job_id: str, contact_id: Any, acknowledged: Any) -> dict:
+        """Remove a contact while preserving its follow-up tasks and their histories."""
+        self.store.get_job(job_id)
+        contact_id = _id(contact_id, "contact_id")
+        if contact_id > 9223372036854775807 or acknowledged is not True:
+            raise ValueError("Confirm removing this contact")
+        try:
+            self.conn.execute('BEGIN IMMEDIATE')
+            contact = self.conn.execute('SELECT 1 FROM crm_contacts WHERE job_id=? AND contact_id=?',
+                                        (job_id, contact_id)).fetchone()
+            if not contact:
+                raise ValueError('Recruiter contact does not belong to this opportunity')
+            if self.conn.execute('SELECT 1 FROM crm_followups WHERE contact_id=? AND job_id<>? LIMIT 1',
+                                 (contact_id, job_id)).fetchone():
+                raise ValueError('Contact has an inconsistent follow-up link; no changes made')
+            detached = self.conn.execute('UPDATE crm_followups SET contact_id=NULL WHERE job_id=? AND contact_id=?',
+                                         (job_id, contact_id)).rowcount
+            self.conn.execute('DELETE FROM crm_contacts WHERE job_id=? AND contact_id=?', (job_id, contact_id))
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return {'job_id': job_id, 'removed': True, 'followups_detached': detached}
+
     def _contact_for_job(self, job_id: str, contact_id: Any) -> int | None:
         if contact_id is None:
             return None
