@@ -13,6 +13,15 @@ from test_dashboard import fake_fact_bank, fake_job
 
 
 class AITests(unittest.TestCase):
+    def test_bad_request_diagnostics_do_not_echo_provider_payload(self):
+        class ProviderError(Exception):
+            status_code = 400
+        error = ProviderError('secret credential and private prompt')
+        message = ai._provider_error_message(error)
+        self.assertIn('exact model ID', message)
+        self.assertNotIn('secret', message)
+        self.assertIn('No fallback', message)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

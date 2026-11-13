@@ -196,6 +196,8 @@ def _provider_error_message(error):
     if type(status) is not int and isinstance(metadata, dict):
         status = metadata.get('HTTPStatusCode')
     if type(status) is int:
+        if status in (400, 422):
+            return 'The provider rejected the request format or model settings. Check the exact model ID, load the model in your local server, and verify its API compatibility.' + suffix
         if status in (401, 403):
             return 'The provider rejected authentication or access. Check credentials and model permissions.' + suffix
         if status == 404:
@@ -214,7 +216,7 @@ def _provider_error_message(error):
         return 'The provider returned a compressed response that cannot be safely bounded; no result was accepted.' + suffix
     if kinds & {'APITimeoutError', 'ConnectTimeout', 'ReadTimeout', 'WriteTimeout', 'PoolTimeout', 'ConnectTimeoutError', 'ReadTimeoutError', 'TimeoutError'}:
         return 'The provider request timed out. Check model loading and server availability before retrying.' + suffix
-    if kinds & {'APIConnectionError', 'ConnectError', 'EndpointConnectionError'}:
+    if kinds & {'APIConnectionError', 'ConnectError', 'EndpointConnectionError', 'ConnectionRefusedError', 'ConnectionError'}:
         return 'The app could not connect to the provider. Check the server and configured destination.' + suffix
     if kinds & {'NoCredentialsError', 'PartialCredentialsError'}:
         return 'AWS credentials are unavailable or incomplete in the server environment.' + suffix

@@ -650,6 +650,19 @@ test("older board refresh cannot overwrite a newer refresh", async () => {
   assert.doesNotMatch(h.get("job-list").textContent, /Outdated response/);
 });
 
+test("high match excludes missing descriptions even with a high keyword score", async () => {
+  const h = createHarness({jobsOverride: [
+    {...fakeJob(ID_A, "Incomplete role"), description: "  ", fit_score: 95},
+    {...fakeJob(ID_B, "Complete role"), description: "Python experience", fit_score: 80}
+  ]});
+  await flush();
+  assert.match(h.get("job-list").children[0].textContent, /Complete role/);
+  h.get("filter").value = "priority";
+  h.get("filter").handlers.change({target: h.get("filter")});
+  assert.match(h.get("job-list").textContent, /Complete role/);
+  assert.doesNotMatch(h.get("job-list").textContent, /Incomplete role/);
+});
+
 test("profile edits typed during a slow board refresh survive", async () => {
   let finish, calls = 0;
   const h = createHarness({jobsPage: () => {

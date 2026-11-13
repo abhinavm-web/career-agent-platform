@@ -188,7 +188,7 @@
       if (filters.remote === "remote" && job.remote !== true) return false;
       if (filters.sponsor !== "all" && job.sponsorship_status !== filters.sponsor) return false;
       if (filters.freshness !== "all" && postingObservation(job).kind !== filters.freshness) return false;
-      if (state.filter === "priority") return job.fit_score !== null && job.fit_score >= 70;
+      if (state.filter === "priority") return Boolean(job.description?.trim()) && job.fit_score !== null && job.fit_score >= 70;
       if (state.filter === "sponsorship") return job.sponsorship_status === "posting_claims_sponsorship" || job.sponsorship_status === "historical_only";
       if (state.filter === "imported-history") return Boolean(job.imported_sponsorship_history?.sources?.length);
       if (state.filter === "missing-description") return !job.description?.trim();
@@ -199,7 +199,7 @@
       return true;
     });
     // The API loads jobs newest first; stable sorting preserves that order on ties.
-    if (state.sort === "score") jobs.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+    if (state.sort === "score") jobs.sort((a, b) => Number(Boolean(b.description?.trim())) - Number(Boolean(a.description?.trim())) || (b.fit_score ?? -1) - (a.fit_score ?? -1));
     return jobs;
   }
 
@@ -222,6 +222,7 @@
       }, Math.max(1, expirations.reduce((earliest, value) => Math.min(earliest, value), Infinity) - now));
     }
     const jobs = filteredJobs();
+    updateSelectionScope(jobs);
     const truncated = state.boardTruncated || (state.overview?.total_jobs ?? 0) > state.jobs.length;
     byId("board-limit").hidden = !truncated;
     byId("board-limit").textContent = state.boardTruncated
@@ -288,6 +289,12 @@
       item.append(top, lower);
       list.append(item);
     }
+  }
+
+  function updateSelectionScope(jobs = filteredJobs()) {
+    const warning = byId("selection-scope-warning");
+    if (!warning) return;
+    warning.hidden = !state.selectedId || jobs.some(job => job.id === state.selectedId);
   }
 
   async function selectJob(id) {
@@ -484,6 +491,11 @@
     heading.append(node("span", "eyebrow", "OPPORTUNITY DETAILS"), node("h3", "", job.title), node("p", "", job.company));
     header.append(heading, node("div", "detail-badge", job.fit_score === null ? "Unscored" : (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"));
     detail.append(header);
+    const scopeWarning = node("p", "warning", "This selected opportunity is outside your current filters. Its details are kept open to preserve your work. Select a matching opportunity or clear the filters.");
+    scopeWarning.id = "selection-scope-warning";
+    scopeWarning.setAttribute("role", "status");
+    detail.append(scopeWarning);
+    updateSelectionScope();
     const info = node("div", "info-grid");
     const facts = [
       ["LOCATION", job.location || "Not specified"],
@@ -2148,7 +2160,7 @@
     byId("profile-wizard-resume").hidden = step !== 1;
     byId("career-facts-panel").hidden = step !== 2;
     byId("profile-wizard-previous").disabled = step === 0;
-    byId("profile-wizard-next").textContent = step === 2 ? "Finish setup" : "Next step";
+    byId("profile-wizard-next").textContent = step === 2 ? "Review setup completion" : "Next step";
     const target = focusInput ? byId(step === 1 ? "resume-file" : step === 0 ? "career-name" : "fact-statement") : byId("profile-wizard-heading");
     target.scrollIntoView?.({behavior: "smooth", block: "center"}); target.focus();
   }
@@ -2176,7 +2188,31 @@
   byId("profile-start-resume").addEventListener("click", () => startProfileWizard(1, true));
   byId("profile-start-preferences").addEventListener("click", () => startProfileWizard(0, true));
   byId("profile-wizard-previous").addEventListener("click", () => { if (wizardActive && wizardStep > 0) showWizardStep(wizardStep - 1); });
-  byId("profile-wizard-next").addEventListener("click", () => { if (wizardActive) { if (wizardStep === 2) exitProfileWizard(); else showWizardStep(wizardStep + 1); } });
+  byId("profile-wizard-next").addEventListener("click", () => {
+    if (!wizardActive) return;
+    if (wizardStep < 2) { showWizardStep(wizardStep + 1); return; }
+    const profile = state.workspace?.profile;
+    if (!profile?.name || !profile.target_titles?.length || !profile.skills?.length) {
+      showWizardStep(0);
+      notice("Setup is incomplete. Save your name, target roles and skills in Preferences. You can exit guided setup and return later.", true);
+      return;
+    }
+    if (Object.entries(readCareerPreferences()).some(([key, value]) => JSON.stringify(value) !== JSON.stringify(profile[key]))) {
+      showWizardStep(0);
+      notice("Review and save your preference changes before completing setup.", true);
+      return;
+    }
+    if (!state.workspace.facts.some(fact => fact.verified_by_candidate)) {
+      notice("Setup is incomplete. Save and individually verify at least one career fact. Only confirm statements you know are accurate.", true);
+      return;
+    }
+    if (byId("fact-statement").value.trim()) {
+      notice("There is a statement in the fact editor. Save it or clear the form before completing setup.", true);
+      return;
+    }
+    exitProfileWizard();
+    notice("Profile setup complete. Review your verified facts before preparing applications.");
+  });
   byId("profile-wizard-exit").addEventListener("click", exitProfileWizard);
   byId("home-next").addEventListener("click", () => byId("nav-" + (byId("home-next").dataset.destination || "profile")).click());
   byId("home-jobs").addEventListener("click", () => byId("nav-jobs").click());
