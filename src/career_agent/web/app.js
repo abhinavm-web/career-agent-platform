@@ -586,7 +586,7 @@
     }
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
-    actions.append(button("Prepare application", "button button-primary", () => activateTab("application", true)));
+    actions.append(button(job.application_stage === "submitted" ? "View application" : "Prepare application", "button button-primary", () => activateTab("application", true)));
     const openJobAI = () => {
       if (byId("ai-job").value !== job.id) {
         byId("ai-results").replaceChildren();
