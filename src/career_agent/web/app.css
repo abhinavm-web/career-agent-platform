@@ -522,3 +522,19 @@ footer {color:#656c7d;}
 .workspace {min-width:0;}
 .detail-top > div:first-child {min-width:0;overflow-wrap:anywhere;}
 .detail-badge {font-size:14px;white-space:normal;text-align:right;max-width:40%;flex-shrink:0;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) .crm-form {grid-template-columns:minmax(200px,2fr) repeat(3,minmax(125px,1fr)) auto;align-items:end;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) .crm-form .field {margin:0;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-clear-filters {grid-column:5;grid-row:1;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-layout-help {grid-column:1 / -1;grid-row:2;margin:0;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-result-count {grid-column:1 / -1;grid-row:3;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-detail:has(.empty-detail) {min-height:0;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-detail .empty-detail {min-height:120px;}
+.crm-kanban {scrollbar-width:thin;scrollbar-color:#a8a8c9 #ededf4;}
+@media(max-width:1050px) {
+  #tracker-screen .board:has(#crm-jobs.crm-kanban) .crm-form {grid-template-columns:repeat(2,minmax(0,1fr));}
+  #tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-clear-filters,
+  #tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-layout-help,
+  #tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-result-count {grid-column:auto;grid-row:auto;}
+  #tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-layout-help {grid-column:1 / -1;}
+}
+@media(max-width:480px) {#tracker-screen .board:has(#crm-jobs.crm-kanban) .crm-form {grid-template-columns:1fr;}}
