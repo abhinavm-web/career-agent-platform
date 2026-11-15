@@ -781,6 +781,10 @@ test("imported employer history is separate from posting policy", async () => {
   assert.match(h.get("job-list").textContent, /Imported employer history/);
   assert.doesNotMatch(h.get("job-list").textContent, /Other role/);
   h.get("job-list").children[0].click();
+  assert.match(h.get("detail-panel").textContent, /Evidence at a glance/);
+  assert.match(h.get("detail-panel").textContent, /Posting excludes sponsorship/);
+  assert.match(h.get("detail-panel").textContent, /Historical records found/);
+  assert.match(h.get("detail-panel").textContent, /do not establish sponsorship for this role/);
   assert.match(h.get("detail-panel").textContent, /unverified employer association/);
   assert.match(h.get("detail-panel").textContent, /do not establish current job sponsorship/);
   assert.match(h.get("detail-panel").textContent, /Legal Corp/);
@@ -1002,6 +1006,25 @@ test("tracker combines filters and saves priority and plain-text interview notes
   assert.equal(harness.getCRM().stage, "discovered");
   await harness.get("nav-tracker").click();
   assert.match(section("Interview notes").textContent, /Private follow-up/);
+});
+
+test("tracker board groups filtered records and opens the existing detail without changing stages", async () => {
+  const h = createHarness(); await flush(); await h.get("nav-tracker").click();
+  h.get("crm-layout").value = "board"; h.get("crm-layout").handlers.change();
+  const board = h.get("crm-jobs");
+  assert.equal(board.children[0].attributes["aria-label"], "Discovered opportunities");
+  assert.match(board.children[0].textContent, /Discovered · 2/);
+  assert.match(board.children[0].textContent, /Role Alpha/);
+  assert.match(board.children[0].textContent, /Role Beta/);
+  assert.match(board.children[1].textContent, /Saved · 0/);
+  await board.children[0].children[1].children[0].click(); await flush();
+  assert.equal(h.getCRM().stage, "discovered");
+  assert.match(h.get("crm-detail").textContent, /Opportunity priority/);
+  h.get("crm-search").value = "Alpha"; h.get("crm-search").handlers.input();
+  assert.match(h.get("crm-jobs").textContent, /Discovered · 1/);
+  assert.doesNotMatch(h.get("crm-jobs").textContent, /Role Beta/);
+  h.get("crm-layout").value = "list"; h.get("crm-layout").handlers.change();
+  assert.match(h.get("crm-jobs").textContent, /Role Alpha/);
 });
 
 async function selectBoth(harness) {
