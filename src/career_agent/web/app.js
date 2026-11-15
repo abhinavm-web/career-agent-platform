@@ -285,7 +285,7 @@
         job.review_decision && !job.packet_stale ? "teal" : "amber"
       ));
       if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
-      if (job.fit_score !== null) lower.append(node("span", "score", (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
+      if (job.fit_score !== null) lower.append(node("span", "score", "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
       item.append(top, lower);
       list.append(item);
     }
@@ -489,7 +489,7 @@
     const header = node("div", "detail-top");
     const heading = node("div");
     heading.append(node("span", "eyebrow", "OPPORTUNITY DETAILS"), node("h3", "", job.title), node("p", "", job.company));
-    header.append(heading, node("div", "detail-badge", job.fit_score === null ? "Unscored" : (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"));
+    header.append(heading, node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"));
     detail.append(header);
     const scopeWarning = node("p", "warning", "This selected opportunity is outside your current filters. Its details are kept open to preserve your work. Select a matching opportunity or clear the filters.");
     scopeWarning.id = "selection-scope-warning";
@@ -540,6 +540,23 @@
     }
     detail.append(tabList, ...sections.map(([key]) => panes[key]));
     activateTab(state.detailTab);
+    const evidenceSummary = node("section", "evidence-summary");
+    evidenceSummary.setAttribute("aria-label", "Opportunity evidence at a glance");
+    evidenceSummary.append(node("h4", "", "Evidence at a glance"));
+    const evidenceGrid = node("div", "evidence-summary-grid");
+    const posting = node("div", "evidence-tile");
+    const postingStatus = job.sponsorship_status === "historical_only" ? "Not stated in posting" : sponsorshipLabel(job.sponsorship_status)[0];
+    posting.append(node("small", "", "JOB SPONSORSHIP"), node("strong", "", postingStatus),
+      node("p", "", "Based on saved posting text. Confirm current policy with the employer."));
+    const history = node("div", "evidence-tile");
+    const imported = job.imported_sponsorship_history;
+    const sources = imported?.sources || [];
+    history.append(node("small", "", "EMPLOYER FILING HISTORY"),
+      node("strong", "", sources.length ? "Historical records found" : "No linked records"),
+      node("p", "", sources.length ? "Source: " + sources.join(", ") + ". Name matches and historical filings do not establish sponsorship for this role." : "This does not establish that the employer has no filings."));
+    evidenceGrid.append(posting, history); evidenceSummary.append(evidenceGrid,
+      button("Review sponsorship evidence", "plain-button", () => activateTab("sponsorship", true)));
+    panes.overview.append(evidenceSummary);
     if (job.remote_evidence?.detail) panes.overview.append(node("p", "muted", job.remote_evidence.detail));
     if (job.discovery_observations?.length) {
       const discovery = section("Discovery history");
@@ -569,6 +586,7 @@
     }
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
+    actions.append(button("Prepare application", "button button-primary", () => activateTab("application", true)));
     const openJobAI = () => {
       if (byId("ai-job").value !== job.id) {
         byId("ai-results").replaceChildren();
@@ -1699,6 +1717,9 @@
   function renderCRMJobs() {
     const list = byId("crm-jobs");
     list.replaceChildren();
+    const boardView = byId("crm-layout").value === "board";
+    list.classList.toggle("crm-kanban", boardView);
+    byId("crm-layout-help").textContent = boardView ? "Scroll across stages and select a role to review its details. Change its stage in the details panel." : "";
     const jobs = state.crmSummary?.job_stages || [];
     const search = byId("crm-search").value.trim().toLowerCase();
     const stage = byId("crm-stage-filter").value;
@@ -1712,7 +1733,26 @@
       list.append(node("p", "loading", "No jobs yet. Add a role on the Opportunity board."));
       return;
     }
-    if (!visible.length) list.append(node("p", "loading", "No opportunities match these filters."));
+    if (!visible.length) { list.append(node("p", "loading", "No opportunities match these filters.")); return; }
+    const stages = [
+      ["Discovered", ["discovered"]], ["Saved", ["saved", "shortlisted"]],
+      ["Applied", ["applied"]], ["Interviewing", ["screening", "assessment", "interview"]],
+      ["Offers", ["offer", "accepted"]], ["Closed", ["archived", "rejected", "withdrawn"]],
+      ["Other", []]
+    ];
+    const columns = new Map();
+    if (boardView) {
+      for (const [title, values] of stages) {
+        const members = visible.filter(job => values.length ? values.includes(job.stage) : !stages.some(([, known]) => known.includes(job.stage)));
+        if (title === "Other" && !members.length) continue;
+        const column = node("section", "crm-kanban-column");
+        column.setAttribute("aria-label", title + " opportunities");
+        column.append(node("h3", "crm-kanban-heading", title + " · " + members.length));
+        const cards = node("div", "crm-kanban-cards");
+        column.append(cards); list.append(column);
+        for (const job of members) columns.set(job.job_id, cards);
+      }
+    }
     for (const tracked of visible) {
       const job = {...tracked, id: tracked.job_id};
       const item = button("", "job-item" + (state.crmJobId === job.id ? " selected" : ""), () => selectCRMJob(job.id));
@@ -1726,7 +1766,7 @@
       if (job.priority && job.priority !== "none") chips.append(chip(job.priority + " priority", ""));
       if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
       item.append(chips);
-      list.append(item);
+      (boardView ? columns.get(job.id) : list).append(item);
     }
   }
 
@@ -1736,6 +1776,12 @@
     const requestNumber = ++state.crmRequestSeq;
     renderCRMJobs();
     renderCRMDetail();
+    if (byId("crm-layout").value === "board") {
+      const panel = byId("crm-detail");
+      panel.setAttribute("tabindex", "-1");
+      panel.scrollIntoView?.({behavior: "smooth", block: "start"});
+      panel.focus?.({preventScroll: true});
+    }
     try {
       const details = await api("/api/jobs/" + jobId + "/crm" + (followupOffset ? "?followup_offset=" + followupOffset : ""));
       if (requestNumber !== state.crmRequestSeq || state.crmJobId !== jobId) return;
@@ -2215,6 +2261,7 @@
   });
   byId("profile-wizard-exit").addEventListener("click", exitProfileWizard);
   byId("home-next").addEventListener("click", () => byId("nav-" + (byId("home-next").dataset.destination || "profile")).click());
+  byId("open-discovery").addEventListener("click", () => { byId("discovery-panel").open = true; byId("discover-query").focus(); });
   byId("home-jobs").addEventListener("click", () => byId("nav-jobs").click());
   byId("home-tracker").addEventListener("click", () => byId("nav-tracker").click());
   byId("home-h1b").addEventListener("click", () => byId("nav-h1b").click());
@@ -2320,6 +2367,7 @@
   });
   byId("crm-search").addEventListener("input", renderCRMJobs);
   byId("crm-stage-filter").addEventListener("change", renderCRMJobs);
+  byId("crm-layout").addEventListener("change", renderCRMJobs);
   byId("crm-priority-filter").addEventListener("change", renderCRMJobs);
   byId("crm-clear-filters").addEventListener("click", () => {
     for (const id of ["crm-search", "crm-stage-filter", "crm-priority-filter"]) byId(id).value = "";

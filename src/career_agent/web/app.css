@@ -371,3 +371,154 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 @media(max-width:650px) {.inline-comparison {grid-template-columns:1fr;}}
 @media(max-width:1050px) {.board {display:flex;flex-direction:column;}.board > * {width:100%;}.detail-panel {position:static;max-height:none;overflow:visible;}}
 @media(max-width:780px) {.nav-group-label {display:none;}.home-grid,.settings-grid {grid-template-columns:1fr;}.home-feature {grid-column:auto;}.home-feature,.home-card,.home-followups,.profile-guide {padding:18px;}.home-followup {flex-direction:column;}.board:has(> #detail-panel > .empty-detail):not(:has(#job-description-editor)) .job-list {display:block;}}
+
+/* Career workspace design system. The sidebar is deliberately separate from
+   the light working surface; evidence colors always retain text labels. */
+:root {
+  color-scheme: light;
+  --bg: #f6f5f3;
+  --panel: #ffffff;
+  --panel2: #f4f4f9;
+  --border: #dedfe8;
+  --text: #1b2035;
+  --muted: #596176;
+  --teal: #4541a8;
+  --lavender: #5854b5;
+  --amber: #82530b;
+  --red: #a33345;
+  --radius: 12px;
+}
+body {background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif;font-size:14px;}
+a {color:#383697;}
+:focus-visible {outline:3px solid #625cce;outline-offset:3px;}
+.rail {width:244px;padding:27px 15px;background:#151a36;border-color:#2a3152;color:#f7f7fc;}
+.identity {gap:11px;padding:0 10px;}
+.identity-text strong {font-size:16px;letter-spacing:-.02em;color:#fff;}
+.identity-text small {color:#b4b8d1;font-size:10px;letter-spacing:.11em;}
+.logo {width:38px;height:38px;background:#4a46a9;color:#fff;border-radius:11px;font-size:22px;letter-spacing:0;}
+.rail-divider {background:#343a5a;margin:25px 10px 16px;}
+.navigation {gap:3px;overflow-y:auto;}
+.nav-group-label {color:#aeb4d0;font-size:10px;padding:18px 14px 7px;}
+.nav-item {color:#d4d7e8;font-size:13px;padding:11px 13px;border-radius:9px;font-weight:600;}
+.nav-item:hover,.nav-item.active {background:#35376d;color:#fff;}
+.nav-glyph {width:22px;text-align:center;font-size:19px;color:#c9caef;}
+.rail .privacy-note {background:#202742;border-color:#404767;color:#fff;}
+.rail .privacy-note strong {color:#eef0ff;}
+.rail .privacy-note p {color:#c4c9dd;}
+.small-dot {background:#8fd8be;}
+.version {color:#aeb5d0;}
+.workspace {max-width:1800px;padding:0 38px;}
+.topbar {height:68px;border-color:var(--border);}
+.breadcrumbs {font-size:12px;color:var(--muted);}
+.breadcrumbs strong {color:var(--text);}
+.slash {color:#a4a8b5;}
+.config-pill {color:#245f4b;background:#e9f5ee;border-color:#c4e3d1;}
+.config-pill.warn {color:#78520b;background:#fff4dc;border-color:#ead4a2;}
+.icon-action {color:var(--muted);background:#fff;border-color:var(--border);}
+.notice {color:#263866;background:#edf1fc;border-color:#cbd5ee;}
+.notice.error {color:#922e42;background:#fceff1;border-color:#ecc0ca;}
+.screen {padding-top:32px;}
+.section-heading {gap:16px;}
+.section-heading h2 {font-size:clamp(25px,2.6vw,32px);font-weight:720;letter-spacing:-.035em;line-height:1.2;}
+.section-description {font-size:14px;line-height:1.5;}
+.section-actions {display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.eyebrow {color:#56529f;font-size:10px;letter-spacing:.14em;}
+.panel {background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 1px 2px rgba(26,32,53,.035);}
+.button {background:#fff;border-color:#d3d5e0;color:#272b43;border-radius:8px;font-size:12px;font-weight:650;}
+.button:hover:not(:disabled) {background:#f1f1f9;border-color:#aaaacb;}
+.button-primary {color:#fff;background:#4641a5;border-color:#4641a5;}
+.button-primary:hover:not(:disabled) {background:#353184;border-color:#353184;}
+.button-danger {color:#a52f46;border-color:#e3b7c1;background:#fff5f6;}
+.button-danger:hover:not(:disabled) {background:#f9e7eb;}
+.plain-button {color:#403b9d;text-underline-offset:3px;}
+.home-grid {gap:14px;}
+.home-feature {background:#eeedf9;border-color:#dcdbef;}
+.home-feature h3,.home-card h3,.home-followups h3,.profile-guide h3 {color:var(--text);}
+.home-feature p,.home-card p,.home-followups p,.profile-guide p,.home-privacy {color:var(--muted);}
+.home-followup:hover {color:#393394;}
+.profile-guide,#profile-wizard {background:#f3f2fb;border-color:#dbd9f0;}
+.setup-banner {background:#fff8e8;border-color:#ebddb8;}
+.setup-banner strong {color:#72500b;}
+.setup-banner p {color:#685735;}
+.list-tools {border-color:var(--border);}
+.search-wrap {background:#f8f8fb;border-color:#d6d8e3;}
+.search-wrap input::placeholder,.board-filter-grid input::placeholder {color:#73798b;}
+select,.field input,.form-grid input,.block-label textarea,
+.profile-editor input:not([type="checkbox"]),.profile-editor textarea,.profile-editor select,
+.crm-form .field input,.crm-form .field select,.crm-form .field textarea,.board-filter-grid input,
+.crm-record .button-row input[type="date"] {background:#fff;color:var(--text);border-color:#cfd2df;}
+.form-grid label,.block-label,.field,.check-label,.profile-editor .form-grid label {color:#414960;}
+input[type="checkbox"],input[type="radio"] {accent-color:#4a45a8;}
+.list-count {color:var(--muted);font-size:12px;align-items:center;}
+.job-item {border-color:#e6e7ee;}
+.job-item:hover {background:#f7f7fc;}
+.job-item.selected {background:#f0effc;box-shadow:inset 3px 0 0 #4a45ac;}
+.job-item h3 {color:#20243b;font-size:14px;}
+.job-item small {color:#555e72;font-size:12px;}
+.company-letter {background:#eeedfb;border-color:#d8d7ed;color:#45409e;}
+.chip {border-color:#d7dbe5;background:#f5f6f8;color:#4c5569;font-size:11px;white-space:normal;}
+.chip.teal {border-color:#bde0ce;background:#eaf7ef;color:#1b6546;}
+.chip.amber {border-color:#ead5a9;background:#fff6e1;color:#78500b;}
+.chip.red {border-color:#edc4cc;background:#fff0f2;color:#9c3044;}
+.score,.detail-badge {color:#4541a3;}
+.detail-top h3 {font-size:24px;line-height:1.2;}
+.info-grid div {background:#f8f8fb;border-color:#e6e6ee;}
+.detail-section h4 {color:#4a5166;}
+.detail-section p,.detail-section li {color:#4e5668;}
+.detail-jump-button {color:#586078;}
+.detail-jump-button:hover,.detail-jump-button:focus-visible {background:#f0effa;color:#343184;}
+.detail-jump-button[aria-selected="true"] {background:#efedfb;color:#353088;box-shadow:inset 0 -2px 0 #4a45a8;}
+.sponsorship-box,.review-card,.career-fact,.profile-import,.crm-form,.crm-record,.inline-tailoring {background:#f8f8fc;border-color:#dedfeb;}
+.review-card p,.crm-record p {color:#525b6f;}
+.review-card pre {background:#fff;border-color:#dedfeb;color:#30364c;}
+.inline-comparison > div {background:#f1f1f8;}
+.inline-comparison strong {color:#38348e;}
+.stale-warning {background:#fff4df;border-color:#ead09a;color:#704700 !important;}
+.board-limit {color:#80520c;background:#fff8e9;}
+.evidence-summary {margin:20px 0 22px;padding:18px;background:#f7f7fc;border:1px solid #e1e1ee;border-radius:11px;}
+.evidence-summary h4 {margin:0 0 12px;font-size:14px;}
+.evidence-summary-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.evidence-tile {min-width:0;padding:13px;background:#fff;border:1px solid #e1e1eb;border-radius:9px;}
+.evidence-tile small {display:block;color:#656b7e;font-size:10px;font-weight:700;letter-spacing:.06em;}
+.evidence-tile strong {display:block;margin-top:5px;font-size:13px;}
+.evidence-tile p {margin:6px 0 0;color:#5f6679;font-size:12px;line-height:1.45;}
+.evidence-summary .plain-button {margin:13px 0 0;padding:0;}
+footer {color:#656c7d;}
+@media(max-width:1080px) {.rail {width:205px;}.workspace {padding:0 22px;}}
+@media(max-width:780px) {
+  .rail {width:100%;padding:12px 16px;}
+  .navigation {gap:4px;}
+  .nav-item {padding:9px 10px;}
+  .workspace {padding:0 16px;}
+  .section-heading {align-items:flex-start;flex-direction:column;}
+  .section-actions {width:100%;}
+}
+@media(max-width:520px) {.evidence-summary-grid {grid-template-columns:1fr;}.detail-top h3 {font-size:20px;}.home-heading h2 {font-size:27px;}}
+@media(prefers-reduced-motion:reduce) {*,*::before,*::after {scroll-behavior:auto !important;animation-duration:.01ms !important;transition-duration:.01ms !important;}}
+/* Readability and navigation refinements for dense workspaces. */
+.button {font-size:13px;min-height:38px;}
+.form-grid label,.block-label,.field,.profile-editor .form-grid label,.board-filter-grid label {font-size:13px;}
+.profile-editor input:not([type="checkbox"]),.profile-editor textarea,.profile-editor select,.field input,.form-grid input,.block-label textarea {font-size:14px;}
+.profile-editor .form-grid .check-label {display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:9px;}
+.detail-section p,.detail-section li {font-size:14px;}
+@media(max-width:780px) {.navigation {scrollbar-width:thin;scrollbar-color:#aaa8d3 #252943;scroll-snap-type:x proximity;padding-bottom:4px;}.nav-item {scroll-snap-align:start;}}
+
+/* Board view groups the same saved tracker records without changing stages. */
+#tracker-screen .board:has(#crm-jobs.crm-kanban) {display:flex;flex-direction:column;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) > * {width:100%;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-detail {position:static;max-height:none;}
+.crm-kanban {display:grid;grid-auto-flow:column;grid-auto-columns:minmax(210px,1fr);align-items:start;gap:12px;padding:14px;background:#f5f5fa;overflow-x:auto;overscroll-behavior-x:contain;}
+.crm-kanban-column {min-width:0;background:#ededf4;border:1px solid #dedfe9;border-radius:9px;}
+.crm-kanban-heading {margin:0;padding:13px;color:#41475d;font-size:12px;}
+.crm-kanban-cards {max-height:520px;overflow-y:auto;padding:0 8px 8px;}
+.crm-kanban .job-item {margin:0 0 8px;padding:12px;background:#fff;border:1px solid #dedfeb;border-radius:8px;box-shadow:0 1px 2px rgba(26,32,53,.04);}
+.crm-kanban .job-item:hover {border-color:#a5a1d5;background:#fafaff;}
+.crm-kanban .job-item.selected {background:#eeedfb;border-color:#8f89d0;box-shadow:inset 3px 0 0 #4a45ac;}
+.crm-kanban .job-item-bottom {margin-top:9px;}
+#tracker-screen .board:has(#crm-jobs.crm-kanban),
+#tracker-screen .board:has(#crm-jobs.crm-kanban) > *,
+#tracker-screen .board:has(#crm-jobs.crm-kanban) .list-panel {min-width:0;max-width:100%;}
+.crm-kanban {width:100%;max-width:100%;min-width:0;grid-auto-columns:210px;}
+.workspace {min-width:0;}
+.detail-top > div:first-child {min-width:0;overflow-wrap:anywhere;}
+.detail-badge {font-size:14px;white-space:normal;text-align:right;max-width:40%;flex-shrink:0;}
