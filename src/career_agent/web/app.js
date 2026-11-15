@@ -7,7 +7,7 @@
   const root = document.getElementById("app");
   const token = root.dataset.session;
   const state = {
-    jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null, detailTab: "overview",
+    jobs: [], overview: {}, settings: {}, reviews: [], selectedId: null, detailTab: "overview", studioOpen: false,
     packet: null, packetRequestSequence: 0, filter: "all", search: "", sort: "score", screen: "home",
     workspace: null, editingFactId: null,
     crmSummary: null, crmDetails: null, crmJobId: null, crmRequestSeq: 0, jobsPage: 0, refreshSequence: 0, boardTruncated: false,
@@ -309,7 +309,7 @@
       if (inline?.dataset.pending === "true" && !window.confirm("An AI request is still running. Switching jobs discards its displayed result; the request may still complete. Continue?")) return;
       if (inline?.dataset.suggestions === "true" && !window.confirm("Switching jobs discards the displayed AI suggestions. Any wording already saved for review remains in your profile. Continue?")) return;
     }
-    if (state.selectedId !== id) state.detailTab = "overview";
+    if (state.selectedId !== id) { state.detailTab = "overview"; state.studioOpen = false; }
     state.selectedId = id;
     state.packet = null;
     renderJobs();
@@ -477,6 +477,8 @@
     detail.replaceChildren();
     const job = state.jobs.find((value) => value.id === state.selectedId);
     if (!job) {
+      state.studioOpen = false;
+      byId("jobs-screen").classList.toggle("studio-open", false);
       const empty = node("div", "empty-detail");
       if (state.selectedId) {
         empty.append(node("h3", "", "Opportunity outside the loaded board"), node("p", "", "Your description editor is preserved below. Its saved revision will be checked before changes are accepted."));
@@ -489,7 +491,14 @@
     const header = node("div", "detail-top");
     const heading = node("div");
     heading.append(node("span", "eyebrow", "OPPORTUNITY DETAILS"), node("h3", "", job.title), node("p", "", job.company));
-    header.append(heading, node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"));
+    const headerActions = node("div", "detail-header-actions");
+    const studioToggle = button("Open application studio", "button", () => {
+      state.studioOpen = !state.studioOpen;
+      syncStudio();
+    });
+    studioToggle.setAttribute("aria-controls", "job-pane-application");
+    headerActions.append(node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"), studioToggle);
+    header.append(heading, headerActions);
     detail.append(header);
     const scopeWarning = node("p", "warning", "This selected opportunity is outside your current filters. Its details are kept open to preserve your work. Select a matching opportunity or clear the filters.");
     scopeWarning.id = "selection-scope-warning";
@@ -515,8 +524,16 @@
     tabList.setAttribute("role", "tablist"); tabList.setAttribute("aria-label", "Job workspace");
     const panes = {}, tabs = {};
     const sections = [["overview", "Overview"], ["fit", "Fit"], ["sponsorship", "Sponsorship"], ["application", "Application"]];
+    function syncStudio() {
+      byId("jobs-screen").classList.toggle("studio-open", state.studioOpen);
+      studioToggle.textContent = state.studioOpen ? "Exit application studio" : "Open application studio";
+      studioToggle.setAttribute("aria-pressed", String(state.studioOpen));
+      studioToggle.hidden = state.detailTab !== "application";
+    }
     function activateTab(key, focus = false) {
       state.detailTab = key;
+      if (key !== "application") state.studioOpen = false;
+      syncStudio();
       for (const [name] of sections) {
         const active = name === key;
         panes[name].hidden = !active;
@@ -903,6 +920,12 @@
     }
     panes.overview.append(desc);
 
+    const context = node("details", "studio-job-context");
+    context.open = true;
+    context.append(node("summary", "", "Saved job description"),
+      node("p", "muted", "Source text is unverified and may be incomplete or outdated. Review the original posting."),
+      node("p", "description", job.description || "No description saved. Review the original posting before preparing a draft."));
+    panes.application.append(context);
     const drafts = section("Application preparation");
     drafts.id = "job-application";
     const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
@@ -1016,6 +1039,11 @@
     }
     panes.application.append(drafts);
     if (state.packet) renderPacket(detail, job, state.packet);
+    else {
+      const empty = node("section", "studio-placeholder");
+      empty.append(node("h4", "", "Your application preview"), node("p", "", "Choose verified facts and create a draft. Your résumé and review controls will appear here."));
+      detail.append(empty);
+    }
   }
 
   function renderPacket(container, job, record) {
