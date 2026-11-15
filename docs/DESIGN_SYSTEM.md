@@ -23,4 +23,4 @@ At narrow widths, navigation scrolls horizontally with a visible scroll affordan
 
 ## Implementation status
 
-The shared visual system, job evidence summary, discovery shortcut, tracker list and grouped board, and responsive styles are implemented on the existing local workspace. A dedicated document-editing studio, drag-to-move pipeline, hosted accounts and billing remain future work; the interface must not imply that they already exist.
+The shared visual system, job evidence summary, discovery shortcut, tracker list and grouped board, and responsive styles are implemented on the existing local workspace. The focused application studio places the saved job description alongside the existing verified-fact selection and draft review, stacking them on smaller screens. It does not submit applications or provide arbitrary document editing. A dedicated document editor, drag-to-move pipeline, hosted accounts and billing remain future work; the interface must not imply that they already exist.

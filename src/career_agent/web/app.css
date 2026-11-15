@@ -538,3 +538,36 @@ footer {color:#656c7d;}
   #tracker-screen .board:has(#crm-jobs.crm-kanban) #crm-layout-help {grid-column:1 / -1;}
 }
 @media(max-width:480px) {#tracker-screen .board:has(#crm-jobs.crm-kanban) .crm-form {grid-template-columns:1fr;}}
+
+/* Focused application studio reuses the existing reviewed packet workflow. */
+.detail-header-actions {display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;}
+.detail-header-actions .detail-badge {max-width:none;}
+.studio-job-context,.studio-placeholder {display:none;}
+#jobs-screen.studio-open .board {display:grid;grid-template-columns:minmax(0,1fr);}
+#jobs-screen.studio-open .board > .list-panel {display:none;}
+#jobs-screen.studio-open #detail-panel {position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 24px;}
+#jobs-screen.studio-open #detail-panel > .detail-top,
+#jobs-screen.studio-open #detail-panel > .warning,
+#jobs-screen.studio-open #detail-panel > .info-grid,
+#jobs-screen.studio-open #detail-panel > .detail-jump {grid-column:1 / -1;}
+#jobs-screen.studio-open #job-pane-application {grid-column:1;min-width:0;}
+#jobs-screen.studio-open #detail-panel > .review-card,
+#jobs-screen.studio-open #detail-panel > .studio-placeholder {grid-column:2;align-self:start;min-width:0;margin-top:18px;}
+#jobs-screen.studio-open .studio-job-context {display:block;margin-top:18px;padding:17px;background:#f8f8fc;border:1px solid var(--border);border-radius:10px;}
+.studio-job-context summary {font-weight:700;cursor:pointer;}
+.studio-job-context .description {max-height:360px;padding-right:6px;line-height:1.6;}
+#jobs-screen.studio-open .studio-placeholder {display:block;padding:20px;background:#f8f8fc;border:1px dashed #c8cadc;border-radius:10px;}
+.studio-placeholder h4 {margin:0 0 8px;font-size:15px;}
+.studio-placeholder p {margin:0;color:var(--muted);font-size:13px;line-height:1.55;}
+#jobs-screen.studio-open .review-card pre {max-height:600px;}
+@media(max-width:900px) {
+  #jobs-screen.studio-open #detail-panel {grid-template-columns:minmax(0,1fr);}
+  #jobs-screen.studio-open #detail-panel > .detail-top,
+  #jobs-screen.studio-open #detail-panel > .warning,
+  #jobs-screen.studio-open #detail-panel > .info-grid,
+  #jobs-screen.studio-open #detail-panel > .detail-jump,
+  #jobs-screen.studio-open #job-pane-application,
+  #jobs-screen.studio-open #detail-panel > .review-card,
+  #jobs-screen.studio-open #detail-panel > .studio-placeholder {grid-column:1;}
+}
+@media(max-width:520px) {.detail-header-actions {max-width:46%;}.detail-header-actions .button {font-size:12px;padding:8px 10px;}}
