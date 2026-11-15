@@ -571,3 +571,5 @@ footer {color:#656c7d;}
   #jobs-screen.studio-open #detail-panel > .studio-placeholder {grid-column:1;}
 }
 @media(max-width:520px) {.detail-header-actions {max-width:46%;}.detail-header-actions .button {font-size:12px;padding:8px 10px;}}
+
+.tailoring-count {font-weight:700;color:var(--text);padding:10px 12px;background:var(--bg);border-radius:8px;}

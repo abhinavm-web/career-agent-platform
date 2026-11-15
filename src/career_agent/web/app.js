@@ -305,6 +305,8 @@
       const capture = editor?.querySelector?.("#description-capture-input");
       if (editor?.open && description && (description.value !== description.defaultValue || source?.value || capture?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
+      const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
+      if (picker?.dataset.dirty === "true" && !window.confirm("Discard your unfinished fact selection and ordering for this job?")) return;
       const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
       if (inline?.dataset.pending === "true" && !window.confirm("An AI request is still running. Switching jobs discards its displayed result; the request may still complete. Continue?")) return;
       if (inline?.dataset.suggestions === "true" && !window.confirm("Switching jobs discards the displayed AI suggestions. Any wording already saved for review remains in your profile. Continue?")) return;
@@ -450,7 +452,7 @@
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
     const keep = editor?.open && editor.dataset.jobId === state.selectedId;
     const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
-    const keepPicker = picker?.open && picker.dataset.jobId === state.selectedId;
+    const keepPicker = (picker?.open || picker?.dataset.dirty === "true") && picker.dataset.jobId === state.selectedId;
     const duplicates = byId("detail-panel").querySelector?.("#possible-duplicates");
     const keepDuplicates = duplicates?.dataset.started === "true" && duplicates.dataset.jobId === state.selectedId;
     const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
@@ -957,6 +959,7 @@
       if (!missingProfile && !missingFacts) {
       const choose = node("details", "tailoring-picker");
       choose.dataset.jobId = job.id;
+      choose.dataset.dirty = "false";
       choose.append(node("summary", "", "Choose facts for a tailored draft"));
       choose.append(node("p", "muted", "Select verified facts and arrange sections and facts. Statements are copied verbatim; changes create a new draft that needs a fresh review."));
       choose.append(node("p", "muted", "To change a statement, edit it in Career profile and verify the changed fact before including it."));
@@ -965,6 +968,7 @@
       const status = node("p", "muted"); status.setAttribute("role", "status");
       const load = button("Load verified facts", "button", async () => {
         if (load.disabled) return;
+        if (choose.dataset.dirty === "true" && !window.confirm("Reload verified facts and discard your unfinished selection and ordering?")) return;
         load.disabled = true;
         try {
           const result = await api("/api/jobs/" + job.id + "/tailoring/facts");
@@ -973,11 +977,19 @@
           const limit = result.max_facts;
           const sections = ["experience", "projects", "skills", "education", "certifications"];
           const selected = [];
+          const selectionCount = node("p", "tailoring-count");
+          selectionCount.setAttribute("aria-live", "polite");
+          const markChanged = () => { choose.dataset.dirty = "true"; updateCount(); };
+          function updateCount() {
+            const count = selected.filter(item => item.box.checked).length;
+            selectionCount.textContent = count + " of " + limit + " facts selected" + (count > limit ? " — remove " + (count - limit) + " before creating a draft." : ".");
+          }
           let layoutBusy = false;
           for (const fact of result.facts) {
             if (!Array.isArray(fact.matched_keywords) || !fact.matched_keywords.every(word => typeof word === "string")) throw new Error("Invalid fact evidence; reload and try again.");
             const label = node("label", "check-label");
             const box = document.createElement("input"); box.type = "checkbox";
+            box.addEventListener("change", markChanged);
             label.append(box, document.createTextNode(fact.section + " · " + fact.statement));
             selected.push({box, label, id: fact.id, section: fact.section, matched: fact.matched_keywords});
           }
@@ -989,6 +1001,7 @@
             selected.forEach((item) => {item.box.disabled = true;});
             try {
               await api("/api/jobs/" + job.id + "/tailored-draft", "POST", {fact_ids, section_order: sections.slice(), workspace_revision: result.workspace_revision, facts_sha256: result.facts_sha256, job_description_revision: result.description_revision});
+              choose.dataset.dirty = "false";
               notice("Tailored draft created locally. Review it before using.");
               if (state.selectedId === job.id) await refresh(job.id);
             } catch (error) {status.textContent = error.message;}
@@ -996,16 +1009,17 @@
           });
           function renderLayout() {
             choices.replaceChildren();
+            updateCount(); choices.append(selectionCount);
             sections.forEach((section, index) => {
               const group = node("div", "tailoring-section");
               group.append(node("strong", "", section));
               const up = button("Move " + section + " section up", "button", () => {
                 [sections[index - 1], sections[index]] = [sections[index], sections[index - 1]];
-                renderLayout();
+                markChanged(); renderLayout();
               });
               const down = button("Move " + section + " section down", "button", () => {
                 [sections[index], sections[index + 1]] = [sections[index + 1], sections[index]];
-                renderLayout();
+                markChanged(); renderLayout();
               });
               up.disabled = layoutBusy || index === 0; down.disabled = layoutBusy || index === sections.length - 1;
               group.append(up, down);
@@ -1017,7 +1031,7 @@
                 const move = (delta) => {
                   const from = selected.indexOf(item), to = selected.indexOf(items[position + delta]);
                   [selected[from], selected[to]] = [selected[to], selected[from]];
-                  renderLayout();
+                  markChanged(); renderLayout();
                 };
                 const earlier = button("Move fact " + item.id + " up", "button", () => move(-1));
                 const later = button("Move fact " + item.id + " down", "button", () => move(1));
@@ -1028,6 +1042,7 @@
             });
             choices.append(submit);
           }
+          choose.dataset.dirty = "false";
           renderLayout();
           status.textContent = result.facts.length ? "Choose up to " + limit + " verified facts to include." + (result.description_missing ? " The description is missing, so keyword mentions use only the title." : "") : "No verified facts available.";
           submit.disabled = !result.facts.length;
