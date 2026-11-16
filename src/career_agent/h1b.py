@@ -571,7 +571,7 @@ class H1BResearch:
         return self.policy_notes(job)
 
     def job(self, job, settings=None):
-        from .posting_checks import target
+        from .posting_checks import target, website_target
         settings = settings or self.settings()
         association = self.employer_link(job.id)
         company_association = self.company_link(job.company)
@@ -582,7 +582,7 @@ class H1BResearch:
         history = self.company(employer, settings)
         policy = h1b_policy(job.description, settings['need'])
         return {**policy, 'id': job.id, 'company': job.company, 'title': job.title, 'url': job.url,
-                'live_check': self.posting_checks.latest(job.id), 'live_check_supported': target(job.url) is not None,
+                'live_check': self.posting_checks.latest(job.id), 'live_check_supported': (target(job.url) is not None or website_target(job.url) is not None),
                 'location': job.location, 'history': history, 'employer_association': association,
                 'company_association': company_association, 'association_scope': scope, 'posting_freshness': 'not_revalidated',
                 'eligibility': 'not_determined', 'need': settings['need']}

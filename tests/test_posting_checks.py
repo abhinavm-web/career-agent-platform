@@ -129,3 +129,40 @@ class PostingTests(unittest.TestCase):
             checks.save(sample.id, {**observation, 'checked_at': (current_time - timedelta(days=2)).isoformat()})
             self.assertTrue(checks.latest(sample.id)['stale'])
             self.assertEqual(checks.latest(sample.id)['availability'], 'unknown')
+
+class WebsitePostingTests(unittest.TestCase):
+    def check(self, posting=None, status=200, body=None):
+        sample = job('https://careers.example.com/jobs/123')
+        data = {'@type': 'JobPosting', 'url': sample.url, 'title': sample.title,
+                'hiringOrganization': {'name': sample.company}, 'description': 'Build software.'}
+        data.update(posting or {})
+        content = body if body is not None else ('<script type="application/ld+json">' + json.dumps(data) + '</script>').encode()
+        with patch('career_agent.posting_checks.public_get', return_value=(status, content, 'text/html')):
+            return check_posting(sample)
+
+    def test_exact_website_identity_is_listed(self):
+        self.assertEqual(self.check()['availability'], 'listed')
+        for change in ({'title': 'Another role'}, {'url': 'https://careers.example.com'},
+                       {'hiringOrganization': {'name': 'Other employer'}}, {'description': ''}):
+            self.assertEqual(self.check(change)['availability'], 'page_reachable')
+
+    def test_page_response_is_not_vacancy_confirmation(self):
+        for body in (b'<h1>Sign in</h1>', b'<h1>Job no longer available</h1>', b'<script>loadJobs()</script>'):
+            self.assertEqual(self.check(body=body)['availability'], 'page_reachable')
+        for status in (301, 403, 404, 410, 429, 500):
+            self.assertEqual(self.check(status=status)['availability'], 'unknown')
+
+    def test_website_deadlines_and_ambiguous_postings(self):
+        past = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        self.assertEqual(self.check({'validThrough': past})['availability'], 'expired')
+        self.assertNotEqual(self.check({'validThrough': '2020-01-01'})['availability'], 'listed')
+        self.assertNotEqual(self.check({'validThrough': 'invalid'})['availability'], 'listed')
+        body = b'<script type="application/ld+json">[{"@type":"JobPosting"},{"@type":"JobPosting"}]</script>'
+        self.assertEqual(self.check(body=body)['availability'], 'page_reachable')
+
+    def test_unsafe_targets_are_not_requested(self):
+        from career_agent.posting_checks import website_target
+        for url in ('http://careers.example.com/job', 'https://localhost/job', 'https://127.0.0.1/job',
+                    'https://10.0.0.1/job', 'https://[::1]/job', 'https://user:pass@example.com/job',
+                    'https://example.com:8000/job', 'https://example.com/job#private'):
+            self.assertIsNone(website_target(url))

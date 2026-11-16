@@ -68,7 +68,7 @@ def public_get(url, allowed_hosts, maximum=2 * 1024 * 1024):
             timer.daemon = True
             timer.start()
             path = (parts.path or '/') + ('?' + parts.query if parts.query else '')
-            connection.request('GET', path, headers={'Accept': 'application/json,text/csv,text/plain',
+            connection.request('GET', path, headers={'Accept': 'application/json,text/html,text/csv,text/plain',
                                'User-Agent': 'CareerAgent/0.5 public-source-check', 'Accept-Encoding': 'identity'})
             response = connection.getresponse()
             if expired.is_set():

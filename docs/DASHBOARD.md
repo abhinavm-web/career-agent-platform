@@ -87,3 +87,15 @@ The profile and all revisions are stored as **unencrypted plaintext** in the exi
 An explicit one-time import can copy existing configured --profile and --facts files into the workspace, without altering them. See [Career Workspace](CAREER_WORKSPACE.md).
 
 **Safety invariant:** A new candidate-workspace revision invalidates previous draft review approvals. Outdated packets are displayed with a warning and cannot be approved or recorded as newly submitted until regenerated and reviewed again.
+
+
+The opportunity Overview begins with **Check live availability** and **Open
+original posting**. Greenhouse and Lever use exact public ATS identities; other
+public HTTPS pages are read anonymously with bounded responses, public-IP DNS
+pinning and TLS checks. Redirects are not followed. Website checks require one
+structured JobPosting matching the saved URL, title and employer before reporting
+listed; a successful HTTP response alone means only page reachable, vacancy
+unverified. Login screens, JavaScript-only pages, blocks, missing pages and
+ambiguous identities require manual review. Observations are stored with a source
+and timestamp and become stale after 24 hours. No profile or resume is sent, and
+checks do not change application stages or establish sponsorship eligibility.

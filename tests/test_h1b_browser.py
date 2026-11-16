@@ -640,7 +640,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-results')).to_contain_text('does not meet a new-sponsorship preference')
                         expect(page.locator('#h1b-results')).to_contain_text('<script>throw new Error')
                         expect(page.locator('#h1b-results')).to_contain_text('initial approvals/denials: 10/1')
-                        expect(page.locator('#h1b-results').get_by_role('button', name='Check live ATS posting')).to_be_disabled()
+                        expect(page.locator('#h1b-results').get_by_role('button', name='Check live availability')).to_be_disabled()
                         expect(page.locator('#h1b-results')).to_contain_text('Check this original posting manually')
                         self.assertEqual(page.locator('#h1b-results script').count(), 0)
                         page.locator('#h1b-query').fill('Example, Inc')
