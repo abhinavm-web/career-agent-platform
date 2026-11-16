@@ -1,0 +1,81 @@
+"""Browser exercise of fact-backed application review with fictional inputs."""
+import json
+import os
+import socket
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+from career_agent.models import CandidateProfile
+from career_agent.storage import Store
+from test_dashboard import fake_fact_bank, fake_job
+from unittest.mock import patch
+from test_document_revisions import ROUTE, OUTPUT
+
+
+@unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
+class AIRevisionBrowserTests(unittest.TestCase):
+    def test_ai_revision_model_selection_review_download_and_reload(self):
+        import uvicorn
+        from playwright.sync_api import expect, sync_playwright
+        from career_agent.candidate import FactBank
+        from career_agent.dashboard import DashboardConfig, create_app
+        from career_agent.workspace import CandidateWorkspace
+        from docx import Document
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); db = root / 'workspace.sqlite3'; job = fake_job()
+            with Store(db) as store:
+                store.add_jobs([job])
+                CandidateWorkspace(store).import_legacy(CandidateProfile(('AI Program Lead',), ('Python',), (), True), FactBank.parse(fake_fact_bank()))
+            app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
+            sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True); thread.start()
+            try:
+                for _ in range(100):
+                    if server.started: break
+                    time.sleep(0.05)
+                self.assertTrue(server.started)
+                with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)) as complete, sync_playwright() as p:
+                    browser = p.chromium.launch()
+                    try:
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page.locator('#nav-jobs').click()
+                        page.locator('#job-list button').first.click()
+                        page.get_by_role('tab', name='Application').click()
+                        page.get_by_role('button', name='Open application studio').click()
+                        panel = page.locator('.document-revision-studio')
+                        panel.locator('summary').first.click()
+                        panel.get_by_role('button', name='Load models and saved revisions').click()
+                        expect(panel.get_by_label('Revision model')).to_have_value('claude')
+                        panel.get_by_label('Revision instructions').fill('Emphasize relevant delivery work.')
+                        panel.get_by_role('button', name='Revise resume and cover letter').click()
+                        complete.assert_not_called()
+                        panel.get_by_label('I consent to sharing', exact=False).check()
+                        panel.get_by_role('button', name='Revise resume and cover letter').click()
+                        expect(panel).to_contain_text('Revision saved.')
+                        expect(panel).to_contain_text('Delivered an AI program using Python and AWS.')
+                        expect(panel).to_contain_text('My experience delivering an AI program')
+                        expect(panel.get_by_role('button', name='Confirm AI revision for export')).to_be_disabled()
+                        panel.get_by_label('I reviewed both AI documents', exact=False).check()
+                        panel.get_by_role('button', name='Confirm AI revision for export').click()
+                        with page.expect_download() as received:
+                            panel.get_by_role('button', name='Download reviewed AI cover letter text').click()
+                        text = Path(received.value.path()).read_text(encoding='utf-8')
+                        self.assertIn('Dear Hiring Team', text)
+                        self.assertIn('My experience delivering an AI program', text)
+                        page.reload()
+                        page.locator('#nav-jobs').click(); page.locator('#job-list button').first.click()
+                        page.get_by_role('tab', name='Application').click()
+                        panel = page.locator('.document-revision-studio')
+                        panel.locator('summary').first.click()
+                        panel.get_by_role('button', name='Load models and saved revisions').click()
+                        expect(panel.get_by_role('button', name='Download reviewed AI resume text')).to_be_visible()
+                        self.assertEqual(complete.call_count, 1)
+                    finally:
+                        browser.close()
+            finally:
+                server.should_exit = True; thread.join(timeout=10); sock.close()
+

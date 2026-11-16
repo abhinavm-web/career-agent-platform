@@ -96,3 +96,28 @@ Use `CAREER_AGENT_AI_CONFIG` to point to another private JSON file. Unknown fiel
 - [Bedrock Converse](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html)
 - [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility)
 - [LM Studio compatibility](https://lmstudio.ai/docs/developer/openai-compat)
+
+## AI document revisions
+
+Application studio includes **AI resume and cover letter**. Load configured models
+and saved revisions, choose a model, enter revision instructions, and consent to
+sharing the posting, verified fact statements, instructions and previous current
+revision. The model rewrites both documents; it does not merely copy the fact bank.
+Names, contact lines and private source notes are not sent as separate fields.
+They can still appear in user-entered instructions or fact text.
+
+Each passage cites verified fact IDs. Citations and automatic wording warnings
+are review aids, not semantic verification. Every revision is saved separately
+in the workspace database with source statements and model metadata. The user
+must compare both documents against their facts and confirm accuracy before
+text download. New revisions require fresh review; source/profile changes or
+newer revisions block export of an old revision. Existing deterministic packets,
+profile verification and application submission state are unchanged. This is a
+text revision workflow; formatted Word/PDF export remains available for the
+existing verified-fact packets, not these AI document revisions.
+
+Anthropic credentials remain in `ANTHROPIC_API_KEY` in the server environment.
+The optional Anthropic route setting `thinking_disabled: true` explicitly asks
+for text-only generation on compatible models. Leave it absent for models that
+do not support disabling reasoning. Unsupported response blocks remain rejected,
+not silently dropped. Model IDs must be available to the configured account.

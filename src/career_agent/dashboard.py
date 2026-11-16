@@ -526,6 +526,93 @@ def create_app(config: DashboardConfig) -> FastAPI:
         finally:
             ai_lock.release()
 
+    def revision_snapshot(job_id, store):
+        job = _get_job(store, job_id)
+        revision = store.workspace_revision()
+        if revision:
+            row = store.connection.execute('SELECT document FROM candidate_workspace_versions WHERE revision=?', (revision,)).fetchone()
+            bank = CandidateWorkspace.fact_bank(json.loads(row['document']))
+        else:
+            if config.facts_path is None:
+                raise ValueError('Save and verify career facts before revising documents')
+            bank = FactBank.load(config.facts_path)
+        return {'job_id': job.id, 'title': job.title, 'company': job.company, 'description': job.description,
+                'claims': bank.public_claims(), 'name': bank.name, 'headline': bank.headline,
+                'contact': bank.resume_contact, 'workspace_revision': store.workspace_revision(),
+                'description_revision': store.description_revision(job_id)}
+
+    @app.get('/api/jobs/{job_id}/document-revisions')
+    def document_revisions(job_id: str):
+        from .document_revisions import Revisions
+        with Store(config.db_path) as store:
+            revisions = Revisions(store)
+            store.connection.execute('BEGIN')
+            return {'revisions': revisions.list(job_id, revision_snapshot(job_id, store))}
+
+    @app.post('/api/jobs/{job_id}/document-revisions')
+    async def generate_document_revision(job_id: str, request: Request):
+        from .document_revisions import Revisions, digest, generate
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'instructions', 'parent_id', 'acknowledged'}
+                or data['acknowledged'] is not True or type(data['parent_id']) is not int or data['parent_id'] < 0):
+            raise ValueError('Confirm sharing the posting, verified facts, instructions and previous revision with the selected model')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                revisions = Revisions(store)
+                store.connection.execute('BEGIN')
+                snapshot = revision_snapshot(job_id, store)
+                if store.stage_of(job_id) == 'submitted':
+                    raise ValueError('Submitted application is locked')
+                if revisions.latest_id(job_id) != data['parent_id']:
+                    raise ValueError('Revision changed; load saved revisions before retrying')
+                history = revisions.list(job_id, snapshot)
+                previous = history[0]['document'] if history and not history[0]['stale'] else None
+            result = await run_in_threadpool(run_recorded, config.db_path, data['route'], 'document_revision',
+                generate, snapshot, data['route'], data['instructions'], previous, expected_route_fingerprint=fingerprint)
+            with Store(config.db_path) as store:
+                revisions = Revisions(store)
+                store.connection.execute('BEGIN IMMEDIATE')
+                if (store.stage_of(job_id) == 'submitted' or digest(revision_snapshot(job_id, store)) != digest(snapshot)
+                        or revisions.latest_id(job_id) != data['parent_id']):
+                    raise ValueError('Profile, posting or revision changed during generation; no revision saved. Reload and try again.')
+                revisions.save(job_id, snapshot, result)
+                store.connection.commit()
+            return document_revisions(job_id)
+        finally:
+            ai_lock.release()
+
+    @app.post('/api/jobs/{job_id}/document-revisions/{revision_id}/review')
+    async def review_document_revision(job_id: str, revision_id: int, request: Request):
+        from .document_revisions import Revisions
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Confirm that every claim and both documents are accurate before export')
+        with Store(config.db_path) as store:
+            revisions = Revisions(store)
+            store.connection.execute('BEGIN IMMEDIATE')
+            revisions.review(job_id, revision_id, revision_snapshot(job_id, store))
+            store.connection.commit()
+        return document_revisions(job_id)
+
+    @app.get('/api/jobs/{job_id}/document-revisions/{revision_id}/{kind}.txt')
+    def export_document_revision(job_id: str, revision_id: int, kind: str):
+        from .document_revisions import Revisions, document_text
+        if kind not in {'resume', 'cover_letter'}:
+            raise ValueError('Choose resume or cover_letter')
+        with Store(config.db_path) as store:
+            revisions = Revisions(store)
+            store.connection.execute('BEGIN')
+            snapshot = revision_snapshot(job_id, store)
+            history = revisions.list(job_id, snapshot)
+            if not history or history[0]['id'] != revision_id or history[0]['stale'] or not history[0]['reviewed_at']:
+                raise ValueError('Review the current revision before export')
+            content = document_text(history[0], kind, snapshot)
+        return Response(content, media_type='text/plain', headers={
+            'Content-Disposition': f'attachment; filename="{kind}-{job_id}-{revision_id}.txt"'})
+
     @app.get("/api/h1b")
     def h1b_settings():
         with Store(config.db_path) as store:

@@ -480,10 +480,11 @@ class SDKContracts(unittest.TestCase):
             return httpx.Response(200, json={'id': 'msg_fictional', 'type': 'message', 'role': 'assistant',
                 'model': 'fictional', 'content': [{'type': 'text', 'text': '{"requirements":[]}'}],
                 'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 1, 'output_tokens': 1}})
-        route = {'provider': 'anthropic', 'model': 'fictional'}
+        route = {'provider': 'anthropic', 'model': 'fictional', 'thinking_disabled': True}
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fictional-test-key'}), patch('career_agent.ai._transport', side_effect=lambda: original(transport=httpx.MockTransport(handler))):
             self.assertEqual(ai.complete(route, 'fictional prompt'), '{"requirements":[]}')
         self.assertEqual(str(calls[0].url), 'https://api.anthropic.com/v1/messages')
+        self.assertEqual(json.loads(calls[0].content)['thinking'], {'type': 'disabled'})
         self.assertEqual(json.loads(calls[0].content)['max_tokens'], 1500)
         calls.clear()
         def failed(request):
