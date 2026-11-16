@@ -265,6 +265,23 @@ class CandidateWorkspace:
             return current
         return self._write(expected_revision, transform, 'ai_wording_staged')
 
+    def stage_experience_answer(self, expected_revision, job_id, job_quote, answer, section, acknowledged):
+        """Candidate-authored additions require a separate verification before drafting."""
+        if acknowledged is not True or not isinstance(job_quote, str) or not job_quote.strip() or len(job_quote) > 2000:
+            raise ValueError('Confirm saving your answer against a posting excerpt')
+        def transform(current):
+            if len(current['facts']) >= MAX_FACTS:
+                raise ValueError('Career fact limit reached')
+            job = self.store.get_job(job_id)
+            if not job or job_quote not in job.description:
+                raise StaleRevision('Posting changed; analyze it again before adding experience')
+            proposal = {'id': 'fact-' + uuid.uuid4().hex[:12], 'section': section,
+                'statement': answer, 'keywords': [], 'source_note': 'Candidate answer for job ' + job_id + '. Posting excerpt: ' + job_quote[:350] + (' [truncated]' if len(job_quote) > 350 else ''),
+                'verified_by_candidate': False}
+            current['facts'].append(_validate_facts([proposal])[0])
+            return current
+        return self._write(expected_revision, transform, 'experience_answer_staged')
+
     def verify(self, expected_revision: int, fact_id: str, verified: bool,
                acknowledged: bool) -> dict[str, Any]:
         if type(verified) is not bool or acknowledged is not True:
