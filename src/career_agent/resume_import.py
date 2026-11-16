@@ -4,11 +4,28 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import re
 import zipfile
 from xml.etree import ElementTree
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_TEXT = 20000
+
+
+def clean_pdf_lines(text):
+    """Join clear lowercase line continuations; retain headings and bullet boundaries."""
+    lines = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if re.fullmatch(r"(?:[A-Za-z .'-]+\s*\|\s*)?\d+\s*/\s*\d+", line) or re.fullmatch(r'Page \d+ of \d+', line, re.I):
+            continue
+        if (lines and line and re.match(r'^[a-z]', line) and len(lines[-1]) >= 70
+                and not lines[-1].endswith(('.', ';', ':')) and '|' not in line
+                and not re.search(r'\b(?:19|20)\d{2}\b', line)):
+            lines[-1] += ' ' + line
+        else:
+            lines.append(line)
+    return '\n'.join(lines)
 
 
 def extract_resume(filename, encoded):
@@ -81,4 +98,4 @@ def extract_resume(filename, encoded):
         raise ValueError('No text found; scanned images require OCR and are not supported')
     if '\x00' in text or len(text) > MAX_TEXT:
         raise ValueError('Extracted résumé text is invalid or exceeds 20,000 characters')
-    return text.strip()
+    return (clean_pdf_lines(text) if extension == 'pdf' else text).strip()

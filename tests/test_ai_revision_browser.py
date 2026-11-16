@@ -27,7 +27,7 @@ class AIRevisionBrowserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); db = root / 'workspace.sqlite3'
             from dataclasses import replace
-            job = replace(fake_job(), description='Requirements:\n- Python\n- AWS')
+            job = replace(fake_job(), description='Requirements:\n- Python\n- AWS\n**Specialized Role Requirements**\n- Novel expertise')
             with Store(db) as store:
                 store.add_jobs([job])
                 CandidateWorkspace(store).import_legacy(CandidateProfile(('AI Program Lead',), ('Python',), (), True), FactBank.parse(fake_fact_bank()))
@@ -79,6 +79,8 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         panel.get_by_label('Resume evidence for requirement 1').select_option('0')
                         panel.get_by_label('Resume evidence for requirement 2').select_option('0')
                         expect(panel).to_contain_text('2 of 2 excerpts addressed (100%)')
+                        expect(panel).to_contain_text('Coverage is incomplete; the target cannot be established.')
+                        expect(panel).not_to_contain_text('Review target reached')
                         panel.get_by_label('I reviewed both AI documents', exact=False).check()
                         panel.get_by_role('button', name='Confirm AI revision for export').click()
                         with page.expect_download() as received:

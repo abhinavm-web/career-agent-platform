@@ -4,7 +4,7 @@ import io
 import unittest
 import zipfile
 
-from career_agent.resume_import import extract_resume, MAX_BYTES
+from career_agent.resume_import import extract_resume, MAX_BYTES, clean_pdf_lines
 
 
 def encoded(data):
@@ -57,3 +57,13 @@ class ResumeImportTests(unittest.TestCase):
         page[NameObject('/Contents')] = writer._add_object(stream)
         data = io.BytesIO(); writer.write(data)
         self.assertEqual(extract_resume('resume.pdf', encoded(data.getvalue())), 'Fictional engineer')
+
+    def test_pdf_wrapping_retains_qualifiers_and_does_not_join_roles_or_bullets(self):
+        first = '\u2022 Delivered a fictional automation workflow with a projected improvement in operational efficiency'
+        text = first + '\nsubject to pilot validation.\n\u2022 Led another project.\nTECHNOLOGY AND PLATFORMS\nPython, SQL\nAlex Example | 1 / 2\nPage 2 of 2'
+        cleaned = clean_pdf_lines(text)
+        self.assertIn(first + ' subject to pilot validation.', cleaned)
+        self.assertIn('\n\u2022 Led another project.\nTECHNOLOGY AND PLATFORMS\nPython, SQL', cleaned)
+        self.assertNotIn('1 / 2', cleaned)
+        self.assertNotIn('Page 2', cleaned)
+        self.assertEqual(clean_pdf_lines('Improved precision to 1 / 2 in the fictional trial.'), 'Improved precision to 1 / 2 in the fictional trial.')

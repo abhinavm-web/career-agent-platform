@@ -9,6 +9,10 @@ HEADINGS = {
     'requirements': 'required', 'required qualifications': 'required',
     'minimum qualifications': 'required', 'required skills': 'required',
     'minimum requirements': 'required',
+    'required skills & experience': 'required', 'required skills and experience': 'required',
+    'skills & experience required': 'required', 'skills and experience required': 'required',
+    'required experience': 'required', 'required knowledge, skills and abilities': 'required',
+    'preferred skills & experience': 'preferred', 'preferred skills and experience': 'preferred',
     'must have': 'required', 'must-have': 'required',
     'preferred qualifications': 'preferred', 'preferred skills': 'preferred',
     'preferred': 'preferred',
@@ -30,12 +34,24 @@ OPTIONAL_UNDER_REQUIRED = re.compile(
 )
 
 
+def shared_source_terms(statement, quote):
+    """Literal suggestions for untagged facts; never establish qualification equivalence."""
+    words = re.findall(r'[a-z][a-z0-9+#-]*', statement.casefold())
+    stop = set('a an the and or of in on to for with by from at as is are was were be been being have has had that this these those which who we i my our their it its across through using used built led managed experience skills ability work working team teams support supporting years'.split())
+    technologies = set('python sql java aws azure gcp rag llm llms bedrock langchain langgraph selenium docker kubernetes'.split())
+    candidates = [word for word in words if word in technologies]
+    candidates += [' '.join(pair) for pair in zip(words, words[1:])
+                   if all(word not in stop and len(word) > 1 for word in pair)]
+    return list(dict.fromkeys(term for term in candidates if contains_phrase(statement, term) and contains_phrase(quote, term)))[:8]
+
+
 def requirement_evidence(description: str, facts: list[dict]) -> dict:
     """Extract explicit section bullets; keyword links suggest, never establish, fit."""
     rows = []
     section = None
     source_heading = None
     truncated = False
+    unrecognized_headings = []
     lines = description.splitlines()
     index = 0
     while index < len(lines):
@@ -85,7 +101,12 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
             if oversized:
                 truncated = True
                 continue
+        elif section and not bold and not line.endswith(':') and len(line.split()) >= 8 and line.endswith(('.', ';')):
+            quote = line
         else:
+            if (bold or line.endswith(':') or re.match(r'^#{1,6}\s+', line)) and re.search(r'requir|qualif|skills|experience', candidate):
+                unrecognized_headings.append(line)
+                truncated = True
             # Never carry a heading into unrecognized prose or a new section.
             section = None
             continue
@@ -95,8 +116,12 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
         matches = []
         for fact in facts:
             keywords = [word for word in fact.get('keywords', []) if word.strip() and contains_phrase(quote, word)]
+            derived = not fact.get('keywords')
+            if derived:
+                keywords = shared_source_terms(fact['statement'], quote)
             if keywords:
-                matches.append({'id': fact['id'], 'statement': fact['statement'], 'matched_keywords': keywords})
+                matches.append({'id': fact['id'], 'statement': fact['statement'], 'matched_keywords': keywords,
+                                'match_basis': 'shared_source_phrase' if derived else 'saved_keywords'})
         if len(rows) == 25:
             truncated = True
             break
@@ -109,5 +134,5 @@ def requirement_evidence(description: str, facts: list[dict]) -> dict:
         if uncertain:
             row['classification_note'] = 'The excerpt contains optional or negated wording; confirm its requirement level with the employer.'
         rows.append(row)
-    return {'requirements': rows, 'truncated': truncated,
-            'notice': 'Literal section excerpts and keyword links only. Candidate-related sections and unspecified qualifications are not labeled required or preferred. Some conflicting wording is recognized, but other qualifiers may be missed. Review relevance and confirm requirements with the employer; missing matches do not establish a qualification gap.'}
+    return {'requirements': rows, 'truncated': truncated, 'unrecognized_headings': unrecognized_headings,
+            'notice': 'Source section excerpts and literal term links only. Untagged facts use shared source phrases. Unsupported requirement headings are reported as incomplete coverage. Candidate-related sections and unspecified qualifications are not labeled required or preferred. Some conflicting wording is recognized, but other qualifiers may be missed. Review relevance and confirm requirements with the employer; missing matches do not establish a qualification gap.'}

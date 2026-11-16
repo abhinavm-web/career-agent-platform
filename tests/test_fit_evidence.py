@@ -111,3 +111,26 @@ class FitEvidenceTests(unittest.TestCase):
                      'What you’ll bring to our customers\n- Python services'):
             with self.subTest(text=text):
                 self.assertEqual(requirement_evidence(text, self.facts)['requirements'], [])
+
+    def test_compound_required_heading_and_untagged_source_phrase_evidence(self):
+        facts = [{'id': 'fact-02', 'statement': 'Led enterprise AI delivery with Python.', 'keywords': []}]
+        text = '**Required Skills & Experience**\n- Enterprise AI product experience\n- Python automation\n**Preferred Qualifications**\n- Rust'
+        result = requirement_evidence(text, facts)
+        self.assertEqual([r['category'] for r in result['requirements']], ['required', 'required', 'preferred'])
+        self.assertFalse(result['truncated'])
+        self.assertEqual(result['requirements'][0]['suggested_facts'][0]['match_basis'], 'shared_source_phrase')
+        self.assertIn('enterprise ai', result['requirements'][0]['suggested_facts'][0]['matched_keywords'])
+        self.assertEqual(result['requirements'][2]['suggested_facts'], [])
+        self.assertEqual(facts[0]['keywords'], [])
+
+    def test_unknown_requirement_heading_discloses_incomplete_coverage(self):
+        result = requirement_evidence('**Specialized Role Requirements**\n- Novel expertise', [])
+        self.assertTrue(result['truncated'])
+        self.assertEqual(result['unrecognized_headings'], ['**Specialized Role Requirements**'])
+        self.assertEqual(result['requirements'], [])
+
+    def test_required_prose_keeps_negation_and_stops_at_new_heading(self):
+        text = 'Required Skills & Experience:\nExtensive Python programming experience is helpful but not required.\nResponsibilities:\nBuild something useful with the team every single day.'
+        rows = requirement_evidence(text, [])['requirements']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['category'], 'unspecified')

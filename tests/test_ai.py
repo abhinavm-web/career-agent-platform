@@ -58,11 +58,11 @@ class AITests(unittest.TestCase):
                 with self.assertRaises(ValueError): ai.resume_fact_suggestions(route, resume, consent)
             complete.assert_not_called()
             result = ai.resume_fact_suggestions('local', resume, True)
-        self.assertEqual(json.loads(complete.call_args.args[1]), {'resume_text': resume})
+        self.assertEqual(json.loads(complete.call_args.args[1])['resume_text'], resume)
         self.assertEqual(result['suggestions'], output['suggestions'])
         self.assertIn('does not establish truth', result['notice'])
         self.assertNotIn('demo@example.invalid', json.dumps(result))
-        self.assertEqual(complete.call_args.kwargs['system'], ai.RESUME_SYSTEM)
+        self.assertTrue(complete.call_args.kwargs['system'].startswith(ai.RESUME_SYSTEM))
 
     def test_resume_suggestions_reject_invented_quotes_categories_and_oversize(self):
         resume = 'Built a fictional Python dashboard.'
@@ -76,6 +76,27 @@ class AITests(unittest.TestCase):
         with patch('career_agent.ai.complete') as complete, self.assertRaises(ValueError):
             ai.resume_fact_suggestions('local', 'x' * 20001, True)
         complete.assert_not_called()
+
+    def test_resume_source_ids_resolve_verbatim_and_unknown_or_repeated_ids_fail(self):
+        resume = 'EXPERIENCE\nBuilt a fictional Python dashboard.'
+        with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [{'excerpt_id': '2', 'section': 'experience'}]})) as complete:
+            result = ai.resume_fact_suggestions('local', resume, True)
+        self.assertEqual(result['suggestions'], [{'quote': 'Built a fictional Python dashboard.', 'section': 'experience'}])
+        self.assertEqual(complete.call_args.kwargs['json_schema']['properties']['suggestions']['items']['properties']['excerpt_id']['enum'], ['1', '2'])
+        for rows in ([{'excerpt_id': '999', 'section': 'experience'}], [{'excerpt_id': '2', 'section': 'experience'}] * 2):
+            with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': rows})), self.assertRaises(ValueError):
+                ai.resume_fact_suggestions('local', resume, True)
+
+    def test_source_whitespace_is_recovered_but_metrics_and_wording_are_not_changed(self):
+        source = 'Reduced manual review from 70% to 20% with\n  a fictional workflow.'
+        quote = 'Reduced manual review from 70% to 20% with a fictional workflow.'
+        self.assertEqual(ai.source_excerpt(source, quote, 1000), source)
+        for bad in (quote.replace('20%', '10%'), quote.replace('manual review', 'costs')):
+            with self.assertRaises(ValueError): ai.source_excerpt(source, bad, 1000)
+        output = {'suggestions': [{'quote': quote, 'section': 'experience'}]}
+        with patch('career_agent.ai.complete', return_value=json.dumps(output)):
+            result = ai.resume_fact_suggestions('local', source, True)
+        self.assertEqual(result['suggestions'][0]['quote'], source)
 
     def test_tailoring_suggestions_are_cited_but_never_auto_accepted(self):
         output = {'suggestions': [{'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Fictional proposed wording.'}]}
@@ -92,7 +113,16 @@ class AITests(unittest.TestCase):
         schema = complete.call_args.kwargs['json_schema']
         item = schema['properties']['suggestions']['items']['properties']
         self.assertEqual(item['fact_id']['enum'], ['experience-01'])
-        self.assertEqual(item['job_quote']['enum'], [self.job.description])
+        self.assertEqual(item['excerpt_id']['enum'], ['1'])
+
+    def test_tailoring_resolves_source_ids_and_preserves_complete_fact(self):
+        row = {'fact_id': 'experience-01', 'excerpt_id': '1', 'wording': 'Unsupported rewrite.'}
+        with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [row]})):
+            result = ai.tailoring_suggestions(self.job, self.bank, 'local', True)
+        self.assertEqual(result['suggestions'][0]['job_quote'], self.job.description)
+        self.assertEqual(result['suggestions'][0]['wording'], self.bank.public_claims()['experience-01'])
+        with patch('career_agent.ai.complete', return_value=json.dumps({'suggestions': [{**row, 'excerpt_id': '999'}]})), self.assertRaises(ValueError):
+            ai.tailoring_suggestions(self.job, self.bank, 'local', True)
 
     def test_tailoring_rejects_invented_citations_and_schema(self):
         row = {'fact_id': 'experience-01', 'job_quote': 'Python', 'wording': 'Suggested wording'}
@@ -165,8 +195,8 @@ class AITests(unittest.TestCase):
         schema = complete.call_args.kwargs['json_schema']
         row = schema['properties']['requirements']['items']
         self.assertEqual(row['properties']['fact_ids']['items']['enum'], ['experience-01'])
-        self.assertEqual(row['properties']['quote']['enum'], [self.job.description])
-        self.assertEqual(set(row['required']), {'quote', 'fact_ids', 'reason'})
+        self.assertEqual(row['properties']['excerpt_id']['enum'], ['1'])
+        self.assertEqual(set(row['required']), {'excerpt_id', 'fact_ids', 'reason'})
         self.assertFalse(row['additionalProperties'])
         self.assertIn('1 preselected posting excerpt(s)', result['notice'])
         self.assertIn('not a complete requirements list', result['notice'])
@@ -182,7 +212,7 @@ class AITests(unittest.TestCase):
         job = replace(self.job, description=description)
         with patch('career_agent.ai.complete', return_value='{"requirements":[]}') as complete:
             result = ai.analyze(job, self.bank, 'local', True)
-        self.assertEqual(len(complete.call_args.kwargs['json_schema']['properties']['requirements']['items']['properties']['quote']['enum']), 100)
+        self.assertEqual(len(complete.call_args.kwargs['json_schema']['properties']['requirements']['items']['properties']['excerpt_id']['enum']), 100)
         self.assertIn('100 preselected posting excerpt(s)', result['notice'])
         self.assertIn('lines beyond the limit', result['notice'])
         with patch('career_agent.ai.complete', return_value='{"suggestions":[]}'):
@@ -197,6 +227,15 @@ class AITests(unittest.TestCase):
                    'x' * 32001]
         for raw in invalid:
             with self.subTest(raw=raw[:70]), patch('career_agent.ai.complete', return_value=raw), self.assertRaises(ValueError):
+                ai.analyze(self.job, self.bank, 'local', True)
+
+    def test_analysis_source_ids_keep_exact_evidence_and_reject_unknown_ids(self):
+        row = {'excerpt_id': '1', 'fact_ids': ['experience-01'], 'reason': 'Review relevance.'}
+        with patch('career_agent.ai.complete', return_value=json.dumps({'requirements': [row]})):
+            result = ai.analyze(self.job, self.bank, 'local', True)
+        self.assertEqual(result['requirements'][0]['quote'], self.job.description)
+        for rows in ([{**row, 'excerpt_id': '999'}],):
+            with patch('career_agent.ai.complete', return_value=json.dumps({'requirements': rows})), self.assertRaises(ValueError):
                 ai.analyze(self.job, self.bank, 'local', True)
 
     def test_missing_evidence_is_unknown(self):
@@ -376,6 +415,28 @@ class SDKContracts(unittest.TestCase):
                 self.assertIn('no result was accepted', str(error.exception))
                 self.assertNotIn('private', str(error.exception))
                 self.assertEqual(len(seen), 1)
+
+    def test_anthropic_structured_output_accepts_text_after_thinking_only(self):
+        import httpx
+        calls = []
+        def handler(request):
+            calls.append(json.loads(request.content))
+            return httpx.Response(200, json={'id': 'msg_fictional', 'type': 'message', 'role': 'assistant',
+                'model': 'fictional', 'content': [{'type': 'thinking', 'thinking': 'private internal content', 'signature': 'fictional'},
+                    {'type': 'redacted_thinking', 'data': 'private encrypted content'}, {'type': 'text', 'text': '{"requirements":[]}'}],
+                'stop_reason': 'end_turn', 'stop_sequence': None, 'usage': {'input_tokens': 1, 'output_tokens': 1}})
+        schema = {'type': 'object', 'properties': {'requirements': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 20}},
+                  'required': ['requirements'], 'additionalProperties': False}
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'fictional-key'}), \
+                patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler), trust_env=False)):
+            result = ai.complete({'provider': 'anthropic', 'model': 'fictional'}, 'fictional prompt', json_schema=schema)
+        self.assertEqual(result, '{"requirements":[]}')
+        self.assertNotIn('private', result)
+        self.assertEqual(calls[0]['output_config']['format']['type'], 'json_schema')
+        transformed = calls[0]['output_config']['format']['schema']
+        self.assertFalse(transformed['additionalProperties'])
+        self.assertNotIn('maxItems', transformed['properties']['requirements'])
+        self.assertEqual(schema['properties']['requirements']['maxItems'], 20)
 
     def test_anthropic_rejects_mixed_text_and_tool_blocks_even_on_end_turn(self):
         import httpx

@@ -118,3 +118,14 @@ class DocumentRevisionTests(unittest.TestCase):
             created = self.call('POST', self.endpoint(), {**self.request(parent), 'fresh': True})
             self.assertEqual(created.status_code, 200, created.text)
             self.assertIn(fact['id'], json.loads(complete.call_args.args[1])['verified_facts'])
+
+    def test_incomplete_requirement_parse_cannot_claim_coverage_target_met(self):
+        description = 'Required skills:\n- Python\n**Specialized Role Requirements**\n- Novel expertise'
+        with Store(self.db) as store: store.correct_description(self.job.id, description, 0, 'Fictional source')
+        with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)):
+            path = self.endpoint()
+            revision = self.call('POST', path, self.request()).json()['revisions'][0]
+            self.assertTrue(revision['requirements_truncated'])
+            result = self.call('POST', path + '/' + str(revision['id']) + '/review', {'acknowledged': True, 'coverage': [0]})
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertFalse(result.json()['revisions'][0]['coverage']['target_met'])
