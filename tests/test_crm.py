@@ -40,6 +40,40 @@ class CRMStoreTests(unittest.TestCase):
         self.store.add_jobs([self.job, self.second])
         self.crm = ApplicationCRM(self.store)
 
+    def test_tracker_archive_hides_board_and_both_restore_paths_preserve_history(self):
+        self.crm.change_stage(self.job.id, 'archived', 'Candidate decision')
+        self.assertNotIn(self.job.id, [j.id for j in self.store.list_jobs()])
+        self.assertEqual(self.store.archive_state(self.job.id)['reason'], 'tracker')
+        self.crm.change_stage(self.job.id, 'shortlisted')
+        self.assertIn(self.job.id, [j.id for j in self.store.list_jobs()])
+        self.crm.change_stage(self.job.id, 'archived')
+        with self.store.connection: self.store.restore_job(self.job.id)
+        self.assertEqual(self.crm.details(self.job.id)['stage'], 'saved')
+        self.assertEqual(len(self.crm.stage_history(self.job.id)), 4)
+        ApplicationCRM(self.store)
+        self.assertIsNone(self.store.archive_state(self.job.id))
+
+    def test_legacy_tracker_archives_backfill_once_and_preserve_submission(self):
+        with self.store.connection:
+            self.store.connection.execute("INSERT INTO crm_stage_events(job_id,stage) VALUES(?,'archived')", (self.job.id,))
+        ApplicationCRM(self.store)
+        self.assertIsNotNone(self.store.archive_state(self.job.id))
+        with self.store.connection: self.store.restore_job(self.job.id)
+        ApplicationCRM(self.store)
+        self.assertIsNone(self.store.archive_state(self.job.id))
+        self.store.stage(self.second.id)
+        self.store.confirm(self.second.id, 'fictional-receipt', attested=True)
+        with self.store.connection: self.store.archive_job(self.second.id, 'expired')
+        self.assertEqual(self.crm.details(self.second.id)['stage'], 'applied')
+        self.assertEqual(self.crm.summary()['stages']['applied'], 1)
+
+    def test_board_archive_is_visible_in_tracker_and_restorable_from_tracker(self):
+        with self.store.connection: self.store.archive_job(self.job.id, 'expired')
+        self.assertEqual(self.crm.details(self.job.id)['stage'], 'archived')
+        self.assertEqual(self.crm.summary()['stages']['archived'], 1)
+        self.crm.change_stage(self.job.id, 'saved')
+        self.assertIsNone(self.store.archive_state(self.job.id))
+
     def test_followup_pages_include_all_open_and_job_history_without_overlap(self):
         tasks = [self.crm.add_followup(self.job.id, f'Task {i:03d}', '2026-12-01') for i in range(105)]
         self.crm.update_followup(tasks[0]['followup_id'], complete=True)

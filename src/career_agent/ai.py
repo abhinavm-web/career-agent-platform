@@ -156,11 +156,11 @@ def test_route(route_name, acknowledged=False):
             'notice': 'The provider returned a response to a synthetic test. This does not verify output quality, privacy settings, or future availability.'}
 
 
-def _excerpt_scope_notice(route, excerpts):
+def _excerpt_scope_notice(route, excerpts, *, indexed=False):
     """Explain the actual citation constraint, not the model's understanding."""
-    if route['provider'] not in ('ollama', 'lmstudio') or not excerpts:
+    if not excerpts or (not indexed and route['provider'] not in ('ollama', 'lmstudio', 'anthropic')):
         return ''
-    provider = 'Ollama' if route['provider'] == 'ollama' else 'LM Studio'
+    provider = {'ollama': 'Ollama', 'lmstudio': 'LM Studio', 'anthropic': 'Anthropic'}.get(route['provider'], route['provider'])
     return (f' {provider} was asked to select citations from {len(excerpts)} preselected posting excerpt(s). '
             'Other text may not be citable, including headings, long lines and lines beyond the limit. '
             'Review the complete posting; this is not a complete requirements list.')
@@ -389,18 +389,20 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
         # Ignore ambient proxies; local requests never leave through a proxy.
         with closing(_transport()) as transport:
             if provider == 'anthropic':
-                from anthropic import Anthropic
+                from anthropic import Anthropic, transform_schema
                 with Anthropic(api_key=_key(route), base_url='https://api.anthropic.com',
                                http_client=transport, max_retries=0) as client:
                     r = client.messages.create(model=route['model'], max_tokens=maximum,
                         system=system, messages=[{'role': 'user', 'content': prompt}],
-                        **({'thinking': {'type': 'disabled'}} if route.get('thinking_disabled') else {}))
+                        **({'thinking': {'type': 'disabled'}} if route.get('thinking_disabled') else {}),
+                        **({'output_config': {'format': {'type': 'json_schema', 'schema': transform_schema(json_schema)}}}
+                           if json_schema is not None else {}))
                 if r.stop_reason != 'end_turn':
                     raise _IncompleteResponse()
                 if (getattr(r, 'role', None) != 'assistant' or not isinstance(r.content, list)
-                        or not all(getattr(block, 'type', None) == 'text' for block in r.content)):
+                        or not all(getattr(block, 'type', None) in {'text', 'thinking', 'redacted_thinking'} for block in r.content)):
                     raise _InvalidCompletion()
-                return _completion_text([getattr(block, 'text', None) for block in r.content], getattr(r, 'model', None))
+                return _completion_text([getattr(block, 'text', None) for block in r.content if block.type == 'text'], getattr(r, 'model', None))
             from openai import OpenAI
             with OpenAI(api_key=_key(route), base_url=route['base_url'],
                         http_client=transport, max_retries=0) as client:
@@ -424,6 +426,19 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
         raise ValueError(_provider_error_message(error)) from None
 
 
+def source_excerpt(source, quote, maximum):
+    """Recover a contiguous source span; tolerate whitespace, never wording changes."""
+    if not isinstance(quote, str) or not quote.strip() or len(quote) > maximum:
+        raise ValueError('Invalid source excerpt')
+    if quote in source:
+        return quote
+    tokens = quote.strip().split()
+    match = re.search(r'\s+'.join(re.escape(token) for token in tokens), source)
+    if not match or len(match.group()) > maximum:
+        raise ValueError('Excerpt does not match the source')
+    return match.group()
+
+
 def resume_fact_suggestions(route_name, resume_text, acknowledged=False):
     """Suggest verbatim résumé excerpts and categories; never save or verify them."""
     from .candidate import SECTIONS
@@ -434,19 +449,24 @@ def resume_fact_suggestions(route_name, resume_text, acknowledged=False):
         raise ValueError('Choose a configured AI route')
     if not isinstance(resume_text, str) or not resume_text.strip() or len(resume_text) > 20000:
         raise ValueError('Résumé text must contain 1–20,000 characters')
-    prompt = json.dumps({'resume_text': resume_text}, ensure_ascii=False)
-    if len(prompt) > 32000:
-        raise ValueError('AI input exceeds 32,000 characters; shorten the résumé text explicitly')
     lines = list(dict.fromkeys(line.strip() for line in resume_text.splitlines()
                               if 8 <= len(line.strip()) <= 1000))[:100]
+    excerpts = {str(index + 1): line for index, line in enumerate(lines)}
+    prompt = json.dumps({'resume_text': resume_text, 'source_excerpts': excerpts}, ensure_ascii=False)
+    if len(prompt) > 48000:
+        raise ValueError('AI input exceeds 48,000 characters; shorten the resume text explicitly')
     schema = None
-    if lines:
+    system = RESUME_SYSTEM
+    if excerpts:
+        # Short source IDs avoid forcing the model to regenerate long enum strings.
+        # The application resolves every selection to the unchanged source text.
+        system = RESUME_SYSTEM + '\nWhen source_excerpts are supplied, return excerpt_id and section instead of quote and section. Select each excerpt_id at most once; aim for 8-12 useful excerpts, at most 20. Do not select headings, partial sentences, names or contact details.'
         schema = {'type': 'object', 'properties': {'suggestions': {'type': 'array', 'maxItems': 20,
-            'items': {'type': 'object', 'properties': {'quote': {'type': 'string', 'enum': lines},
+            'items': {'type': 'object', 'properties': {'excerpt_id': {'type': 'string', 'enum': list(excerpts)},
                 'section': {'type': 'string', 'enum': list(SECTIONS)}},
-                'required': ['quote', 'section'], 'additionalProperties': False}}},
+                'required': ['excerpt_id', 'section'], 'additionalProperties': False}}},
             'required': ['suggestions'], 'additionalProperties': False}
-    raw = complete(route, prompt, system=RESUME_SYSTEM, json_schema=schema)
+    raw = complete(route, prompt, system=system, json_schema=schema)
     try:
         if not isinstance(raw, str) or len(raw) > 32000:
             raise ValueError()
@@ -458,10 +478,17 @@ def resume_fact_suggestions(route_name, resume_text, acknowledged=False):
         if not isinstance(rows, list) or len(rows) > 20:
             raise ValueError()
         seen = set()
-        for row in rows:
+        for index, row in enumerate(rows):
+            if isinstance(row, dict) and set(row) == {'excerpt_id', 'section'}:
+                excerpt_id = row['excerpt_id']
+                if not isinstance(excerpt_id, str) or excerpt_id not in excerpts:
+                    raise ValueError()
+                row = {'quote': excerpts[excerpt_id], 'section': row['section']}
+                rows[index] = row
             if not isinstance(row, dict) or set(row) != {'quote', 'section'}:
                 raise ValueError()
-            quote, section = row['quote'], row['section']
+            quote, section = source_excerpt(resume_text, row['quote'], 1000), row['section']
+            row['quote'] = quote
             if (not isinstance(quote, str) or len(quote) > 1000 or len(quote.strip()) < 8 or quote not in resume_text
                     or not isinstance(section, str) or section not in SECTIONS or quote in seen):
                 raise ValueError()
@@ -523,17 +550,24 @@ def analyze(job, bank, route_name, acknowledged=False):
         ids_schema['items']['enum'] = list(claims)
     excerpts = list(dict.fromkeys(line.strip() for line in job.description.splitlines()
                                   if line.strip() and len(line.strip()) <= 2000 and not line.strip().endswith(':')))[:100]
-    quote_schema = {'type': 'string', 'minLength': 1, 'maxLength': 2000}
+    source_excerpts = {str(index + 1): line for index, line in enumerate(excerpts)}
+    quote_key = 'excerpt_id' if excerpts else 'quote'
+    quote_schema = {'type': 'string', 'enum': list(source_excerpts)} if excerpts else {'type': 'string', 'minLength': 1, 'maxLength': 2000}
+    system = SYSTEM
     if excerpts:
-        quote_schema['enum'] = excerpts
+        payload['source_excerpts'] = source_excerpts
+        prompt = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if len(prompt) > 48000:
+            raise ValueError('AI input with source excerpts exceeds 48,000 characters; shorten the posting or fact bank explicitly')
+        system += '\nWhen source_excerpts are supplied, return excerpt_id instead of quote, selecting each source ID at most once. Aim for 8-15 important requirements; at most 20. The application resolves the exact quote from its source ID.'
     schema = {'type': 'object', 'properties': {'requirements': {'type': 'array', 'maxItems': 20,
               'items': {'type': 'object', 'properties': {
-                  'quote': quote_schema,
+                  quote_key: quote_schema,
                   'fact_ids': ids_schema,
                   'reason': {'type': 'string', 'minLength': 1, 'maxLength': 1500}},
-                  'required': ['quote', 'fact_ids', 'reason'], 'additionalProperties': False}}},
+                  'required': [quote_key, 'fact_ids', 'reason'], 'additionalProperties': False}}},
               'required': ['requirements'], 'additionalProperties': False}
-    raw = complete(route, prompt, json_schema=schema)
+    raw = complete(route, prompt, system=system, json_schema=schema)
     try:
         if not isinstance(raw, str) or len(raw) > 32000:
             raise ValueError()
@@ -546,10 +580,17 @@ def analyze(job, bank, route_name, acknowledged=False):
         rows = result['requirements']
         if not isinstance(rows, list) or len(rows) > 20:
             raise ValueError()
-        for row in rows:
+        for index, row in enumerate(rows):
+            if isinstance(row, dict) and set(row) == {'excerpt_id', 'fact_ids', 'reason'}:
+                excerpt_id = row['excerpt_id']
+                if not isinstance(excerpt_id, str) or excerpt_id not in source_excerpts:
+                    raise ValueError()
+                row = {'quote': source_excerpts[excerpt_id], 'fact_ids': row['fact_ids'], 'reason': row['reason']}
+                rows[index] = row
             if not isinstance(row, dict) or set(row) != {'quote', 'fact_ids', 'reason'}:
                 raise ValueError()
-            quote, ids, reason = row['quote'], row['fact_ids'], row['reason']
+            quote, ids, reason = source_excerpt(job.description, row['quote'], 2000), row['fact_ids'], row['reason']
+            row['quote'] = quote
             if not isinstance(quote, str) or not quote.strip() or len(quote) > 2000 or quote not in job.description:
                 raise ValueError()
             if not isinstance(ids, list) or not all(isinstance(i, str) and i in claims for i in ids) or len(ids) != len(set(ids)):
@@ -561,10 +602,10 @@ def analyze(job, bank, route_name, acknowledged=False):
     except (ValueError, TypeError):
         raise ValueError('AI output failed evidence/schema validation; no result accepted') from None
     return {'job_id': job.id, 'route': route_name, 'provider': route['provider'], 'model': route['model'], 'reported_model': getattr(raw, 'reported_model', None),
-            'observed_at': datetime.now(timezone.utc).isoformat(), 'prompt_version': 1,
+            'observed_at': datetime.now(timezone.utc).isoformat(), 'prompt_version': 2,
             'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(), 'requirements': rows,
             'notice': ('AI suggestions only. Exact quotes and fact IDs were checked; semantic relevance still needs human review. No eligibility determination or application changes.'
-                       + _excerpt_scope_notice(route, excerpts))}
+                       + _excerpt_scope_notice(route, excerpts, indexed=True))}
 
 
 def sample_inputs():
@@ -617,14 +658,21 @@ def tailoring_suggestions(job, bank, route_name, acknowledged=False):
     if not excerpts and len(job.description) <= 2000:
         excerpts = [job.description]
     schema = None
+    source_excerpts = {str(index + 1): line for index, line in enumerate(excerpts)}
+    system = TAILOR_SYSTEM
     if excerpts:
+        prompt = json.dumps({'job': {'title': job.title, 'description': job.description},
+                             'verified_facts': claims, 'source_excerpts': source_excerpts}, ensure_ascii=False, sort_keys=True)
+        if len(prompt) > 48000:
+            raise ValueError('AI input with source excerpts exceeds 48,000 characters; shorten the posting or fact bank explicitly')
+        system += '\nWhen source_excerpts are supplied, return excerpt_id instead of job_quote. Select an exact source ID for each fact; the application resolves the original quote. Aim for 5-8 relevant facts, at most 12.'
         schema = {'type': 'object', 'properties': {'suggestions': {'type': 'array',
             'maxItems': min(12, len(claims)), 'items': {'type': 'object', 'properties': {
                 'fact_id': {'type': 'string', 'enum': list(claims)},
-                'job_quote': {'type': 'string', 'enum': excerpts}, 'wording': {'type': 'string'}},
-                'required': ['fact_id', 'job_quote', 'wording'], 'additionalProperties': False}}},
+                'excerpt_id': {'type': 'string', 'enum': list(source_excerpts)}, 'wording': {'type': 'string'}},
+                'required': ['fact_id', 'excerpt_id', 'wording'], 'additionalProperties': False}}},
             'required': ['suggestions'], 'additionalProperties': False}
-    raw = complete(route, prompt, system=TAILOR_SYSTEM, json_schema=schema)
+    raw = complete(route, prompt, system=system, json_schema=schema)
     try:
         if not isinstance(raw, str) or len(raw) > 32000:
             raise ValueError()
@@ -636,10 +684,17 @@ def tailoring_suggestions(job, bank, route_name, acknowledged=False):
         if not isinstance(rows, list) or len(rows) > 12:
             raise ValueError()
         seen = set()
-        for row in rows:
+        for index, row in enumerate(rows):
+            if isinstance(row, dict) and set(row) == {'fact_id', 'excerpt_id', 'wording'}:
+                excerpt_id = row['excerpt_id']
+                if not isinstance(excerpt_id, str) or excerpt_id not in source_excerpts:
+                    raise ValueError()
+                row = {'fact_id': row['fact_id'], 'job_quote': source_excerpts[excerpt_id], 'wording': row['wording']}
+                rows[index] = row
             if not isinstance(row, dict) or set(row) != {'fact_id', 'job_quote', 'wording'}:
                 raise ValueError()
-            fact_id, quote, wording = row['fact_id'], row['job_quote'], row['wording']
+            fact_id, quote, wording = row['fact_id'], source_excerpt(job.description, row['job_quote'], 2000), row['wording']
+            row['job_quote'] = quote
             if not isinstance(fact_id, str) or fact_id not in claims or fact_id in seen:
                 raise ValueError()
             if not isinstance(quote, str) or not quote.strip() or len(quote) > 2000 or quote not in job.description:
@@ -658,4 +713,4 @@ def tailoring_suggestions(job, bank, route_name, acknowledged=False):
             'observed_at': datetime.now(timezone.utc).isoformat(), 'input_sha256': hashlib.sha256(prompt.encode()).hexdigest(),
             'suggestions': rows,
             'notice': ('Suggestions use complete source facts to preserve context. Their relevance to the job is not verified. Valid fact IDs, exact job quotes and an absence of warnings do not prove the rewrite is accurate. Review every claim and verify it separately before using it.'
-                       + _excerpt_scope_notice(route, excerpts))}
+                       + _excerpt_scope_notice(route, excerpts, indexed=True))}

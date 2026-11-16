@@ -88,6 +88,8 @@ def h1b_policy(description: str, need: str = 'any') -> dict:
         value = ' '.join(sentence.lower().split())
         if re.search(r'\b(?:u\.?s\.? citizens? only|(?:must be|requires?) (?:a )?(?:u\.?s\.? citizen|citizenship)|citizenship (?:is )?required)\b', value):
             restriction.append(sentence)
+        # Benefits/event sponsorship is unrelated to employment-visa policy.
+        value = re.sub(r'\bsponsor(?:ed)?\s+(?:benefit(?:s| programs?)?|events?|conferences?|training|retirement(?: plans?)?|health(?:care| insurance)?|insurance|401\s*\(?k\)?)\b', '', value)
         if not re.search(r'sponsor|h-?1b(?!1)', value):
             continue
         if re.search(r'h-?1b1|e-?3\b', value) and not re.search(r'h-?1b(?!1)', value):

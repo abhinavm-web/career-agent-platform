@@ -143,6 +143,17 @@ class ApplicationCRM:
                 ON crm_followup_events(followup_id, action);
             """
         )
+        self._backfill_archives()
+
+    def _backfill_archives(self):
+        # Older tracker archives predate board archives. Preserve restored records.
+        with self.conn:
+            self.conn.execute("""INSERT INTO job_archives(job_id,reason,evidence_json,archived_at)
+                SELECT e.job_id,'tracker','{}',e.created_at FROM crm_stage_events e
+                WHERE e.stage='archived'
+                AND e.event_id=(SELECT MAX(n.event_id) FROM crm_stage_events n WHERE n.job_id=e.job_id)
+                AND NOT EXISTS (SELECT 1 FROM job_archives a WHERE a.job_id=e.job_id)
+                AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id=e.job_id AND a.stage='submitted')""")
 
     def _stage(self, job_id: str) -> str:
         self.store.get_job(job_id)
@@ -153,6 +164,8 @@ class ApplicationCRM:
         submitted = self.store.stage_of(job_id) == "submitted"
         if submitted:
             return row["stage"] if row and row["stage"] in POST_APPLICATION else "applied"
+        if self.store.archive_state(job_id):
+            return "archived"
         return row["stage"] if row and row["stage"] in PRE_APPLICATION else "discovered"
 
     def allowed(self, job_id: str) -> tuple[str, ...]:
@@ -174,6 +187,10 @@ class ApplicationCRM:
                 "INSERT INTO crm_stage_events(job_id,stage,note) VALUES(?,?,?)",
                 (job_id, stage, comment),
             )
+            if stage == 'archived':
+                self.store.archive_job(job_id, 'tracker', evidence={'note': comment})
+            elif current == 'archived':
+                self.store.restore_job(job_id)
             self.conn.commit()
         except Exception:
             self.conn.rollback()
@@ -491,6 +508,7 @@ class ApplicationCRM:
             "AND NOT EXISTS(SELECT 1 FROM crm_followup_events e WHERE e.followup_id=f.followup_id AND e.action='cancelled')) AS has_pending_followup, "
             "COALESCE((SELECT priority FROM crm_priority_events WHERE job_id=j.job_id "
             "ORDER BY event_id DESC LIMIT 1),'none') AS priority "
+            " , EXISTS(SELECT 1 FROM job_archives ar WHERE ar.job_id=j.job_id AND ar.restored_at IS NULL) AS archived "
             "FROM jobs j LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY j.rowid DESC"
         ).fetchall()
         counts: dict[str, int] = {}
@@ -501,6 +519,8 @@ class ApplicationCRM:
             submitted = job["application_stage"] == "submitted"
             valid_stages = POST_APPLICATION if submitted else PRE_APPLICATION
             stage = job["crm_stage"] if job["crm_stage"] in valid_stages else ("applied" if submitted else "discovered")
+            if not submitted and job["archived"]:
+                stage = "archived"
             job_stages.append({
                 "job_id": job["job_id"], "stage": stage, "title": job["title"],
                 "company": job["company"], "location": job["location"],

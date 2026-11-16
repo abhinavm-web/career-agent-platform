@@ -12,13 +12,13 @@ To inspect a real model's tailoring responses without sending personal data, run
 
 The same review is available in **AI analysis → Review fictional résumé tailoring cases**. Open the preview, select a route and explicitly consent before sending up to three requests. Results show the source, job excerpt, proposed wording and any warnings; nothing is saved to the career profile. Partial results and limits are displayed, and changing the route invalidates consent. The selected provider and local limits have the same implications as the CLI.
 
-For Ollama, requirement analysis and tailoring requests use JSON schemas constrained to supplied fact IDs and, where possible, the first 100 distinct non-heading posting lines. The line restriction may omit requirements beyond those lines; inspect the original posting. The same independent validation applies to every provider, including exact excerpt checks. Small local models can still return inaccurate wording, irrelevant excerpts or fail to follow the schema; a successful response is not a quality guarantee. Some local models may simply repeat the source fact.
+Requirement analysis asks models to select short source IDs from up to 100 distinct posting lines, then resolves those IDs to unchanged source text. This keeps long excerpts out of schema enums, avoiding provider schema-compilation limits. Ollama, LM Studio and Anthropic receive structured-output schemas; all providers undergo independent citation validation. Tailoring schemas constrain supplied fact IDs and posting excerpts. The line restriction may omit requirements beyond those lines; inspect the original posting. The same independent validation applies to every provider, including exact excerpt checks. Whitespace-only differences are resolved back to the original contiguous source span; changes to words, metrics or punctuation are rejected. Small local models can still return inaccurate wording, irrelevant excerpts or fail to follow the schema; a successful response is not a quality guarantee. Some local models may simply repeat the source fact.
 
 The LangGraph application workflow remains deterministic and now uses durable SQLite checkpoints through the dashboard and CLI `workflow` command. This AI analyst is independently opt-in; it does not silently add model calls to scheduled discovery or application drafting. See [automation and durable runs](AUTOMATION.md).
 
 Career profile also offers a career assistant. Each request requires a selected route and explicit consent to send the question and current session's conversation to that provider; sharing candidate-verified fact statements is a separate opt-in. Source notes and candidate name are not included as separate fields, though conversation and facts can themselves contain private information. Answers are unverified advice and cannot edit the profile. Up to six exchanges are kept in the browser until cleared or the page is reloaded; they are not persisted. Changing providers sends the existing conversation to the newly selected provider on the next consented request.
 
-In **Career profile → Import and review résumé text**, the optional **Suggest structured facts with AI** action sends the entire visible résumé text (up to 20,000 characters) to the chosen route only after separate consent. Review and remove contact, immigration or other sensitive information before consenting; a local model server may itself forward requests. The model proposes exact verbatim excerpts and categories; schema and exact excerpt checks reject invented or altered text, but do not establish truth, relevance or correct classification. Results remain in the browser; choose an excerpt to put it into the existing fact editor, review the suggested category and add a private evidence note, save unverified, then separately verify it. Changing the text or route discards outdated suggestions. Nothing is saved or verified automatically. OCR for scanned PDFs remains unsupported.
+In **Career profile → Import and review résumé text**, the optional **Suggest structured facts with AI** action sends the entire visible résumé text (up to 20,000 characters) to the chosen route only after separate consent. Review and remove contact, immigration or other sensitive information before consenting; a local model server may itself forward requests. The model selects numbered source passages and proposes categories; the app resolves every selection to the original text. Duplicate or unknown source IDs are rejected; schema and exact excerpt checks reject invented or altered text, but do not establish truth, relevance or correct classification. Results remain in the browser; choose an excerpt to put it into the existing fact editor, review the suggested category and add a private evidence note, save unverified, then separately verify it. Changing the text or route discards outdated suggestions. Nothing is saved or verified automatically. OCR for scanned PDFs remains unsupported.
 
 ## Setup
 
@@ -81,9 +81,9 @@ Use `CAREER_AGENT_AI_CONFIG` to point to another private JSON file. Unknown fiel
 ## Reliability and limits
 
 - One chosen route per call; no retries, cross-provider fallback, tools, web browsing or model-triggered actions. This avoids unexpected duplicate charges or data destinations. Failures remain failures.
-- Input cap: 32,000 characters, with explicit rejection instead of silent truncation. Output cap: configurable 128–4096 tokens. SDK connection/read timeouts: 10/60 seconds (inactivity bounds, not a strict wall-clock deadline). One dashboard analysis at a time per server process.
+- Base analysis input cap: 32,000 characters; numbered source maps may expand analysis or resume-extraction payloads to 48,000 characters, with explicit rejection instead of silent truncation. Output cap: configurable 128–4096 tokens. SDK connection/read timeouts: 10/60 seconds (inactivity bounds, not a strict wall-clock deadline). One dashboard analysis at a time per server process.
 - Anthropic, Azure, Ollama and LM Studio HTTP responses (including errors) are bounded to 1 MiB before SDK buffering. Requests ask for identity encoding; a server that nevertheless compresses a response is rejected because compressed bytes do not bound decompressed memory. A rejected response may still have incurred provider charges. This HTTP cap does not apply to Bedrock’s separate SDK transport.
-- Completions must be nonempty assistant text of at most 32,000 characters. Bedrock and Anthropic reject unexpected non-text blocks rather than silently dropping them; OpenAI-compatible routes reject refusals and tool/function calls. Bedrock is checked after SDK parsing, not bounded during transport.
+- Completions must be nonempty assistant text of at most 32,000 characters. Anthropic accepts known thinking/redacted-thinking blocks alongside a completed text answer, but never returns their contents to the app. Tool and unknown blocks remain rejected. Bedrock rejects unexpected non-text blocks; OpenAI-compatible routes reject refusals and tool/function calls. Bedrock is checked after SDK parsing, not bounded during transport.
 - Malformed JSON, invented quotes/IDs, excess fields, incomplete generation and tool calls are rejected. Prompt injection cannot invoke tools; it can still corrupt interpretations, which need human review.
 - Keys and raw provider errors are not returned to the dashboard. Fixed diagnostic categories can indicate missing credentials, connection or timeout problems, rejected access, missing model/endpoint, rate limits, provider server errors, or incomplete responses; they are hints, not a guarantee of root cause. No app prompt logging, telemetry or remote tracing is added. Provider-side retention/logging depends on your account; do not enable SDK debug logging with real candidate data.
 - SDK contract tests use simulated transports and fictional credentials; they are not live model quality benchmarks. No paid cloud calls or installed local model inference were validated during this increment.
@@ -145,3 +145,23 @@ excerpts are deduplicated. Missing/unrecognized sections are not assumed covered
 no percentage is shown when none can be extracted, and parser limits are flagged.
 The selection and result are saved with the reviewed revision. Below-target
 exports are permitted: truthful omissions are preferable to unsupported claims.
+
+
+The Anthropic adapter requires SDK 0.125 or later and uses `output_config.format`
+with `transform_schema`. Unsupported constraints remain enforced by the app after
+completion; schema-valid output does not establish semantic accuracy. See the
+[Anthropic structured-output documentation](https://platform.claude.com/docs/en/build-with-claude/structured-outputs).
+
+The deterministic requirement comparison recognizes compound headings such as
+"Required Skills & Experience". For verified facts without saved keywords, it can
+suggest literal shared source phrases; it labels those links separately and never
+adds keywords or verifies equivalence. Unrecognized requirement headings make
+coverage incomplete and prevent reporting the 80% coverage target as met.
+
+PDF import removes standalone page counters and joins clear lowercase line
+continuations. Review the extracted text against the original PDF, especially
+role boundaries and wrapped qualifiers. Newly imported facts stay unverified;
+conflicting metrics or scope in an updated resume require candidate reconciliation.
+Tracker archiving now hides a role from the active opportunity board, and restoring
+it reopens its pre-application tracker stage. Submitted application history remains
+independent from whether the posting is archived.

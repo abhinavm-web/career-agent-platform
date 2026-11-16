@@ -171,7 +171,8 @@ class PolicyTests(unittest.TestCase):
                 self.assertEqual(h1b_policy(description)['policy'], expected)
 
     def test_generic_sponsorship_is_not_an_immigration_commitment(self):
-        for text in ('We can sponsor events.', 'Sponsorship is available for conferences.',
+        self.assertEqual(h1b_policy('We can sponsor events.')['policy'], 'unknown')
+        for text in ('Sponsorship is available for conferences.',
                      'We will sponsor.', 'We can sponsor candidates for professional events.'):
             with self.subTest(text=text):
                 result = h1b_policy(text)

@@ -221,7 +221,7 @@ class Store:
         job = self.get_job(job_id)
         if self.archive_state(job_id):
             raise ValueError('Opportunity is already archived; restore it first')
-        if reason not in ('duplicate', 'confirmed_closed', 'expired'):
+        if reason not in ('duplicate', 'confirmed_closed', 'expired', 'tracker'):
             raise ValueError('Choose a supported archive reason')
         if reason == 'duplicate':
             if not isinstance(duplicate_of, str) or duplicate_of == job_id:
@@ -247,6 +247,11 @@ class Store:
         self.get_job(job_id)
         self.connection.execute('UPDATE job_archives SET restored_at=? WHERE job_id=? AND restored_at IS NULL',
                                 (datetime.now(timezone.utc).isoformat(), job_id))
+        # A board restore must also reopen a manually archived tracker entry.
+        if self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='crm_stage_events'").fetchone():
+            latest = self.connection.execute('SELECT stage FROM crm_stage_events WHERE job_id=? ORDER BY event_id DESC LIMIT 1', (job_id,)).fetchone()
+            if latest and latest['stage'] == 'archived' and self.stage_of(job_id) != 'submitted':
+                self.connection.execute("INSERT INTO crm_stage_events(job_id,stage,note) VALUES(?,'saved','Restored from opportunity archive')", (job_id,))
 
     def possible_duplicates(self, job_id: str) -> dict:
         """Find possible same-title postings without changing either record."""

@@ -1281,3 +1281,16 @@ test("application tracker records local pipeline, contact and follow-up without 
   assert.match(harness.get("crm-detail").textContent, /Completed/);
   assert.match(harness.get("crm-detail").textContent, /Role Alpha/);
 });
+
+
+test("resume leadership and platform headings classify statements without staging headers", async () => {
+  const h = createHarness(); await flush(); await h.get("nav-profile").click();
+  h.get("resume-text").value = "SELECTED LEADERSHIP IMPACT\nLed a fictional team.\nTECHNOLOGY AND PLATFORMS\nPython and SQL\nTHOUGHT LEADERSHIP\nWrote a fictional article.";
+  h.get("resume-extract").click();
+  const options = h.get("resume-lines").children;
+  assert.equal(options.length, 3);
+  assert.match(options[0].textContent, /^Suggested experience/);
+  assert.match(options[1].textContent, /^Suggested skills/);
+  assert.match(options[2].textContent, /^Suggested projects/);
+  assert.equal(h.getWorkspace().facts.length, 0);
+});

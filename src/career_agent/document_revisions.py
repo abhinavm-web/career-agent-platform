@@ -18,7 +18,7 @@ Build a coherent new document with an evidence-backed summary and relevant secti
 Keep review notes, coverage scores, fact IDs and comments about missing requirements out of the prose.
 Absent evidence does not establish that the candidate lacks experience.
 Every resume item and cover-letter paragraph must cite one or more supplied fact IDs supporting its claims.
-Use 1-20 resume items and 1-6 cover-letter paragraphs. Do not add contact details, names or signoffs.
+Aim for 8-12 concise resume items and 2-3 cover-letter paragraphs; never exceed 20 resume items or 6 paragraphs. Do not add contact details, names or signoffs.
 The cover letter may express interest in the supplied role but must not claim employer-specific knowledge
 that is absent from the posting. These are unverified proposals for the candidate to review.'''
 
@@ -127,7 +127,7 @@ class Revisions:
         addressed = sum(value is not None for value in selections)
         document['coverage'] = {'selections': selections, 'addressed': addressed, 'total': len(quotes),
             'percent': (100 * addressed // len(quotes)) if quotes else None, 'target': 80,
-            'target_met': bool(quotes) and addressed * 100 >= len(quotes) * 80}
+            'target_met': bool(quotes) and not document.get('requirements_truncated', False) and addressed * 100 >= len(quotes) * 80}
         self.conn.execute('UPDATE ai_document_revisions SET reviewed_at=?,document_json=? WHERE revision_id=?',
                           (datetime.now(timezone.utc).isoformat(), json.dumps(document, ensure_ascii=False), revision_id))
 

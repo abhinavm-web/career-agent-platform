@@ -431,7 +431,7 @@
         const updateCoverage = () => {
           const addressed = coverageSelections.filter(select => select.value !== "").length;
           coverageStatus.textContent = quotes.length ? addressed + " of " + quotes.length + " excerpts addressed (" + Math.floor(100 * addressed / quotes.length) + "%). " +
-            (addressed * 100 >= quotes.length * 80 ? "Review target reached for these excerpts only." : "Below target. Add genuine experience or leave unmet excerpts visible.") : "Coverage unavailable: no recognizable requirement bullets. The experience interview can still explore the posting.";
+            (revision.requirements_truncated ? "Coverage is incomplete; the target cannot be established." : addressed * 100 >= quotes.length * 80 ? "Review target reached for these excerpts only." : "Below target. Add genuine experience or leave unmet excerpts visible.") : "Coverage unavailable: no recognizable requirement bullets. The experience interview can still explore the posting.";
         };
         quotes.forEach((quote, i) => {
           const label = node("label", "field", quote), select = node("select");
@@ -444,7 +444,7 @@
           label.append(select); coverageBox.append(label);
         });
         updateCoverage(); coverageBox.append(coverageStatus);
-        if (revision.requirements_truncated) coverageBox.append(node("p", "stale-warning", "Some excerpts exceeded the parser limits. This coverage is incomplete."));
+        if (revision.requirements_truncated) coverageBox.append(node("p", "stale-warning", "Some requirement sections were unrecognized or exceeded parser limits. This coverage is incomplete."));
         card.append(coverageBox);
         if (index === 0 && !revision.stale) {
           if (revision.reviewed_at) {
@@ -906,7 +906,7 @@
     }
     availability.append(node("p", "", "A listed posting is not a guarantee of current hiring or sponsorship. Checks automatically archive identity-matched postings with expired deadlines. Failed or blocked checks keep the opportunity active."));
     if (job.archive) {
-      availability.append(node("p", "", "Archived: " + ({duplicate: "confirmed duplicate", confirmed_closed: "closure confirmed by you", expired: "verified deadline passed"}[job.archive.reason] || job.archive.reason) + " · " + job.archive.archived_at));
+      availability.append(node("p", "", "Archived: " + ({duplicate: "confirmed duplicate", confirmed_closed: "closure confirmed by you", expired: "verified deadline passed", tracker: "archived in application tracker"}[job.archive.reason] || job.archive.reason) + " · " + job.archive.archived_at));
       if (job.archive.duplicate_of) availability.append(node("p", "muted", "Kept opportunity ID: " + job.archive.duplicate_of));
       availability.append(button("Restore opportunity", "button", async (event) => {
         const control = event.currentTarget; control.disabled = true;
@@ -1001,10 +1001,11 @@
           if (row.classification_note) item.append(node("p", "muted", row.classification_note));
           item.append(node("blockquote", "", row.quote));
           if (!row.suggested_facts.length) item.append(node("p", "", "No verified fact matched by keyword; evidence remains unknown."));
-          for (const fact of row.suggested_facts) item.append(node("p", "", "Potentially relevant verified fact " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));
+          for (const fact of row.suggested_facts) item.append(node("p", "", "Potentially relevant verified fact " + fact.id + ": " + fact.statement + " (" + (fact.match_basis === "shared_source_phrase" ? "shared source phrases: " : "saved keywords: ") + fact.matched_keywords.join(", ") + ")"));
           evidenceResult.append(item);
         }
-        if (result.truncated) evidenceResult.append(node("p", "", "Some content exceeded review limits; inspect the full posting."));
+        if (result.unrecognized_headings?.length) evidenceResult.append(node("p", "muted", "Unrecognized headings: " + result.unrecognized_headings.join("; ")));
+        if (result.truncated) evidenceResult.append(node("p", "", "Some requirement sections were unrecognized or exceeded review limits; inspect the full posting."));
       } catch (error) {evidenceResult.textContent = "Unable to compare requirements: " + error.message;}
       finally {evidenceButton.disabled = false;}
     });
@@ -1034,7 +1035,7 @@
           const item = node("section", "fit-evidence-item");
           item.append(node("h4", "", prompt.question), node("p", "muted", "Posting section: " + prompt.source_heading), node("blockquote", "", prompt.quote));
           if (!prompt.suggested_facts.length) item.append(node("p", "", "No verified fact was linked by keyword; consider what to clarify. This is not a qualification gap."));
-          for (const fact of prompt.suggested_facts) item.append(node("p", "", "Possible example to review · " + fact.id + ": " + fact.statement + " (shared keywords: " + fact.matched_keywords.join(", ") + ")"));
+          for (const fact of prompt.suggested_facts) item.append(node("p", "", "Possible example to review · " + fact.id + ": " + fact.statement + " (" + (fact.match_basis === "shared_source_phrase" ? "shared source phrases: " : "saved keywords: ") + fact.matched_keywords.join(", ") + ")"));
           if (prompt.additional_fact_matches) item.append(node("p", "muted", prompt.additional_fact_matches + " additional keyword-linked facts are not shown; use Compare requirements to review them."));
           prepResult.append(item);
         }
@@ -1886,7 +1887,8 @@
     try {
       await api(url, "POST", data);
       notice(message);
-      await loadCRM();
+      if (url.endsWith("/crm/stage")) await refresh(state.selectedId);
+      else await loadCRM();
     } catch (error) {
       notice(error.message, true);
     }
@@ -2339,6 +2341,7 @@
   }
 
   async function loadCRM() {
+    if (state.screen === "tracker") { state.crmDetails = null; renderCRMDetail(); }
     try {
       state.crmSummary = await api("/api/crm");
       if (state.screen !== "tracker") return;
@@ -2767,7 +2770,7 @@
       byId("resume-lines").replaceChildren();
       byId("resume-use-line").disabled = true;
       byId("resume-bulk-lines").replaceChildren(); byId("resume-bulk-save").disabled = true; byId("resume-combine").disabled = true;
-      status.textContent = "Text extracted locally. Review it, then extract lines to choose a fact.";
+      status.textContent = "Text extracted. PDF page counters and clear line wraps are normalized. Compare with your original, then choose statements to review.";
     } catch (error) { status.textContent = error.message; }
     finally { control.disabled = false; }
   });
@@ -2847,8 +2850,9 @@
   // Sections are suggestions based only on explicit headings, not inferred credentials.
   const resumeHeadings = {
     "experience": "experience", "work experience": "experience", "professional experience": "experience", "employment history": "experience",
-    "projects": "projects", "project experience": "projects",
-    "skills": "skills", "technical skills": "skills", "core skills": "skills",
+    "projects": "projects", "project experience": "projects", "thought leadership": "projects",
+    "selected leadership impact": "experience",
+    "skills": "skills", "technical skills": "skills", "core skills": "skills", "technology and platforms": "skills",
     "education": "education", "academic background": "education",
     "certifications": "certifications", "certificates": "certifications", "licenses and certifications": "certifications"
   };
