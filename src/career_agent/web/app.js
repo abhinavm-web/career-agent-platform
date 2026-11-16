@@ -448,21 +448,24 @@
         card.append(coverageBox);
         if (index === 0 && !revision.stale) {
           if (revision.reviewed_at) {
-            for (const [kind, title] of [["resume", "Download reviewed AI resume text"], ["cover_letter", "Download reviewed AI cover letter text"]]) {
-              const download = button(title, "button", async () => {
-                if (download.disabled) return;
-                download.disabled = true;
-                try {
-                  const response = await fetch("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/" + kind + ".txt", {
-                    headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"});
-                  if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Export failed"); }
-                  const url = URL.createObjectURL(await response.blob());
-                  const link = document.createElement("a"); link.href = url; link.download = kind + "-" + job.id + "-" + revision.id + ".txt";
-                  document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-                } catch (error) { status.textContent = error.message; }
-                finally { download.disabled = false; }
-              });
-              card.append(download);
+            for (const [kind, label] of [["resume", "resume"], ["cover_letter", "cover letter"]]) {
+              for (const [format, formatLabel] of [["pdf", "PDF"], ["docx", "DOCX"], ["txt", "text"]]) {
+                const title = "Download reviewed AI " + label + " " + formatLabel;
+                const download = button(title, "button", async () => {
+                  if (download.disabled) return;
+                  download.disabled = true;
+                  try {
+                    const response = await fetch("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/" + kind + "." + format, {
+                      headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"});
+                    if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Export failed"); }
+                    const url = URL.createObjectURL(await response.blob());
+                    const link = document.createElement("a"); link.href = url; link.download = kind + "-" + job.id + "-" + revision.id + "." + format;
+                    document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                  } catch (error) { status.textContent = error.message; }
+                  finally { download.disabled = false; }
+                });
+                card.append(download);
+              }
             }
           } else {
             const label = node("label", "check-label"), checked = node("input"); checked.type = "checkbox";

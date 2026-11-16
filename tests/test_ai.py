@@ -264,6 +264,13 @@ class AITests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ai.routes()
 
+    def test_config_allows_document_output_budgets_with_an_explicit_upper_bound(self):
+        for limit in (8192, 16384):
+            self.config.write_text(json.dumps({'local': self.route | {'max_tokens': limit}}))
+            self.assertEqual(ai.routes()['local']['max_tokens'], limit)
+        self.config.write_text(json.dumps({'local': self.route | {'max_tokens': 16385}}))
+        with self.assertRaises(ValueError): ai.routes()
+
     def test_input_limit_is_not_silently_truncated(self):
         from dataclasses import replace
         with patch('career_agent.ai.complete') as complete, self.assertRaises(ValueError):

@@ -36,3 +36,10 @@ profile*.json
 **/application-packet*.json
 **/packet-*.json
 **/filings-private*.csv
+
+# Private source workbooks and credential containers
+*.xlsx
+*.xls
+*.pem
+*.p12
+*.pfx

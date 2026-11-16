@@ -81,7 +81,7 @@ Use `CAREER_AGENT_AI_CONFIG` to point to another private JSON file. Unknown fiel
 ## Reliability and limits
 
 - One chosen route per call; no retries, cross-provider fallback, tools, web browsing or model-triggered actions. This avoids unexpected duplicate charges or data destinations. Failures remain failures.
-- Base analysis input cap: 32,000 characters; numbered source maps may expand analysis or resume-extraction payloads to 48,000 characters, with explicit rejection instead of silent truncation. Output cap: configurable 128–4096 tokens. SDK connection/read timeouts: 10/60 seconds (inactivity bounds, not a strict wall-clock deadline). One dashboard analysis at a time per server process.
+- Base analysis input cap: 32,000 characters; numbered source maps may expand analysis or resume-extraction payloads to 48,000 characters, with explicit rejection instead of silent truncation. Output cap: configurable 128–16384 tokens. SDK connection/read timeouts: 10/60 seconds (inactivity bounds, not a strict wall-clock deadline). One dashboard analysis at a time per server process.
 - Anthropic, Azure, Ollama and LM Studio HTTP responses (including errors) are bounded to 1 MiB before SDK buffering. Requests ask for identity encoding; a server that nevertheless compresses a response is rejected because compressed bytes do not bound decompressed memory. A rejected response may still have incurred provider charges. This HTTP cap does not apply to Bedrock’s separate SDK transport.
 - Completions must be nonempty assistant text of at most 32,000 characters. Anthropic accepts known thinking/redacted-thinking blocks alongside a completed text answer, but never returns their contents to the app. Tool and unknown blocks remain rejected. Bedrock rejects unexpected non-text blocks; OpenAI-compatible routes reject refusals and tool/function calls. Bedrock is checked after SDK parsing, not bounded during transport.
 - Malformed JSON, invented quotes/IDs, excess fields, incomplete generation and tool calls are rejected. Prompt injection cannot invoke tools; it can still corrupt interpretations, which need human review.
@@ -165,3 +165,20 @@ conflicting metrics or scope in an updated resume require candidate reconciliati
 Tracker archiving now hides a role from the active opportunity board, and restoring
 it reopens its pre-application tracker stage. Submitted application history remains
 independent from whether the posting is archived.
+
+
+## Reviewed AI document downloads
+
+A current, reviewed AI revision offers PDF, DOCX and text downloads for both the
+resume and cover letter. Exports use exactly the reviewed document text plus the
+snapshot-bound profile header; no model request occurs during export. Private
+source notes, fact IDs, prompts, coverage annotations and review warnings are
+excluded. Downloaded DOCX files remain editable outside the application.
+
+PDF rendering disables scripts and all network access. DOCX renders text as
+literal paragraphs. Exports recheck the profile, posting, review and latest
+revision after rendering: changed or superseded drafts must be reviewed again.
+These downloads are separate from the verified-fact application packet; neither
+export path submits an application or modifies candidate facts.
+
+For comprehensive AI documents, a route budget of 8,192 tokens can leave room for reasoning and a full answer. Provider model limits still apply. Truncated responses remain rejected; no partial document is saved or exported.

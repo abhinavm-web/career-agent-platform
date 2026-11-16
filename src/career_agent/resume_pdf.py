@@ -63,7 +63,11 @@ def resume_html(packet: dict) -> str:
 
 
 def resume_pdf(packet: dict) -> bytes:
-    document = resume_html(packet)
+    return html_pdf(resume_html(packet))
+
+
+def html_pdf(document: str) -> bytes:
+    """Print application-built escaped HTML with all network access disabled."""
     try:
         from playwright.sync_api import Error, sync_playwright
     except ImportError as error:

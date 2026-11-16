@@ -46,3 +46,17 @@ A workspace-generated application packet is bound to its source workspace revisi
 ## CRM contact and follow-up data
 
 Recruiter names, emails, private notes, interview/outcome status and due-date tasks are stored **only in local plaintext SQLite**. No CRM action sends external messages, contacts an employer, runs background checks or updates external calendars. The applied state is derived only from a separately attested application submission. Do not expose the local dashboard publicly or run it on a shared/untrusted computer. Hosted use needs encryption, authentication, deletion policies, audit protection and an integration-specific security review.
+
+
+## Repository privacy check
+
+Run `python scripts/check_repository_privacy.py` after staging changes. CI also
+runs it. It inspects Git's indexed bytes and rejects private data paths, source
+workbooks, document/database files and known credential forms. Reports contain
+file locations and categories, never matched values. Keep real-data tests and
+exports under ignored `.local/`; commit only fictional fixtures.
+
+This guard does not detect every secret or establish that all history, commit
+attribution, pull-request text, caches or remote copies are clean. Review those
+surfaces separately when auditing an existing public repository. Use a GitHub
+noreply address for future Git attribution when personal email privacy matters.
