@@ -68,8 +68,8 @@ def routes(path=None):
             raise ValueError('Unsupported AI provider')
         if not isinstance(item.get('model'), str) or not item['model'].strip() or len(item['model']) > 250:
             raise ValueError('Each AI route needs an explicit model or deployment ID')
-        if type(item.get('max_tokens', 1500)) is not int or not 128 <= item.get('max_tokens', 1500) <= 4096:
-            raise ValueError('AI max_tokens must be 128–4096')
+        if type(item.get('max_tokens', 1500)) is not int or not 128 <= item.get('max_tokens', 1500) <= 16384:
+            raise ValueError('AI max_tokens must be 128–16384')
         if 'daily_request_limit' in item and (type(item['daily_request_limit']) is not int or not 0 <= item['daily_request_limit'] <= 10000):
             raise ValueError('AI daily_request_limit must be an integer from 0 to 10000')
         if 'record_history' in item and type(item['record_history']) is not bool:

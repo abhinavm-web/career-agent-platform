@@ -83,6 +83,21 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         expect(panel).not_to_contain_text('Review target reached')
                         panel.get_by_label('I reviewed both AI documents', exact=False).check()
                         panel.get_by_role('button', name='Confirm AI revision for export').click()
+                        for kind, label in (('resume', 'resume'), ('cover_letter', 'cover letter')):
+                            for format in ('DOCX', 'PDF'):
+                                if format == 'PDF' and os.environ.get('CAREER_AGENT_TEST_PDF') != '1':
+                                    continue
+                                with page.expect_download() as exported:
+                                    panel.get_by_role('button', name='Download reviewed AI ' + label + ' ' + format, exact=True).click()
+                                file = Path(exported.value.path())
+                                if format == 'DOCX':
+                                    output = '\n'.join(p.text for p in Document(file).paragraphs)
+                                else:
+                                    from pypdf import PdfReader
+                                    output = '\n'.join(p.extract_text() for p in PdfReader(file).pages)
+                                self.assertIn('Delivered an AI program' if kind == 'resume' else 'My experience delivering an AI program', output)
+                                self.assertNotIn('Private fictional evidence', output)
+                                self.assertNotIn('experience-01', output)
                         with page.expect_download() as received:
                             panel.get_by_role('button', name='Download reviewed AI cover letter text').click()
                         text = Path(received.value.path()).read_text(encoding='utf-8')
