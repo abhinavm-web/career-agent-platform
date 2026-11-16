@@ -40,7 +40,7 @@ from .discovery import DiscoveryUnavailable, discover_isolated, validate_sites
 from .models import CandidateProfile, Job, canonical_url
 from .h1b import H1BResearch, validate_lca_source
 from .uscis import USCISRecords
-from .posting_checks import PostingChecks, check_posting, target as posting_target
+from .posting_checks import PostingChecks, check_posting, target as posting_target, website_target
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
 from .scoring import constraint_evidence, contains_phrase, remote_evidence, score_job, title_level_evidence
@@ -240,7 +240,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "url": job.url,
             "source": job.source,
             "discovery_observations": discovery_observations,
-            "live_check_supported": posting_target(job.url) is not None,
+            "live_check_supported": (posting_target(job.url) is not None or website_target(job.url) is not None),
             "live_check": posting_checks.latest(job.id),
             "description": job.description,
             "description_revision": store.description_revision(job.id),

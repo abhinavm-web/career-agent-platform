@@ -428,7 +428,7 @@
     const observation = node("div");
     observation.setAttribute("role", "status");
     liveObservation(observation, job.live_check);
-    const check = node("button", "Check live ATS posting");
+    const check = node("button", "Check live availability");
     check.type = "button";
     check.className = "button";
     check.disabled = !job.live_check_supported;
@@ -444,7 +444,7 @@
       catch (error) { if (observation.isConnected) observation.textContent = "Check failed: " + error.message + ". Previous saved observation is unchanged."; }
       finally { check.disabled = false; }
     });
-    card.append(node("p", job.live_check_supported ? "This contacts the public ATS for this posting. Observations become stale after 24 hours." : "Live checks support Greenhouse and Lever postings. Check this original posting manually; availability remains unknown."), check, observation);
+    card.append(node("p", job.live_check_supported ? "Checks the original website or public hiring system. No profile or résumé is sent. Observations become stale after 24 hours." : "This URL cannot be checked automatically. Open the original posting to confirm availability."), check, observation);
     return card;
   }
   async function opportunities(offset = 0) {

@@ -41,6 +41,10 @@ class Element {
     for (const child of children) child.parentElement = this;
     this.children.push(...children);
   }
+  prepend(...children) {
+    for (const child of children) child.parentElement = this;
+    this.children.unshift(...children);
+  }
   focus() { this.focused = true; }
   remove() {
     this.parentElement.children = this.parentElement.children.filter((child) => child !== this);

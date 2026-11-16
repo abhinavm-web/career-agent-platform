@@ -166,6 +166,7 @@
       if (!Number.isFinite(deadline)) return {kind: "unknown", label: "Availability unknown", detail: "The recorded application deadline is invalid or lacks a time zone; verify the posting directly."};
       if (deadline <= Date.now()) return {kind: "expired", label: "Deadline passed", detail: "The provider-reported deadline has passed since the check. Current availability is unknown; verify the posting directly."};
     }
+    if (observed.availability === "page_reachable") return {kind: "unknown", label: "Page reachable · vacancy unverified", detail: observed.reason};
     if (observed.availability === "listed") return {kind: "listed", label: "Listed at check", detail: observed.reason};
     if (observed.availability === "expired") return {kind: "expired", label: "Deadline passed", detail: observed.reason};
     return {kind: "unknown", label: "Availability unknown", detail: observed.reason || "The check was inconclusive."};
@@ -667,8 +668,8 @@
     };
     selectedAvailabilityUpdater = showAvailability;
     showAvailability();
-    availability.append(availabilityStatus);
-    if (job.live_check_supported) {
+    availability.append(availabilityStatus, safeLink("Open original posting", job.url));
+    {
       check = button("Check live availability", "button", async () => {
         if (interaction.pending) return;
         interaction.pending = true;
@@ -686,12 +687,10 @@
         }
       });
       check.disabled = interaction.pending;
-      availability.append(node("p", "", "Checks the public ATS posting. No candidate information is sent."), check);
-    } else {
-      availability.append(node("p", "", "Live checks support Greenhouse and Lever postings. Check the original posting manually."));
+      availability.append(node("p", "", "Checks the original website or its public hiring system. The saved posting URL is sent; no profile or résumé is sent."), check);
     }
     availability.append(node("p", "", "A listed posting is not a guarantee of current hiring or sponsorship."));
-    panes.overview.append(availability);
+    panes.overview.prepend(availability);
 
     const sponsor = section("Sponsorship assessment");
     sponsor.id = "job-sponsorship";
