@@ -72,3 +72,49 @@ class DocumentRevisionTests(unittest.TestCase):
             with Store(self.db) as store: store.correct_description(self.job.id, 'Changed posting.', 0, 'Fictional source')
             self.assertTrue(self.call('GET', path).json()['revisions'][0]['stale'])
             self.assertEqual(self.call('GET', path + f'/{rid}/resume.txt').status_code, 422)
+
+    def test_new_resume_omits_previous_draft_and_records_reviewed_coverage(self):
+        description = 'Requirements:\n- Python reporting\n- SQL\n- AWS\n- Leadership\n- Education'
+        with Store(self.db) as store: store.correct_description(self.job.id, description, 0, 'Fictional source')
+        with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)) as complete:
+            path = self.endpoint()
+            first = self.call('POST', path, self.request()).json()['revisions'][0]['id']
+            created = self.call('POST', path, {**self.request(first), 'fresh': True})
+            self.assertEqual(created.status_code, 200, created.text)
+            revision = created.json()['revisions'][0]; rid = revision['id']
+            prompt = json.loads(complete.call_args.args[1])
+            self.assertIsNone(prompt['previous_unverified_draft'])
+            self.assertTrue(revision['fresh'])
+            self.assertEqual(len(revision['requirement_quotes']), 5)
+            self.assertEqual(self.call('POST', path + f'/{rid}/review', {'acknowledged': True, 'coverage': [True]*5}).status_code, 422)
+            self.assertEqual(self.call('POST', path + f'/{rid}/review', {'acknowledged': True, 'coverage': [99]*5}).status_code, 422)
+            result = self.call('POST', path + f'/{rid}/review', {'acknowledged': True, 'coverage': [0,0,0,0,None]})
+            self.assertEqual(result.status_code, 200, result.text)
+            coverage = result.json()['revisions'][0]['coverage']
+            self.assertEqual(coverage['percent'], 80)
+            self.assertTrue(coverage['target_met'])
+            self.assertEqual(self.call('GET', path).json()['revisions'][0]['coverage']['selections'], [0,0,0,0,None])
+            self.assertIn('Experience', self.call('GET', path + f'/{rid}/resume.txt').text)
+
+    def test_new_experience_requires_separate_candidate_verification(self):
+        workspace = self.call('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']
+        path = '/api/jobs/' + self.job.id + '/experience-answer'
+        answer = {'expected_revision': workspace['revision'], 'job_quote': 'Seeking Python and AWS.',
+                  'answer': 'Led a documented Python training workshop.', 'section': 'experience', 'acknowledged': True}
+        self.assertEqual(self.call('POST', path, {**answer, 'job_quote': 'Not in posting'}).status_code, 409)
+        saved = self.call('POST', path, answer)
+        self.assertEqual(saved.status_code, 200, saved.text)
+        value = saved.json(); fact = value['workspace']['facts'][-1]
+        self.assertFalse(fact['verified_by_candidate'])
+        self.assertEqual(fact['statement'], answer['answer'])
+        with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)) as complete:
+            created = self.call('POST', self.endpoint(), self.request())
+            self.assertEqual(created.status_code, 200, created.text)
+            self.assertNotIn(fact['id'], json.loads(complete.call_args.args[1])['verified_facts'])
+            verified = self.call('POST', '/api/workspace/facts/' + fact['id'] + '/verification', {
+                'expected_revision': value['workspace']['revision'], 'verified': True, 'acknowledged': True})
+            self.assertEqual(verified.status_code, 200, verified.text)
+            parent = created.json()['revisions'][0]['id']
+            created = self.call('POST', self.endpoint(), {**self.request(parent), 'fresh': True})
+            self.assertEqual(created.status_code, 200, created.text)
+            self.assertIn(fact['id'], json.loads(complete.call_args.args[1])['verified_facts'])

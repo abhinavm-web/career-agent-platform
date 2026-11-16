@@ -121,3 +121,27 @@ The optional Anthropic route setting `thinking_disabled: true` explicitly asks
 for text-only generation on compatible models. Leave it absent for models that
 do not support disabling reasoning. Unsupported response blocks remain rejected,
 not silently dropped. Model IDs must be available to the configured account.
+
+### Build a new resume and discover missing experience
+
+The AI document studio defaults to building a new resume without sending the
+previous draft. The model can reorganize verified facts into a summary,
+experience, projects, skills, education and certifications, omitting unsupported
+sections. Uncheck the option to revise the previous current draft instead.
+
+**Find experience to add** uses the chosen model to identify exact posting
+excerpts and suggest existing evidence. These may be incomplete or incorrect
+relationships; an empty evidence list is not a finding that the candidate lacks
+experience. The interview asks for candidate-authored statements about relevant
+work absent from the profile. Answers are saved as unverified facts. A separate
+candidate confirmation is required before they can enter a generated resume.
+The question list is session-only; saved answers and fact verification persist.
+
+**Coverage review** has an 80% target. It measures the proportion of recognized
+requirement-section excerpts for which the user selected a supporting resume
+passage. It is explicitly a user-reviewed subset measure, not a whole-job match,
+ATS score, eligibility decision, or independent semantic verification. Duplicate
+excerpts are deduplicated. Missing/unrecognized sections are not assumed covered;
+no percentage is shown when none can be extracted, and parser limits are flagged.
+The selection and result are saved with the reviewed revision. Below-target
+exports are permitted: truthful omissions are preferable to unsupported claims.

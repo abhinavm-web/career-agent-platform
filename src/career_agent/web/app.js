@@ -307,7 +307,7 @@
       if (editor?.open && description && (description.value !== description.defaultValue || source?.value || capture?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
       const revisionEditor = byId("detail-panel").querySelector?.(".document-revision-studio");
-      if (revisionEditor?.dataset.dirty === "true" && !window.confirm("Discard unsent AI revision instructions? Saved revisions remain available for this job.")) return;
+      if ((revisionEditor?.dataset.dirty === "true" || revisionEditor?.querySelector?.(".experience-questions")?.dataset.dirty === "true") && !window.confirm("Discard unsent revision instructions or experience answers? Saved facts and revisions remain available.")) return;
       const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
       if (picker?.dataset.dirty === "true" && !window.confirm("Discard your unfinished fact selection and ordering for this job?")) return;
       const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
@@ -379,10 +379,14 @@
     const instructions = node("textarea"); instructions.maxLength = 2000; instructions.rows = 3;
     instructions.placeholder = "Emphasize relevant leadership experience and keep the cover letter concise.";
     instructionLabel.append(instructions);
+    const freshLabel = node("label", "check-label"), fresh = node("input"); fresh.type = "checkbox"; fresh.checked = true;
+    freshLabel.append(fresh, document.createTextNode(" Build a new resume from all verified experience, without reusing the previous draft."));
+    const interview = button("Find experience to add", "button"); interview.disabled = true;
+    const questions = node("div", "experience-questions");
     const consentLabel = node("label", "check-label");
     const consent = node("input"); consent.type = "checkbox";
     consentLabel.append(consent, document.createTextNode(" I consent to sharing the posting, verified facts, instructions and previous revision with this model. Cloud requests may incur charges."));
-    const run = button("Revise resume and cover letter", "button button-primary"); run.disabled = true;
+    const run = button("Generate resume and cover letter", "button button-primary"); run.disabled = true;
     const status = node("p", "muted"); status.setAttribute("role", "status");
     const results = node("div");
     let routes = [], parentId = 0, busy = false;
@@ -392,6 +396,7 @@
       const route = routes.find(r => r.route === model.value);
       destination.textContent = route ? route.provider + " · " + route.model + " · " + route.destination : "No models configured. Open AI tools to configure a provider.";
       run.disabled = busy || !route?.route_fingerprint || job.application_stage === "submitted";
+      interview.disabled = run.disabled;
     };
     model.addEventListener("change", updateRoute);
     instructions.addEventListener("input", () => { panel.dataset.dirty = "true"; });
@@ -406,6 +411,7 @@
           card.append(node("h4", "", kind === "resume" ? "AI resume revision" : "AI cover letter revision"));
           for (const row of revision.document[kind]) {
             const passage = node("section", "inline-suggestion");
+            if (kind === "resume" && row.section) passage.append(node("strong", "", row.section));
             passage.append(node("p", "description", row.text));
             const source = node("details"); source.append(node("summary", "", "Compare cited facts"));
             for (const id of row.fact_ids) source.append(node("p", "", id + " · " + revision.sources[id]));
@@ -414,6 +420,30 @@
             card.append(passage);
           }
         }
+        const coverageSelections = [];
+        const quotes = revision.requirement_quotes || [];
+        const coverageBox = node("section", "inline-suggestion");
+        coverageBox.append(node("h4", "", "Coverage review · target 80%"), node("p", "muted",
+          "Select the resume passage that accurately addresses each excerpt. This is your reviewed coverage of detected requirement sections, not an ATS score, whole-job match or hiring prediction. Do not claim experience just to reach the target."));
+        const coverageStatus = node("p"); coverageStatus.setAttribute("role", "status");
+        const updateCoverage = () => {
+          const addressed = coverageSelections.filter(select => select.value !== "").length;
+          coverageStatus.textContent = quotes.length ? addressed + " of " + quotes.length + " excerpts addressed (" + Math.floor(100 * addressed / quotes.length) + "%). " +
+            (addressed * 100 >= quotes.length * 80 ? "Review target reached for these excerpts only." : "Below target. Add genuine experience or leave unmet excerpts visible.") : "Coverage unavailable: no recognizable requirement bullets. The experience interview can still explore the posting.";
+        };
+        quotes.forEach((quote, i) => {
+          const label = node("label", "field", quote), select = node("select");
+          select.setAttribute("aria-label", "Resume evidence for requirement " + (i + 1));
+          const empty = node("option", "", "Not addressed / uncertain"); empty.value = ""; select.append(empty);
+          revision.document.resume.forEach((row, j) => { const option = node("option", "", "Passage " + (j + 1) + ": " + row.text.slice(0, 160)); option.value = String(j); select.append(option); });
+          const saved = revision.coverage?.selections?.[i]; if (Number.isInteger(saved)) select.value = String(saved);
+          select.disabled = Boolean(revision.reviewed_at) || revision.stale || index !== 0;
+          select.addEventListener("change", updateCoverage); coverageSelections.push(select);
+          label.append(select); coverageBox.append(label);
+        });
+        updateCoverage(); coverageBox.append(coverageStatus);
+        if (revision.requirements_truncated) coverageBox.append(node("p", "stale-warning", "Some excerpts exceeded the parser limits. This coverage is incomplete."));
+        card.append(coverageBox);
         if (index === 0 && !revision.stale) {
           if (revision.reviewed_at) {
             for (const [kind, title] of [["resume", "Download reviewed AI resume text"], ["cover_letter", "Download reviewed AI cover letter text"]]) {
@@ -439,7 +469,7 @@
               if (!checked.checked || approve.disabled) return;
               approve.disabled = true;
               try {
-                const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/review", "POST", {acknowledged: true});
+                const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/review", "POST", {acknowledged: true, coverage: coverageSelections.map(select => select.value === "" ? null : Number(select.value))});
                 if (current()) renderRevisions(result.revisions);
               } catch (error) { status.textContent = error.message; approve.disabled = false; }
             });
@@ -470,14 +500,62 @@
       status.textContent = "Generating a saved revision with " + route.model + "…";
       try {
         const result = await api("/api/jobs/" + job.id + "/document-revisions", "POST", {route: route.route,
-          route_fingerprint: route.route_fingerprint, instructions: instructions.value, parent_id: parentId, acknowledged: true});
+          route_fingerprint: route.route_fingerprint, instructions: instructions.value, parent_id: parentId, fresh: fresh.checked, acknowledged: true});
         if (!current()) return;
         panel.dataset.dirty = "false"; renderRevisions(result.revisions);
         status.textContent = "Revision saved. Compare every claim with its cited facts before confirming export. Verified facts remain unchanged.";
       } catch (error) { if (current()) status.textContent = error.message; }
       finally { busy = false; panel.dataset.pending = "false"; load.disabled = false; model.disabled = false; instructions.disabled = false; updateRoute(); }
     });
-    panel.append(load, modelLabel, destination, instructionLabel, consentLabel, run, status, results);
+    interview.addEventListener("click", async () => {
+      const route = routes.find(r => r.route === model.value);
+      if (busy || !consent.checked || !route?.route_fingerprint) return;
+      if (questions.dataset.dirty === "true" && !window.confirm("Replace the interview and discard unsaved answers? Saved facts remain in your profile.")) return;
+      busy = true; load.disabled = true; run.disabled = true; interview.disabled = true; model.disabled = true;
+      status.textContent = "Finding posting requirements to discuss…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/ai-analysis", "POST", {route: route.route, route_fingerprint: route.route_fingerprint, acknowledged: true});
+        if (!current()) return;
+        questions.replaceChildren(); questions.dataset.dirty = "false";
+        questions.append(node("h4", "", "Experience interview"), node("p", "muted", "These AI-selected excerpts may not cover the entire posting. Suggested fact links are unverified. Answer only from your real experience, or skip the question. Saving an answer does not verify or add it to your resume."));
+        for (const requirement of result.requirements) {
+          const card = node("details", "inline-suggestion"); card.open = requirement.fact_ids.length === 0;
+          card.append(node("summary", "", requirement.quote), node("p", "", requirement.fact_ids.length ? "AI suggests existing evidence; review whether it actually supports this excerpt." : "No evidence linked by AI. This does not mean you lack the experience."), node("p", "", requirement.reason));
+          for (const [id, statement] of Object.entries(requirement.facts)) card.append(node("p", "muted", id + " · " + statement));
+          card.append(node("p", "", "Have you done relevant work that is missing from your profile? Describe what you personally did, where and when, and any result you can substantiate. Keep limitations and qualifications."));
+          const answerLabel = node("label", "field", "Your experience"), answer = node("textarea"); answer.maxLength = 1000;
+          answer.addEventListener("input", () => { questions.dataset.dirty = "true"; }); answerLabel.append(answer);
+          const sectionLabel = node("label", "field", "Fact section"), section = node("select");
+          for (const name of ["experience", "projects", "skills", "education", "certifications"]) { const option = node("option", "", name); option.value = name; section.append(option); } sectionLabel.append(section);
+          const message = node("p", "muted"); message.setAttribute("role", "status");
+          const save = button("Save answer as unverified fact", "button", async () => {
+            if (save.disabled || !answer.value.trim()) return; save.disabled = true;
+            try {
+              const workspace = (await api("/api/workspace")).workspace;
+              const saved = await api("/api/jobs/" + job.id + "/experience-answer", "POST", {expected_revision: workspace.revision,
+                job_quote: requirement.quote, answer: answer.value, section: section.value, acknowledged: true});
+              answer.disabled = true; section.disabled = true;
+              questions.dataset.dirty = String(Array.from(questions.querySelectorAll("textarea")).some(field => !field.disabled && field.value.trim()));
+              message.textContent = "Saved, not verified: " + saved.workspace.facts.find(f => f.id === saved.fact_id).statement;
+              const confirmLabel = node("label", "check-label"), confirm = node("input"); confirm.type = "checkbox";
+              confirmLabel.append(confirm, document.createTextNode(" I checked this saved statement and confirm it accurately describes my experience."));
+              const verify = button("Verify this new fact", "button", async () => {
+                if (!confirm.checked || verify.disabled) return; verify.disabled = true;
+                try {
+                  await api("/api/workspace/facts/" + saved.fact_id + "/verification", "POST", {expected_revision: saved.workspace.revision, verified: true, acknowledged: true});
+                  message.textContent = "Fact verified. Generate a new resume to include it. Previous revisions may now be stale."; confirm.disabled = true;
+                } catch (error) { message.textContent = error.message + " Review this saved fact in Career profile if the profile changed."; verify.disabled = false; }
+              });
+              verify.disabled = true; confirm.addEventListener("change", () => { verify.disabled = !confirm.checked; }); card.append(confirmLabel, verify);
+            } catch (error) { message.textContent = error.message; save.disabled = false; }
+          });
+          card.append(answerLabel, sectionLabel, save, message); questions.append(card);
+        }
+        status.textContent = result.requirements.length ? "Answer and verify genuine additions, then build a new resume. Skipping an unsupported requirement is valid." : "No excerpts returned. Add real experience directly in Career profile.";
+      } catch (error) { if (current()) status.textContent = error.message; }
+      finally { busy = false; load.disabled = false; model.disabled = false; updateRoute(); }
+    });
+    panel.append(load, modelLabel, destination, instructionLabel, freshLabel, consentLabel, interview, questions, run, status, results);
     return panel;
   }
 

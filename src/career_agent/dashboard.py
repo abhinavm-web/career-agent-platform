@@ -553,7 +553,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     async def generate_document_revision(job_id: str, request: Request):
         from .document_revisions import Revisions, digest, generate
         data = await request.json()
-        if (not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'instructions', 'parent_id', 'acknowledged'}
+        if (not isinstance(data, dict) or set(data) - {'fresh'} != {'route', 'route_fingerprint', 'instructions', 'parent_id', 'acknowledged'}
                 or data['acknowledged'] is not True or type(data['parent_id']) is not int or data['parent_id'] < 0):
             raise ValueError('Confirm sharing the posting, verified facts, instructions and previous revision with the selected model')
         fingerprint = route_consent_fingerprint(data)
@@ -571,7 +571,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 history = revisions.list(job_id, snapshot)
                 previous = history[0]['document'] if history and not history[0]['stale'] else None
             result = await run_in_threadpool(run_recorded, config.db_path, data['route'], 'document_revision',
-                generate, snapshot, data['route'], data['instructions'], previous, expected_route_fingerprint=fingerprint)
+                generate, snapshot, data['route'], data['instructions'], previous, data.get('fresh', False), expected_route_fingerprint=fingerprint)
             with Store(config.db_path) as store:
                 revisions = Revisions(store)
                 store.connection.execute('BEGIN IMMEDIATE')
@@ -588,12 +588,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
     async def review_document_revision(job_id: str, revision_id: int, request: Request):
         from .document_revisions import Revisions
         data = await request.json()
-        if not isinstance(data, dict) or set(data) != {'acknowledged'} or data['acknowledged'] is not True:
+        if not isinstance(data, dict) or set(data) - {'coverage'} != {'acknowledged'} or data['acknowledged'] is not True:
             raise ValueError('Confirm that every claim and both documents are accurate before export')
         with Store(config.db_path) as store:
             revisions = Revisions(store)
             store.connection.execute('BEGIN IMMEDIATE')
-            revisions.review(job_id, revision_id, revision_snapshot(job_id, store))
+            revisions.review(job_id, revision_id, revision_snapshot(job_id, store), data.get('coverage'))
             store.connection.commit()
         return document_revisions(job_id)
 
@@ -612,6 +612,21 @@ def create_app(config: DashboardConfig) -> FastAPI:
             content = document_text(history[0], kind, snapshot)
         return Response(content, media_type='text/plain', headers={
             'Content-Disposition': f'attachment; filename="{kind}-{job_id}-{revision_id}.txt"'})
+
+    @app.post('/api/jobs/{job_id}/experience-answer')
+    async def experience_answer(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'expected_revision', 'job_quote', 'answer', 'section', 'acknowledged'}:
+            raise ValueError('Provide your answer and the source posting excerpt')
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            candidate = CandidateWorkspace(store)
+            try:
+                workspace = candidate.stage_experience_answer(data['expected_revision'], job_id, data['job_quote'],
+                    data['answer'], data['section'], data['acknowledged'])
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from None
+        return {'workspace': workspace, 'fact_id': workspace['facts'][-1]['id']}
 
     @app.get("/api/h1b")
     def h1b_settings():

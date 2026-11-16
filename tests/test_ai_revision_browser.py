@@ -25,7 +25,9 @@ class AIRevisionBrowserTests(unittest.TestCase):
         from career_agent.workspace import CandidateWorkspace
         from docx import Document
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); db = root / 'workspace.sqlite3'; job = fake_job()
+            root = Path(directory); db = root / 'workspace.sqlite3'
+            from dataclasses import replace
+            job = replace(fake_job(), description='Requirements:\n- Python\n- AWS')
             with Store(db) as store:
                 store.add_jobs([job])
                 CandidateWorkspace(store).import_legacy(CandidateProfile(('AI Program Lead',), ('Python',), (), True), FactBank.parse(fake_fact_bank()))
@@ -51,14 +53,32 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         panel.get_by_role('button', name='Load models and saved revisions').click()
                         expect(panel.get_by_label('Revision model')).to_have_value('claude')
                         panel.get_by_label('Revision instructions').fill('Emphasize relevant delivery work.')
-                        panel.get_by_role('button', name='Revise resume and cover letter').click()
+                        panel.get_by_role('button', name='Generate resume and cover letter').click()
                         complete.assert_not_called()
+                        complete.return_value = json.dumps({'requirements': [{'quote': '- Python', 'fact_ids': [], 'reason': 'Ask about further Python experience.'}]})
                         panel.get_by_label('I consent to sharing', exact=False).check()
-                        panel.get_by_role('button', name='Revise resume and cover letter').click()
+                        panel.get_by_role('button', name='Find experience to add').click()
+                        question = panel.locator('.experience-questions .inline-suggestion').first
+                        expect(question).to_contain_text('No evidence linked by AI')
+                        question.get_by_label('Your experience').fill('Created Python training materials for a documented workshop.')
+                        question.get_by_role('button', name='Save answer as unverified fact').click()
+                        expect(question).to_contain_text('Saved, not verified:')
+                        expect(question.get_by_role('button', name='Verify this new fact')).to_be_disabled()
+                        question.get_by_label('I checked this saved statement', exact=False).check()
+                        question.get_by_role('button', name='Verify this new fact').click()
+                        expect(question).to_contain_text('Fact verified.')
+                        complete.return_value = json.dumps(OUTPUT)
+                        panel.get_by_label('I consent to sharing', exact=False).check()
+                        panel.get_by_role('button', name='Generate resume and cover letter').click()
                         expect(panel).to_contain_text('Revision saved.')
                         expect(panel).to_contain_text('Delivered an AI program using Python and AWS.')
                         expect(panel).to_contain_text('My experience delivering an AI program')
                         expect(panel.get_by_role('button', name='Confirm AI revision for export')).to_be_disabled()
+                        self.assertIn('Created Python training materials', complete.call_args.args[1])
+                        self.assertIsNone(json.loads(complete.call_args.args[1])['previous_unverified_draft'])
+                        panel.get_by_label('Resume evidence for requirement 1').select_option('0')
+                        panel.get_by_label('Resume evidence for requirement 2').select_option('0')
+                        expect(panel).to_contain_text('2 of 2 excerpts addressed (100%)')
                         panel.get_by_label('I reviewed both AI documents', exact=False).check()
                         panel.get_by_role('button', name='Confirm AI revision for export').click()
                         with page.expect_download() as received:
@@ -73,7 +93,7 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         panel.locator('summary').first.click()
                         panel.get_by_role('button', name='Load models and saved revisions').click()
                         expect(panel.get_by_role('button', name='Download reviewed AI resume text')).to_be_visible()
-                        self.assertEqual(complete.call_count, 1)
+                        self.assertEqual(complete.call_count, 2)
                         page.set_viewport_size({'width': 390, 'height': 844})
                         self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), 390)
                     finally:
