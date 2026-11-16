@@ -8,6 +8,7 @@
   <title>Career Agent · Career Workspace</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script defer src="/assets/app.js"></script>
+  <script defer src="/assets/profile-review.js"></script>
   <script defer src="/assets/h1b.js"></script>
   <script defer src="/assets/ai.js"></script>
   <script defer src="/assets/automation.js"></script>
@@ -324,6 +325,20 @@
           <p class="muted">You can copy the configured profile and verified fact bank into this editable workspace. Your original files will not be changed.</p>
           <button id="import-career-data" type="button" class="button">Import configured files</button>
         </div>
+        <details id="profile-review" class="panel profile-editor">
+          <summary>Review and strengthen my career profile</summary>
+          <p class="muted">Let the application ask focused questions about conflicting claims, unclear responsibilities and missing detail. Questions and answers are saved. Your exact answers can add or replace facts; verification remains a separate decision.</p>
+          <button id="profile-review-load" type="button" class="button">Load models and saved questions</button>
+          <label class="block-label">Review model<select id="profile-review-route"></select></label>
+          <p id="profile-review-destination" class="muted"></p>
+          <label class="block-label">Compare a resume (optional)<input id="profile-review-file" type="file" accept=".pdf,.docx,.txt"></label>
+          <button id="profile-review-extract" type="button" class="button">Extract resume for comparison</button>
+          <label class="block-label">Resume text to compare (optional)<textarea id="profile-review-resume" rows="4" maxlength="20000"></textarea></label>
+          <label class="check-label"><input id="profile-review-consent" type="checkbox"> I consent to sharing the resume text and all saved fact statements, categories and verification status with this provider. Private evidence notes and profile contact fields are excluded.</label>
+          <button id="profile-review-generate" type="button" class="button button-primary" disabled>Ask me clarification questions</button>
+          <p id="profile-review-status" role="status" aria-live="polite">Load your saved questions to continue, or start a new review.</p>
+          <div id="profile-review-results"></div>
+        </details>
         <details id="profile-assistant" class="panel profile-editor">
           <summary>Ask a career assistant</summary>
           <p class="muted">Each request sends your question, this session's conversation and any selected verified facts to the selected provider. Answers are unverified suggestions and do not change your profile. Conversations are not saved; cloud providers may charge for use.</p>

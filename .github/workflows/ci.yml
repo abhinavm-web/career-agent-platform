@@ -31,6 +31,7 @@ jobs:
       - name: Check frontend JavaScript
         run: |
           node --check src/career_agent/web/app.js
+          node --check src/career_agent/web/profile-review.js
           node --check src/career_agent/web/h1b.js
           node --check src/career_agent/web/ai.js
           node --check src/career_agent/web/automation.js

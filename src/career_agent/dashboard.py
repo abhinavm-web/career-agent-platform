@@ -284,6 +284,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def automation_script():
         return Response(assets('automation.js'), media_type='text/javascript')
 
+    @app.get('/assets/profile-review.js')
+    def profile_review_script():
+        return Response(assets('profile-review.js'), media_type='text/javascript')
+
     @app.get('/api/automation')
     def automation_status():
         return {**automation.list(), 'workflows': workflows.list()}
@@ -470,6 +474,66 @@ def create_app(config: DashboardConfig) -> FastAPI:
             return await run_in_threadpool(run_recorded, config.db_path, data.get("route"), 'career_chat', ai.profile_chat, data.get("route"), data.get("message"), claims, True, data.get("history", []), expected_route_fingerprint=fingerprint)
         finally:
             ai_lock.release()
+
+    @app.get('/api/workspace/reviews')
+    def profile_reviews():
+        from .profile_review import ProfileReviews
+        with Store(config.db_path) as store:
+            reviews = ProfileReviews(store)
+            candidates = CandidateWorkspace(store)
+            store.connection.execute('BEGIN')
+            workspace = candidates.latest()
+            return {'reviews': reviews.list(workspace), 'workspace_revision': workspace['revision']}
+
+    @app.post('/api/workspace/reviews')
+    async def create_profile_review(request: Request):
+        from .profile_review import ProfileReviews, generate
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'resume_text', 'acknowledged'}
+                or data['acknowledged'] is not True):
+            raise ValueError('Confirm sharing saved fact statements and resume text with the selected provider')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                workspace = CandidateWorkspace(store).latest()
+            result = await run_in_threadpool(run_recorded, config.db_path, data['route'], 'profile_review',
+                generate, data['route'], workspace, data['resume_text'], expected_route_fingerprint=fingerprint)
+            with Store(config.db_path) as store:
+                reviews = ProfileReviews(store)
+                candidates = CandidateWorkspace(store)
+                store.connection.execute('BEGIN IMMEDIATE')
+                if candidates.latest()['revision'] != workspace['revision']:
+                    raise HTTPException(status_code=409, detail='Profile changed while generating questions; request a new review')
+                reviews.save(result)
+                store.connection.commit()
+            return profile_reviews()
+        finally:
+            ai_lock.release()
+
+    @app.post('/api/workspace/reviews/{review_id}/questions/{index}/answer')
+    async def answer_profile_question(review_id: int, index: int, request: Request):
+        from .profile_review import ProfileReviews
+        data = await request.json()
+        with Store(config.db_path) as store:
+            try:
+                ProfileReviews(store).answer(review_id, index, data)
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return profile_reviews()
+
+    @app.post('/api/workspace/reviews/{review_id}/questions/{index}/defer')
+    async def defer_profile_question(review_id: int, index: int, request: Request):
+        from .profile_review import ProfileReviews
+        if await request.json() != {'acknowledged': True}:
+            raise ValueError('Confirm leaving this question unresolved')
+        with Store(config.db_path) as store:
+            try:
+                ProfileReviews(store).defer(review_id, index)
+            except StaleRevision as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+        return profile_reviews()
 
     @app.post("/api/workspace/resume-extract")
     async def workspace_resume_extract(request: Request):

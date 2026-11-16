@@ -9,6 +9,7 @@ from .tailoring_checks import wording_review_warnings
 
 SYSTEM = '''Write an opportunity-specific resume and cover letter using ONLY the supplied verified facts.
 Rewrite for clarity and relevance, but preserve qualifiers, negation, responsibility and outcomes.
+Do not turn recommendations for approval into approved decisions, or planned capacity into actual adoption.
 Never invent employers, dates, numbers, skills, credentials, work authorization or achievements.
 Preserve employment dates and tense: ended roles must not be presented as current employment.
 Keep work associated with its supported employer and role; do not infer a different chronology.
