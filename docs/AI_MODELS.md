@@ -182,3 +182,25 @@ These downloads are separate from the verified-fact application packet; neither
 export path submits an application or modifies candidate facts.
 
 For comprehensive AI documents, a route budget of 8,192 tokens can leave room for reasoning and a full answer. Provider model limits still apply. Truncated responses remain rejected; no partial document is saved or exported.
+
+
+## In-application career clarification
+
+Career profile now has **Review and strengthen my career profile**. Select a model,
+optionally extract a resume for comparison, and explicitly consent to sharing the
+resume and saved fact statements, categories and verification states. Private
+source notes and separate profile contact fields are excluded; statements and
+resume excerpts can still contain personal information.
+
+The model asks up to eight source-linked questions per review. Reviews persist
+across reloads. An answer can add a fact or replace a cited fact using the exact
+candidate-entered wording. Saving revokes verification for the affected fact;
+a separate confirmation verifies it. Uncertain questions can be left unresolved
+without changing the profile. Existing application documents become stale when
+facts change and require regeneration and review. AI questions are suggestions,
+not proof that a conflict exists or that every gap has been found.
+
+Source changes reject outdated answers, workspace revision checks prevent lost
+updates, and answer/question status is saved atomically. Answering one question
+preserves unsaved answers in the other visible question cards. The last ten
+reviews are available in the panel; older reviews remain in the private database.

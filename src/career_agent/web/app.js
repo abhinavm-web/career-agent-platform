@@ -1702,6 +1702,8 @@
     }
   }
 
+  root.addEventListener("career-workspace-changed", () => { if (state.screen === "profile") loadWorkspace(true); });
+
   function renderWorkspace(revisions) {
     const workspace = state.workspace;
     if (!workspace) return;
