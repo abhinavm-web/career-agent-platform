@@ -275,7 +275,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       revisions.unshift({revision: workspace.revision, change_type: "verified", created_at: "now"});
       return Promise.resolve(ok({workspace}));
     }
-    if (url === "/api/jobs?limit=100" || url.startsWith("/api/jobs?limit=100&before=")) return jobsPage ? jobsPage(url) : Promise.resolve(ok({
+    if (url === "/api/jobs?limit=100&include_archived=true" || url.startsWith("/api/jobs?limit=100&include_archived=true&before=")) return jobsPage ? jobsPage(url) : Promise.resolve(ok({
       jobs: jobsOverride || (olderTrackedJob ? [fakeJob(ID_B, "Role Beta")]
         : [fakeJob(ID_A, "Role Alpha"), fakeJob(ID_B, "Role Beta")]),
     }));
@@ -615,7 +615,7 @@ test("board loads older pages before applying filters", async () => {
       : {jobs: [fakeJob(ID_A, "Recent role")], next_before: 900}));
   }});
   await flush();
-  assert.deepEqual(calls, ["/api/jobs?limit=100", "/api/jobs?limit=100&before=900"]);
+  assert.deepEqual(calls, ["/api/jobs?limit=100&include_archived=true", "/api/jobs?limit=100&include_archived=true&before=900"]);
   h.get("search").value = "Older target";
   h.get("search").handlers.input({target: h.get("search")});
   assert.match(h.get("job-list").textContent, /Older target/);

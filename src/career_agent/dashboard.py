@@ -232,6 +232,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         sponsorship = sponsorship_report(job, records)
         return {
             "id": job.id,
+            "archive": store.archive_state(job.id),
             "title": job.title,
             "company": job.company,
             "location": job.location,
@@ -762,7 +763,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
         try:
             result = await run_in_threadpool(check_posting, job)
             with Store(config.db_path) as store:
-                return PostingChecks(store).save(job_id, result)
+                checks = PostingChecks(store)
+                checks.save(job_id, result)
+                with store.connection:
+                    store.connection.execute('BEGIN IMMEDIATE')
+                    checks.archive_expired(job_id)
+                    result['archive'] = store.archive_state(job_id)
+                return result
         finally:
             live_check_lock.release()
 
@@ -964,7 +971,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return {"workspace": imported}
 
     @app.get("/api/jobs")
-    def list_jobs(before: int | None = None, limit: int = 500):
+    def list_jobs(before: int | None = None, limit: int = 500, include_archived: bool = False):
         workspace = active_workspace()
         if workspace['revision'] > 0:
             profile = CandidateWorkspace.scoring_profile(workspace)
@@ -980,7 +987,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             research = H1BResearch(store)
             posting_checks = research.posting_checks
             store.connection.execute('BEGIN')
-            jobs, next_before = store.job_page(limit=limit, before=before)
+            jobs, next_before = store.job_page(limit=limit, before=before, include_archived=include_archived)
             observations = store.discovery_observations([job.id for job in jobs])
             imported_history = research.board_history(jobs)
             items = [
@@ -1046,11 +1053,15 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def overview():
         with Store(config.db_path) as store:
             jobs = store.list_jobs(limit=10000)
+            saved_jobs = store.connection.execute('SELECT COUNT(*) FROM jobs').fetchone()[0]
+            archived_jobs = store.connection.execute('SELECT COUNT(*) FROM job_archives WHERE restored_at IS NULL').fetchone()[0]
             reviewed = store.review_history(limit=100)
-            submitted = sum(store.stage_of(job.id) == "submitted" for job in jobs)
+            submitted = store.connection.execute("SELECT COUNT(*) FROM applications WHERE stage='submitted'").fetchone()[0]
             pending = sum(store.stage_of(job.id) == "ready_for_review" for job in jobs)
         return {
-            "total_jobs": len(jobs),
+            "total_jobs": saved_jobs - archived_jobs,
+            "saved_jobs": saved_jobs,
+            "archived_jobs": archived_jobs,
             "submitted_recorded": submitted,
             "staged": pending,
             "review_events_recent": len(reviewed),
@@ -1068,6 +1079,43 @@ def create_app(config: DashboardConfig) -> FastAPI:
         with Store(config.db_path) as store:
             inserted = store.add_jobs([job])
         return {"job_id": job.id, "created": inserted == 1}
+
+    @app.post('/api/jobs/{job_id}/archive')
+    async def archive_opportunity(job_id: str, request: Request):
+        data = await request.json()
+        if (not isinstance(data, dict) or data.get('acknowledged') is not True
+                or set(data) - {'acknowledged', 'reason', 'duplicate_of'}):
+            raise ValueError('Confirm removing this opportunity from the active board')
+        if data.get('reason') not in ('duplicate', 'confirmed_closed'):
+            raise ValueError('Confirm a duplicate or a closure you verified on the original website')
+        with Store(config.db_path) as store, store.connection:
+            store.connection.execute('BEGIN IMMEDIATE')
+            _get_job(store, job_id)
+            return {'archive': store.archive_job(job_id, data['reason'], data.get('duplicate_of'),
+                                                evidence={'candidate_confirmed': True})}
+
+    @app.post('/api/jobs/{job_id}/restore')
+    async def restore_opportunity(job_id: str, request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True or set(data) != {'acknowledged'}:
+            raise ValueError('Confirm restoring this opportunity')
+        with Store(config.db_path) as store, store.connection:
+            store.connection.execute('BEGIN IMMEDIATE')
+            _get_job(store, job_id)
+            store.restore_job(job_id)
+        return {'restored': True}
+
+    @app.post('/api/opportunities/cleanup')
+    async def cleanup_opportunities(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or data.get('acknowledged') is not True or set(data) != {'acknowledged'}:
+            raise ValueError('Confirm archiving postings with recently verified expired deadlines')
+        with Store(config.db_path) as store, store.connection:
+            checks = PostingChecks(store)
+            store.connection.execute('BEGIN IMMEDIATE')
+            ids = [row[0] for row in store.connection.execute('SELECT DISTINCT job_id FROM posting_checks')]
+            count = sum(checks.archive_expired(job_id) is not None for job_id in ids)
+        return {'archived': count, 'checked': len(ids)}
 
     @app.get("/api/jobs/{job_id}/possible-duplicates")
     def possible_duplicates(job_id: str):

@@ -138,7 +138,7 @@
     byId("home-next").dataset.destination = ready ? "jobs" : "profile";
     const recommendations = byId("home-recommendations");
     recommendations.replaceChildren();
-    const roles = state.jobs.filter((job) => job.application_stage !== "submitted");
+    const roles = state.jobs.filter((job) => !job.archive && job.application_stage !== "submitted");
     if (ready) roles.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
     for (const job of roles.slice(0, 3)) {
       const item = button("", "home-followup", () => { showScreen("jobs"); selectJob(job.id); });
@@ -182,6 +182,7 @@
     const needle = state.search.trim().toLocaleLowerCase();
     const filters = state.boardFilters;
     const jobs = state.jobs.filter((job) => {
+      if (Boolean(job.archive) !== (state.filter === "archived")) return false;
       const searchable = [job.company, job.title, job.location, job.description].join(" ").toLocaleLowerCase();
       if (needle && !searchable.includes(needle)) return false;
       if (filters.location && !(job.location || "").toLocaleLowerCase().includes(filters.location.trim().toLocaleLowerCase())) return false;
@@ -224,7 +225,7 @@
     }
     const jobs = filteredJobs();
     updateSelectionScope(jobs);
-    const truncated = state.boardTruncated || (state.overview?.total_jobs ?? 0) > state.jobs.length;
+    const truncated = state.boardTruncated || (state.overview?.saved_jobs ?? state.overview?.total_jobs ?? 0) > state.jobs.length;
     byId("board-limit").hidden = !truncated;
     byId("board-limit").textContent = state.boardTruncated
       ? "The board reached its loading limit. Filters only search the " + state.jobs.length + " loaded opportunities; older jobs are not included."
@@ -286,6 +287,7 @@
         job.review_decision && !job.packet_stale ? "teal" : "amber"
       ));
       if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
+      if (job.archive) lower.append(chip("Archived", ""));
       if (job.fit_score !== null) lower.append(node("span", "score", "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
       item.append(top, lower);
       list.append(item);
@@ -652,7 +654,8 @@
     const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
     const keepPicker = (picker?.open || picker?.dataset.dirty === "true") && picker.dataset.jobId === state.selectedId;
     const duplicates = byId("detail-panel").querySelector?.("#possible-duplicates");
-    const keepDuplicates = duplicates?.dataset.started === "true" && duplicates.dataset.jobId === state.selectedId;
+    const keepDuplicates = duplicates?.dataset.started === "true" && duplicates.dataset.jobId === state.selectedId &&
+      duplicates.dataset.archived === String(Boolean(state.jobs.find(job => job.id === state.selectedId)?.archive));
     const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
     const currentJob = state.jobs.find(job => job.id === state.selectedId);
     const keepInline = inline?.open && inline.dataset.jobId === state.selectedId && currentJob &&
@@ -818,8 +821,8 @@
     panes.overview.append(actions);
 
     const duplicates = section("Possible duplicate postings");
-    duplicates.id = "possible-duplicates"; duplicates.dataset.jobId = job.id;
-    duplicates.append(node("p", "muted", "Compare saved postings with the same company, title and location. Results reflect the time of the search; search again after changes. Different requisitions can share these details; nothing will be merged or removed."));
+    duplicates.id = "possible-duplicates"; duplicates.dataset.jobId = job.id; duplicates.dataset.archived = String(Boolean(job.archive));
+    duplicates.append(node("p", "muted", "Compare saved postings with the same company, title and location. Results reflect the time of the search; search again after changes. Different requisitions can share these details. Compare the original URLs before confirming a duplicate. Removed entries remain in Archived, with their own history."));
     const duplicateResults = node("div");
     duplicateResults.setAttribute("role", "status");
     const duplicateButton = button("Find possible duplicates", "button", async () => {
@@ -837,6 +840,16 @@
             node("p", "", other.location + " · Source: " + other.source + " · " + (other.submission_recorded ? "Submission recorded" : "No submission recorded")),
             safeLink("View other original posting", other.url));
           if (state.jobs.some((entry) => entry.id === other.job_id)) item.append(button("Open other saved opportunity", "button", () => selectJob(other.job_id)));
+          if (!job.archive) item.append(button("Remove this duplicate; keep selected role", "button", async (event) => {
+            if (!window.confirm("Confirm these are the SAME vacancy, not separate requisitions. Archive " + other.title + " (" + other.url + ") and keep " + job.url + "? Drafts and history stay separate and can be restored.")) return;
+            const control = event.currentTarget; control.disabled = true;
+            try {
+              await api("/api/jobs/" + other.job_id + "/archive", "POST", {acknowledged: true, reason: "duplicate", duplicate_of: job.id});
+              item.replaceChildren(node("p", "", "Duplicate removed from active opportunities. Restore it from Archived if needed."));
+              await refresh();
+              notice("Duplicate archived; selected opportunity kept.");
+            } catch (error) { notice(error.message, true); control.disabled = false; }
+          }));
           duplicateResults.append(item);
         }
         if (result.results_truncated) duplicateResults.append(node("p", "", "Showing the first 10 possible duplicates; additional matches exist."));
@@ -876,7 +889,11 @@
         try {
           const observation = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
           const currentJob = state.jobs.find((value) => value.id === job.id);
-          if (currentJob) currentJob.live_check = observation;
+          if (currentJob) { currentJob.live_check = observation; currentJob.archive = observation.archive || null; }
+          if (observation.archive) {
+            notice("Opportunity archived: " + (observation.archive.reason === "expired" ? "the verified posting deadline has passed." : "it was already removed from the active board."));
+            await refresh();
+          }
         } catch (error) { interaction.failure = error.message; }
         finally {
           interaction.pending = false;
@@ -887,7 +904,27 @@
       check.disabled = interaction.pending;
       availability.append(node("p", "", "Checks the original website or its public hiring system. The saved posting URL is sent; no profile or résumé is sent."), check);
     }
-    availability.append(node("p", "", "A listed posting is not a guarantee of current hiring or sponsorship."));
+    availability.append(node("p", "", "A listed posting is not a guarantee of current hiring or sponsorship. Checks automatically archive identity-matched postings with expired deadlines. Failed or blocked checks keep the opportunity active."));
+    if (job.archive) {
+      availability.append(node("p", "", "Archived: " + ({duplicate: "confirmed duplicate", confirmed_closed: "closure confirmed by you", expired: "verified deadline passed"}[job.archive.reason] || job.archive.reason) + " · " + job.archive.archived_at));
+      if (job.archive.duplicate_of) availability.append(node("p", "muted", "Kept opportunity ID: " + job.archive.duplicate_of));
+      availability.append(button("Restore opportunity", "button", async (event) => {
+        const control = event.currentTarget; control.disabled = true;
+        try {
+          await api("/api/jobs/" + job.id + "/restore", "POST", {acknowledged: true});
+          await refresh(); notice("Opportunity restored. Select All active roles to see it. A new expired live check can archive it again.");
+        } catch (error) { notice(error.message, true); control.disabled = false; }
+      }));
+    } else {
+      availability.append(button("Archive confirmed closed role", "button", async (event) => {
+        if (!window.confirm("Have you confirmed on the original website that this role is closed? Archive " + job.title + " at " + job.company + "? Your documents and application history will be retained.")) return;
+        const control = event.currentTarget; control.disabled = true;
+        try {
+          await api("/api/jobs/" + job.id + "/archive", "POST", {acknowledged: true, reason: "confirmed_closed"});
+          await refresh(); notice("Closed opportunity archived. Restore it from the Archived view if needed.");
+        } catch (error) { notice(error.message, true); control.disabled = false; }
+      }));
+    }
     panes.overview.prepend(availability);
 
     const sponsor = section("Sponsorship assessment");
@@ -2324,7 +2361,7 @@
     let characters = 0;
     const jobs = [], maxJobs = 10000, maxCharacters = 32 * 1024 * 1024;
     do {
-      const page = await api("/api/jobs?limit=100" + (cursor === null ? "" : "&before=" + cursor));
+      const page = await api("/api/jobs?limit=100&include_archived=true" + (cursor === null ? "" : "&before=" + cursor));
       if (sequence !== state.refreshSequence) return null;
       if (!Array.isArray(page.jobs) || page.jobs.length > 100) throw new Error("Invalid opportunity page");
       const pageCharacters = JSON.stringify(page.jobs).length;
@@ -2942,6 +2979,15 @@
   });
   byId("fact-reset").addEventListener("click", resetFactEditor);
   byId("refresh").addEventListener("click", () => refresh());
+  byId("cleanup-expired").addEventListener("click", async (event) => {
+    if (!window.confirm("Archive all saved opportunities whose exact posting was checked in the last 24 hours and already had an expired deadline at check time? This uses saved checks and makes no website requests. Unknown, blocked and stale results are kept.")) return;
+    const control = event.currentTarget; control.disabled = true;
+    try {
+      const result = await api("/api/opportunities/cleanup", "POST", {acknowledged: true});
+      await refresh(); notice(result.archived + " expired opportunities archived. Drafts and application history retained.");
+    } catch (error) { notice(error.message, true); }
+    finally { control.disabled = false; }
+  });
   byId("search").addEventListener("input", (event) => {state.search = event.target.value; state.jobsPage = 0; renderJobs();});
   byId("filter").addEventListener("change", (event) => {state.filter = event.target.value; state.jobsPage = 0; renderJobs();});
   byId("board-sort").addEventListener("change", (event) => {state.sort = event.target.value === "recent" ? "recent" : "score"; state.jobsPage = 0; renderJobs();});

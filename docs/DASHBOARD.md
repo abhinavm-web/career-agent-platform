@@ -99,3 +99,31 @@ unverified. Login screens, JavaScript-only pages, blocks, missing pages and
 ambiguous identities require manual review. Observations are stored with a source
 and timestamp and become stale after 24 hours. No profile or resume is sent, and
 checks do not change application stages or establish sponsorship eligibility.
+
+
+## Opportunity cleanup
+
+The board defaults to **All active roles**. In **Possible duplicate postings**, compare
+original URLs and confirm that they represent the same vacancy before removing a
+duplicate. Company, title and nonempty location must match after case/whitespace
+normalization; matching details alone never trigger automatic removal. Existing
+URL deduplication still prevents repeated imports of the same URL.
+
+**Check live availability** automatically archives an exact-identity posting if its
+source reports an application deadline that was already expired at check time.
+**Archive verified expired roles** applies the same rule to saved observations from
+the last 24 hours, without contacting websites. Only the latest observation counts.
+HTTP 403/404/410/429, errors, redirects, ambiguous pages and stale observations do
+not establish closure and never trigger cleanup. A deadline passing after a check
+requires a new check. Availability checks run on demand, not on a background schedule.
+For closures without machine-readable evidence, open the original website and use
+**Archive confirmed closed role** only after confirming it yourself.
+
+Archived entries leave the active board, H-1B opportunity search and default job
+lists. **Archived** on the board shows the reason, date and **Restore opportunity**.
+Drafts, AI revisions, contacts, follow-ups and submission/review history remain linked
+to their original records; duplicate records' histories are not merged. Discovery
+imports do not restore an archived record. Restore persists through ordinary reads;
+a new expired check or another explicit cleanup can archive it again. This removes
+clutter without permanently deleting application evidence. The tracker retains its
+history and follow-ups independently of board archives.

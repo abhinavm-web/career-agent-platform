@@ -216,6 +216,7 @@ def check_posting(job):
 
 class PostingChecks:
     def __init__(self, store):
+        self.store = store
         self.conn = store.connection
         self.conn.execute('''CREATE TABLE IF NOT EXISTS posting_checks (
             check_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +228,37 @@ class PostingChecks:
         with self.conn:
             self.conn.execute('INSERT INTO posting_checks(job_id,result_json) VALUES(?,?)', (job_id, json.dumps(result)))
         return result
+
+    def expired_evidence(self, job_id):
+        result = self.latest(job_id)
+        if (not result or result.get('stale') or result.get('availability') != 'expired'
+                or result.get('observed_availability') == 'listed' or result.get('http_status') != 200):
+            return None
+        job = self.store.get_job(job_id)
+        resolved = target(job.url)
+        source = resolved[2] if resolved else job.url
+        if result.get('source_url') != source:
+            return None
+        try:
+            raw = result.get('application_deadline')
+            if not isinstance(raw, str) or 'T' not in raw:
+                return None
+            deadline = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            checked = datetime.fromisoformat(result['checked_at'])
+            if deadline.tzinfo is None or deadline > checked:
+                return None
+        except (ValueError, TypeError, OverflowError):
+            return None
+        return result
+
+    def archive_expired(self, job_id):
+        """Archive only identity-checked, recently observed expired deadlines."""
+        if self.store.archive_state(job_id):
+            return None
+        evidence = self.expired_evidence(job_id)
+        if evidence:
+            return self.store.archive_job(job_id, 'expired', evidence=evidence)
+        return None
 
     def latest(self, job_id):
         row = self.conn.execute('SELECT result_json FROM posting_checks WHERE job_id=? ORDER BY check_id DESC LIMIT 1', (job_id,)).fetchone()

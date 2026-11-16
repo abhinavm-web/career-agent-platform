@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from datetime import datetime, timezone
 import sqlite3
 import re
 from pathlib import Path
@@ -49,6 +51,12 @@ class Store:
                 description TEXT NOT NULL,
                 source TEXT NOT NULL,
                 remote INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS job_archives(
+                job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
+                reason TEXT NOT NULL, duplicate_of TEXT REFERENCES jobs(job_id),
+                evidence_json TEXT NOT NULL, archived_at TEXT NOT NULL,
+                restored_at TEXT
             );
             CREATE TABLE IF NOT EXISTS applications(
                 job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
@@ -197,6 +205,49 @@ class Store:
             result.setdefault(row['job_id'], []).append(item)
         return result
 
+    def archive_state(self, job_id: str) -> dict | None:
+        row = self.connection.execute(
+            'SELECT * FROM job_archives WHERE job_id=? AND restored_at IS NULL', (job_id,)
+        ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result['evidence'] = json.loads(result.pop('evidence_json'))
+        return result
+
+    def archive_job(self, job_id: str, reason: str, duplicate_of: str | None = None,
+                    evidence: dict | None = None) -> dict:
+        """Caller owns the write transaction; retain all linked candidate work."""
+        job = self.get_job(job_id)
+        if self.archive_state(job_id):
+            raise ValueError('Opportunity is already archived; restore it first')
+        if reason not in ('duplicate', 'confirmed_closed', 'expired'):
+            raise ValueError('Choose a supported archive reason')
+        if reason == 'duplicate':
+            if not isinstance(duplicate_of, str) or duplicate_of == job_id:
+                raise ValueError('Choose a different active opportunity to keep')
+            other = self.get_job(duplicate_of)
+            if self.archive_state(other.id):
+                raise ValueError('The opportunity to keep is archived; refresh and choose an active record')
+            normalize = lambda value: ' '.join(value.casefold().split())
+            if not normalize(job.location) or any(normalize(getattr(job, key)) != normalize(getattr(other, key))
+                                                  for key in ('company', 'title', 'location')):
+                raise ValueError('Duplicate candidates must have matching company, title and location')
+        elif duplicate_of is not None:
+            raise ValueError('Only duplicates can reference another opportunity')
+        now = datetime.now(timezone.utc).isoformat()
+        self.connection.execute('''INSERT INTO job_archives
+            (job_id,reason,duplicate_of,evidence_json,archived_at,restored_at) VALUES(?,?,?,?,?,NULL)
+            ON CONFLICT(job_id) DO UPDATE SET reason=excluded.reason,duplicate_of=excluded.duplicate_of,
+            evidence_json=excluded.evidence_json,archived_at=excluded.archived_at,restored_at=NULL''',
+            (job_id, reason, duplicate_of, json.dumps(evidence or {}), now))
+        return self.archive_state(job_id)
+
+    def restore_job(self, job_id: str) -> None:
+        self.get_job(job_id)
+        self.connection.execute('UPDATE job_archives SET restored_at=? WHERE job_id=? AND restored_at IS NULL',
+                                (datetime.now(timezone.utc).isoformat(), job_id))
+
     def possible_duplicates(self, job_id: str) -> dict:
         """Find possible same-title postings without changing either record."""
         job = self.get_job(job_id)
@@ -209,7 +260,9 @@ class Store:
         scan_limited = False
         results_truncated = False
         rows = self.connection.execute('''SELECT job_id,company,title,location,url,source FROM jobs
-            WHERE job_id<>? ORDER BY rowid DESC LIMIT 10001''', (job.id,))
+            WHERE job_id<>? AND NOT EXISTS (SELECT 1 FROM job_archives a
+                WHERE a.job_id=jobs.job_id AND a.restored_at IS NULL)
+            ORDER BY rowid DESC LIMIT 10001''', (job.id,))
         for index, row in enumerate(rows):
             if index == 10000:
                 scan_limited = True
@@ -227,9 +280,11 @@ class Store:
         return {'jobs': matches, 'scan_limited': scan_limited, 'results_truncated': results_truncated,
                 'reason': 'Exact company, title and location after case and whitespace normalization only. Matching details can still represent different requisitions.'}
 
-    def list_jobs(self, limit: int = 100) -> list[Job]:
+    def list_jobs(self, limit: int = 100, *, include_archived: bool = False) -> list[Job]:
         rows = self.connection.execute(
-            "SELECT * FROM jobs ORDER BY rowid DESC LIMIT ?", (limit,)
+            """SELECT * FROM jobs WHERE (? OR NOT EXISTS (SELECT 1 FROM job_archives a
+                WHERE a.job_id=jobs.job_id AND a.restored_at IS NULL)) ORDER BY rowid DESC LIMIT ?""",
+            (include_archived, limit)
         ).fetchall()
         return [
             Job(
@@ -241,21 +296,18 @@ class Store:
             for row in rows
         ]
 
-    def job_page(self, limit: int = 500, before: int | None = None) -> tuple[list[Job], int | None]:
+    def job_page(self, limit: int = 500, before: int | None = None, *, include_archived: bool = False) -> tuple[list[Job], int | None]:
         """Read a bounded, insertion-stable page ordered from newest to oldest."""
         if type(limit) is not int or not 1 <= limit <= 500:
             raise ValueError('Page size must be between 1 and 500')
         if before is not None and (type(before) is not int or before < 1):
             raise ValueError('Invalid opportunity cursor')
-        if before is None:
-            rows = self.connection.execute(
-                'SELECT rowid AS page_rowid, * FROM jobs ORDER BY rowid DESC LIMIT ?', (limit + 1,)
-            ).fetchall()
-        else:
-            rows = self.connection.execute(
-                'SELECT rowid AS page_rowid, * FROM jobs WHERE rowid < ? ORDER BY rowid DESC LIMIT ?',
-                (before, limit + 1)
-            ).fetchall()
+        rows = self.connection.execute(
+            """SELECT rowid AS page_rowid, * FROM jobs WHERE (? IS NULL OR rowid < ?)
+            AND (? OR NOT EXISTS (SELECT 1 FROM job_archives a
+                WHERE a.job_id=jobs.job_id AND a.restored_at IS NULL))
+            ORDER BY rowid DESC LIMIT ?""", (before, before, include_archived, limit + 1)
+        ).fetchall()
         next_before = rows[limit - 1]['page_rowid'] if len(rows) > limit else None
         return [Job(company=row['company'], title=row['title'], location=row['location'],
                     url=row['url'], description=row['description'], source=row['source'],

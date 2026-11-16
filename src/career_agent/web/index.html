@@ -149,7 +149,8 @@
               <label class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search roles or companies" aria-label="Search roles or companies"></label>
               <label class="filter-label">View
                 <select id="filter" aria-label="Filter opportunities">
-                  <option value="all">All roles</option>
+                  <option value="all">All active roles</option>
+                  <option value="archived">Archived</option>
                   <option value="priority">Keyword score 70+</option>
                   <option value="sponsorship">Sponsorship signals</option>
                   <option value="imported-history">Imported employer history</option>
@@ -170,6 +171,7 @@
             </div>
             <p id="board-limit" class="board-limit" hidden></p>
             <div class="list-count"><span id="visible-count" role="status" aria-live="polite">0 opportunities</span><label>Sort <select id="board-sort" aria-label="Sort opportunities"><option value="score">Keyword score first</option><option value="recent">Recently added</option></select></label></div>
+            <button id="cleanup-expired" class="button" type="button">Archive verified expired roles</button>
             <div id="job-list" class="job-list" aria-label="Job postings"><div class="loading">Loading your local jobs…</div></div>
             <div class="pagination" aria-label="Opportunity pages"><button id="jobs-prev" class="button" type="button">Previous</button><span id="jobs-page" aria-live="polite"></span><button id="jobs-next" class="button" type="button">Next</button></div>
           </div>
