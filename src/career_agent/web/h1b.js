@@ -439,12 +439,15 @@
       observation.textContent = "Checking public ATS data…";
       try {
         const result = await api("/api/jobs/" + job.id + "/live-check", "POST", {acknowledged: true});
-        if (observation.isConnected) liveObservation(observation, result);
+        if (observation.isConnected) {
+          liveObservation(observation, result);
+          if (result.archive) observation.append(node("p", "Archived from active opportunities. Drafts and application history retained. Restore it from the opportunity board's Archived view."));
+        }
       }
       catch (error) { if (observation.isConnected) observation.textContent = "Check failed: " + error.message + ". Previous saved observation is unchanged."; }
       finally { check.disabled = false; }
     });
-    card.append(node("p", job.live_check_supported ? "Checks the original website or public hiring system. No profile or résumé is sent. Observations become stale after 24 hours." : "This URL cannot be checked automatically. Open the original posting to confirm availability."), check, observation);
+    card.append(node("p", job.live_check_supported ? "Checks the original website or public hiring system. No profile or résumé is sent. Observations become stale after 24 hours. Verified expired deadlines automatically archive the role." : "This URL cannot be checked automatically. Open the original posting to confirm availability."), check, observation);
     return card;
   }
   async function opportunities(offset = 0) {
