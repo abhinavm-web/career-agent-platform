@@ -15,6 +15,8 @@ Follow the user's revision request only when consistent with the verified facts.
 Return JSON only with resume and cover_letter arrays. Each cover-letter item has text and fact_ids.
 Each resume item has text, fact_ids and section (summary, experience, projects, skills, education or certifications).
 Build a coherent new document with an evidence-backed summary and relevant sections; omit sections lacking facts.
+Keep review notes, coverage scores, fact IDs and comments about missing requirements out of the prose.
+Absent evidence does not establish that the candidate lacks experience.
 Every resume item and cover-letter paragraph must cite one or more supplied fact IDs supporting its claims.
 Use 1-20 resume items and 1-6 cover-letter paragraphs. Do not add contact details, names or signoffs.
 The cover letter may express interest in the supplied role but must not claim employer-specific knowledge
