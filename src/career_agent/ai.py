@@ -62,7 +62,7 @@ def routes(path=None):
     for name, item in data.items():
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,40}', name) or not isinstance(item, dict):
             raise ValueError('Invalid AI route')
-        if set(item) - {'provider', 'model', 'base_url', 'key_env', 'region', 'max_tokens', 'daily_request_limit', 'record_history'}:
+        if set(item) - {'provider', 'model', 'base_url', 'key_env', 'region', 'max_tokens', 'daily_request_limit', 'record_history', 'thinking_disabled'}:
             raise ValueError('Unsupported AI setting; store keys only in environment variables')
         if not isinstance(item.get('provider'), str) or item['provider'] not in PROVIDERS:
             raise ValueError('Unsupported AI provider')
@@ -76,6 +76,8 @@ def routes(path=None):
             raise ValueError('AI record_history must be a boolean')
         if 'key_env' in item and (not isinstance(item['key_env'], str) or not re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', item['key_env'])):
             raise ValueError('key_env must name an environment variable')
+        if 'thinking_disabled' in item and (type(item['thinking_disabled']) is not bool or item['provider'] != 'anthropic'):
+            raise ValueError('thinking_disabled is a boolean Anthropic-only setting')
         provider = item['provider']
         if provider in {'azure', 'ollama', 'lmstudio'}:
             _endpoint(item.get('base_url'), provider)
@@ -391,7 +393,8 @@ def complete(route, prompt, *, system=SYSTEM, json_schema=None):
                 with Anthropic(api_key=_key(route), base_url='https://api.anthropic.com',
                                http_client=transport, max_retries=0) as client:
                     r = client.messages.create(model=route['model'], max_tokens=maximum,
-                        system=system, messages=[{'role': 'user', 'content': prompt}])
+                        system=system, messages=[{'role': 'user', 'content': prompt}],
+                        **({'thinking': {'type': 'disabled'}} if route.get('thinking_disabled') else {}))
                 if r.stop_reason != 'end_turn':
                     raise _IncompleteResponse()
                 if (getattr(r, 'role', None) != 'assistant' or not isinstance(r.content, list)

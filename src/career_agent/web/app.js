@@ -306,6 +306,8 @@
       const capture = editor?.querySelector?.("#description-capture-input");
       if (editor?.open && description && (description.value !== description.defaultValue || source?.value || capture?.value) &&
           !window.confirm("Discard the unsaved job-description correction?")) return;
+      const revisionEditor = byId("detail-panel").querySelector?.(".document-revision-studio");
+      if (revisionEditor?.dataset.dirty === "true" && !window.confirm("Discard unsent AI revision instructions? Saved revisions remain available for this job.")) return;
       const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
       if (picker?.dataset.dirty === "true" && !window.confirm("Discard your unfinished fact selection and ordering for this job?")) return;
       const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
@@ -362,6 +364,121 @@
     const box = node("section", "detail-section");
     box.append(node("h4", "", heading));
     return box;
+  }
+
+  function documentRevisionStudio(job) {
+    const panel = node("details", "inline-tailoring document-revision-studio");
+    panel.dataset.jobId = job.id;
+    panel.append(node("summary", "", "AI resume and cover letter"), node("p", "muted",
+      "Ask your chosen model to revise both documents for this opportunity. Revisions are saved separately from verified facts and application packets. Citations do not prove accuracy: review every claim before export."));
+    const load = button("Load models and saved revisions", "button");
+    const modelLabel = node("label", "field", "Revision model");
+    const model = node("select"); model.setAttribute("aria-label", "Revision model"); modelLabel.append(model);
+    const destination = node("p", "muted");
+    const instructionLabel = node("label", "field", "Revision instructions");
+    const instructions = node("textarea"); instructions.maxLength = 2000; instructions.rows = 3;
+    instructions.placeholder = "Emphasize relevant leadership experience and keep the cover letter concise.";
+    instructionLabel.append(instructions);
+    const consentLabel = node("label", "check-label");
+    const consent = node("input"); consent.type = "checkbox";
+    consentLabel.append(consent, document.createTextNode(" I consent to sharing the posting, verified facts, instructions and previous revision with this model. Cloud requests may incur charges."));
+    const run = button("Revise resume and cover letter", "button button-primary"); run.disabled = true;
+    const status = node("p", "muted"); status.setAttribute("role", "status");
+    const results = node("div");
+    let routes = [], parentId = 0, busy = false;
+    const current = () => panel.isConnected && state.selectedId === job.id;
+    const updateRoute = () => {
+      consent.checked = false;
+      const route = routes.find(r => r.route === model.value);
+      destination.textContent = route ? route.provider + " · " + route.model + " · " + route.destination : "No models configured. Open AI tools to configure a provider.";
+      run.disabled = busy || !route?.route_fingerprint || job.application_stage === "submitted";
+    };
+    model.addEventListener("change", updateRoute);
+    instructions.addEventListener("input", () => { panel.dataset.dirty = "true"; });
+    function renderRevisions(history) {
+      results.replaceChildren(); parentId = history[0]?.id || 0;
+      if (!history.length) results.append(node("p", "muted", "No AI document revisions saved for this opportunity."));
+      history.forEach((revision, index) => {
+        const card = node("details", "ai-document-version"); card.open = index === 0;
+        card.append(node("summary", "", "Revision " + revision.id + " · " + revision.model + " · " + (revision.stale ? "Source changed" : revision.reviewed_at ? "Reviewed" : "Needs review")),
+          node("p", "muted", revision.created_at + " · " + revision.provider + (revision.reported_model ? " · Reported model: " + revision.reported_model : "")));
+        for (const kind of ["resume", "cover_letter"]) {
+          card.append(node("h4", "", kind === "resume" ? "AI resume revision" : "AI cover letter revision"));
+          for (const row of revision.document[kind]) {
+            const passage = node("section", "inline-suggestion");
+            passage.append(node("p", "description", row.text));
+            const source = node("details"); source.append(node("summary", "", "Compare cited facts"));
+            for (const id of row.fact_ids) source.append(node("p", "", id + " · " + revision.sources[id]));
+            passage.append(source);
+            for (const warning of row.warnings || []) passage.append(node("p", "stale-warning", warning));
+            card.append(passage);
+          }
+        }
+        if (index === 0 && !revision.stale) {
+          if (revision.reviewed_at) {
+            for (const [kind, title] of [["resume", "Download reviewed AI resume text"], ["cover_letter", "Download reviewed AI cover letter text"]]) {
+              const download = button(title, "button", async () => {
+                if (download.disabled) return;
+                download.disabled = true;
+                try {
+                  const response = await fetch("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/" + kind + ".txt", {
+                    headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"});
+                  if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.detail || "Export failed"); }
+                  const url = URL.createObjectURL(await response.blob());
+                  const link = document.createElement("a"); link.href = url; link.download = kind + "-" + job.id + "-" + revision.id + ".txt";
+                  document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+                } catch (error) { status.textContent = error.message; }
+                finally { download.disabled = false; }
+              });
+              card.append(download);
+            }
+          } else {
+            const label = node("label", "check-label"), checked = node("input"); checked.type = "checkbox";
+            label.append(checked, document.createTextNode(" I reviewed both AI documents against the cited facts and confirm every claim is accurate."));
+            const approve = button("Confirm AI revision for export", "button", async () => {
+              if (!checked.checked || approve.disabled) return;
+              approve.disabled = true;
+              try {
+                const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/review", "POST", {acknowledged: true});
+                if (current()) renderRevisions(result.revisions);
+              } catch (error) { status.textContent = error.message; approve.disabled = false; }
+            });
+            approve.disabled = true; checked.addEventListener("change", () => { approve.disabled = !checked.checked; });
+            card.append(label, approve);
+          }
+        }
+        if (revision.stale) card.append(node("p", "stale-warning", "The profile or posting changed. Generate and review a new revision before export."));
+        results.append(card);
+      });
+    }
+    load.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true; load.disabled = true; run.disabled = true;
+      try {
+        const [available, saved] = await Promise.all([api("/api/ai/routes"), api("/api/jobs/" + job.id + "/document-revisions")]);
+        if (!current()) return;
+        routes = available.routes; model.replaceChildren();
+        for (const route of routes) { const option = node("option", "", route.route + " · " + route.model); option.value = route.route; model.append(option); }
+        renderRevisions(saved.revisions); status.textContent = "Choose a model, add revision instructions, and confirm sharing.";
+      } catch (error) { if (current()) status.textContent = error.message; }
+      finally { busy = false; load.disabled = false; updateRoute(); }
+    });
+    run.addEventListener("click", async () => {
+      const route = routes.find(r => r.route === model.value);
+      if (busy || !consent.checked || !route?.route_fingerprint) return;
+      busy = true; panel.dataset.pending = "true"; load.disabled = true; run.disabled = true; model.disabled = true; instructions.disabled = true;
+      status.textContent = "Generating a saved revision with " + route.model + "…";
+      try {
+        const result = await api("/api/jobs/" + job.id + "/document-revisions", "POST", {route: route.route,
+          route_fingerprint: route.route_fingerprint, instructions: instructions.value, parent_id: parentId, acknowledged: true});
+        if (!current()) return;
+        panel.dataset.dirty = "false"; renderRevisions(result.revisions);
+        status.textContent = "Revision saved. Compare every claim with its cited facts before confirming export. Verified facts remain unchanged.";
+      } catch (error) { if (current()) status.textContent = error.message; }
+      finally { busy = false; panel.dataset.pending = "false"; load.disabled = false; model.disabled = false; instructions.disabled = false; updateRoute(); }
+    });
+    panel.append(load, modelLabel, destination, instructionLabel, consentLabel, run, status, results);
+    return panel;
   }
 
   function inlineTailoring(job) {
@@ -450,6 +567,8 @@
   }
 
   function renderDetailPreservingEditor() {
+    const revisionEditor = byId("detail-panel").querySelector?.(".document-revision-studio");
+    const keepRevision = revisionEditor?.dataset.jobId === state.selectedId;
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
     const keep = editor?.open && editor.dataset.jobId === state.selectedId;
     const picker = byId("detail-panel").querySelector?.(".tailoring-picker");
@@ -461,6 +580,7 @@
     const keepInline = inline?.open && inline.dataset.jobId === state.selectedId && currentJob &&
       inline.dataset.descriptionRevision === String(currentJob.description_revision ?? 0);
     renderDetail();
+    if (keepRevision) byId("detail-panel").querySelector?.(".document-revision-studio")?.replaceWith(revisionEditor);
     if (keepInline) byId("detail-panel").querySelector?.("#inline-tailoring")?.replaceWith(inline);
     if (keepDuplicates) byId("detail-panel").querySelector?.("#possible-duplicates")?.replaceWith(duplicates);
     if (keepPicker) {
@@ -929,7 +1049,7 @@
     panes.application.append(context);
     const drafts = section("Application preparation");
     drafts.id = "job-application";
-    const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
+    const p = node("p", "", "Prepare documents from verified career facts. Review AI-rewritten claims before export; applications are never sent automatically.");
     drafts.append(p);
     const workflowActions = node("div", "button-row");
     workflowActions.append(button("Analyze this role with AI", "button", openJobAI), button("Track application progress", "button", async () => {
@@ -938,7 +1058,7 @@
       if (state.screen === "tracker") await selectCRMJob(job.id);
     }));
     drafts.append(workflowActions);
-    drafts.append(inlineTailoring(job));
+    drafts.append(documentRevisionStudio(job), inlineTailoring(job));
     const missingProfile = state.settings.profile_configured === false;
     const missingFacts = state.settings.facts_configured === false;
     if (job.application_stage !== "submitted" && (missingProfile || missingFacts)) {
