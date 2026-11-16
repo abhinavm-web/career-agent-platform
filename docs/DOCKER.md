@@ -76,3 +76,5 @@ Review the [AI route backup instructions](BACKUP.md#optional-ai-route-configurat
 for sensitivity, credential, and restore details.
 Do not commit backups. Creating a backup inside the volume is not a replacement
 for copying it elsewhere.
+
+For an isolated PostgreSQL development service, see [PostgreSQL development](POSTGRES.md). The application still uses SQLite; the service does not migrate or connect the workspace.
