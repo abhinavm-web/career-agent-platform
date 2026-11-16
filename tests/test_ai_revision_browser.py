@@ -74,6 +74,8 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         panel.get_by_role('button', name='Load models and saved revisions').click()
                         expect(panel.get_by_role('button', name='Download reviewed AI resume text')).to_be_visible()
                         self.assertEqual(complete.call_count, 1)
+                        page.set_viewport_size({'width': 390, 'height': 844})
+                        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), 390)
                     finally:
                         browser.close()
             finally:

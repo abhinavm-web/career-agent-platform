@@ -1049,7 +1049,7 @@
     panes.application.append(context);
     const drafts = section("Application preparation");
     drafts.id = "job-application";
-    const p = node("p", "", "Drafts copy only candidate-confirmed career facts and cannot send an application.");
+    const p = node("p", "", "Prepare documents from verified career facts. Review AI-rewritten claims before export; applications are never sent automatically.");
     drafts.append(p);
     const workflowActions = node("div", "button-row");
     workflowActions.append(button("Analyze this role with AI", "button", openJobAI), button("Track application progress", "button", async () => {
