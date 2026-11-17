@@ -127,3 +127,47 @@ imports do not restore an archived record. Restore persists through ordinary rea
 a new expired check or another explicit cleanup can archive it again. This removes
 clutter without permanently deleting application evidence. The tracker retains its
 history and follow-ups independently of board archives.
+
+### Generated résumé validation
+
+In **Application → AI resume and cover letter**, generation now saves a proposal
+and validates that actual proposal against the full saved posting. It inventories
+qualification sections, responsibilities, practical conditions and ambiguous
+context; checks every retained item in bounded batches; and audits every résumé
+and cover-letter passage against verified source statements. This replaces the
+manual 80% excerpt target. The separate profile requirement analyst remains an
+advisory subset analysis; it does not validate a generated document.
+
+A separate model task challenges claimed matches and alternative requirements
+against the actual indexed résumé. It checks contradictions between a supported
+label and an explanation admitting omissions, and preserves genuine AND/OR
+alternatives. Profile evidence absent from the résumé cannot justify a match.
+Older validations require this additional check before export review.
+
+The checklist distinguishes supported, partial, not demonstrated, practical
+conditions needing confirmation, and employer context. It shows résumé passages
+and relevant profile evidence that the draft may have omitted. Missing evidence
+does not establish that a candidate lacks experience. Explicit employment date
+ranges are compared without double-counting overlapping intervals; education,
+project dates, undated experience and unproven specialized tenure do not establish
+employment-duration requirements.
+
+**Repair wording and add verified evidence** creates a new proposal using
+unchanged verified statements for unsupported passages and relevant omitted
+evidence. It keeps unscoped achievements separate from chronological work history.
+It does not invent claims, modify career facts, or approve documents. Review is
+available only after a complete validation with supported document claims. A
+truthful résumé may still have unmet job requirements; those remain visible.
+PDF/DOCX/text export still requires explicit review of the current revision.
+
+Generation, validation and requested repairs share explicit provider consent.
+Validation may make several provider requests; each actual call is separately
+counted against the configured daily limit and recorded when history is enabled.
+Invalid or incomplete responses leave a saved failure state with export blocked.
+Profile/posting/draft changes invalidate results; validation clears prior review.
+Legacy revisions require fresh validation (or regeneration after sources change).
+
+Model judgments are not a factual certification, ATS score, eligibility decision
+or hiring prediction. A complete check means every inventoried source item and
+passage was processed, not that the model or requirement extraction is infallible.
+The app rejects input beyond explicit bounds rather than silently sampling it.

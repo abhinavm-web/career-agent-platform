@@ -21,6 +21,38 @@ def _negated_clauses(text: str) -> list[str]:
             for part in clauses if NEGATION.search(part)]
 
 
+def _negation_source(source: str, wording: str) -> str:
+    """Do not treat an omitted book synopsis as reversed candidate experience.
+
+    This exception applies only to a bibliography-style author statement that
+    retains the cited title/year and does not retell the synopsis. Other lines,
+    including negated career achievements, remain subject to the same checks.
+    The semantic claim audit still receives the original unmodified facts.
+    """
+    if (not wording.lstrip().casefold().startswith('author,')
+            or re.search(r'\b(?:explores|examines|discusses|describes|argues|claims|proves)\b', wording, re.I)):
+        return source
+    bibliography, separator, following = wording.partition(';')
+    if separator and not re.match(r'^\s*(?:[\w .-]+\s+\d{4}\s+panelist\b|panelist\b|speaker\b)', following, re.I):
+        return source
+    remainder = re.sub(r'^\s*Author,\s*', '', bibliography, flags=re.I)
+    for title, year in re.findall(r'^\s*Author,\s*(.+?)\s*\((\d{4})\)', source, re.I | re.M):
+        for cited_title in [title, title.split(':', 1)[0]]:
+            remainder = re.sub(re.escape(cited_title) + r'\s*\(' + year + r'\)', '', remainder, flags=re.I)
+    if re.sub(r'\band\b|[\s,.;]', '', remainder, flags=re.I):
+        return source
+    lines = []
+    for line in source.splitlines():
+        book = re.match(r'^\s*Author,\s*(.+?\((\d{4})\)):\s*(?:Explores|Examines|Discusses|Describes)\b', line, re.I)
+        if book:
+            title = book.group(1).split(':', 1)[0].strip()
+            title = re.sub(r'\s*\(\d{4}\)$', '', title)
+            if title.casefold() in wording.casefold() and book.group(2) in wording:
+                line = 'Author, ' + book.group(1)
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 def wording_review_warnings(source: str, wording: str) -> list[str]:
     """Flag selected changes for review; an empty list does not imply factual fidelity."""
     source_sequence = [re.sub(r'\s+', '', x) for x in NUMBER.findall(source)]
@@ -34,8 +66,8 @@ def wording_review_warnings(source: str, wording: str) -> list[str]:
     source_qualified = {re.sub(r'\s+', ' ', x.casefold()) for x in QUALIFIED_NUMBER.findall(source)}
     proposed_qualified = {re.sub(r'\s+', ' ', x.casefold()) for x in QUALIFIED_NUMBER.findall(wording)}
     if source_qualified != proposed_qualified:
-        warnings.append('A numeric limit or approximation changed; verify the scope against the source.')
-    if _negated_clauses(source) != _negated_clauses(wording):
+        warnings.append('Numeric qualifiers differ from the combined sources, possibly because details were omitted. Check that retained numbers preserve their original scope.')
+    if _negated_clauses(_negation_source(source, wording)) != _negated_clauses(wording):
         warnings.append('Negation or its surrounding wording changed; check that the meaning is unchanged.')
     added = {x.casefold() for x in HIGHER_CLAIMS.findall(wording)} - {x.casefold() for x in HIGHER_CLAIMS.findall(source)}
     if added:

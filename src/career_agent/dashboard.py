@@ -602,7 +602,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise ValueError('Save and verify career facts before revising documents')
             bank = FactBank.load(config.facts_path)
         return {'job_id': job.id, 'title': job.title, 'company': job.company, 'description': job.description,
-                'claims': bank.public_claims(), 'name': bank.name, 'headline': bank.headline,
+                'claims': bank.public_claims(), 'claim_sections': {f.fact_id: f.section for f in bank.facts}, 'name': bank.name, 'headline': bank.headline,
                 'contact': bank.resume_contact, 'workspace_revision': store.workspace_revision(),
                 'description_revision': store.description_revision(job_id)}
 
@@ -662,8 +662,74 @@ def create_app(config: DashboardConfig) -> FastAPI:
             store.connection.commit()
         return document_revisions(job_id)
 
+    async def check_document_revision(job_id, revision_id, request, repair_requested=False):
+        from functools import partial
+        from datetime import datetime, timezone
+        from .document_revisions import Revisions, digest
+        from . import resume_validation
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'acknowledged'}
+                or data['acknowledged'] is not True):
+            raise ValueError('Confirm sharing the posting, verified facts and generated documents for validation')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                revisions = Revisions(store)
+                store.connection.execute('BEGIN')
+                snapshot = revision_snapshot(job_id, store)
+                history = revisions.list(job_id, snapshot)
+                if (not history or history[0]['id'] != revision_id or history[0]['stale']
+                        or store.stage_of(job_id) == 'submitted'):
+                    raise ValueError('Draft is stale, superseded or submitted; load the current draft')
+                original = history[0]
+            proposed = resume_validation.repair(snapshot, original) if repair_requested else original
+
+            def recorded_completion(route, prompt, **kwargs):
+                # Reserve/count every provider call, including each audit/checklist
+                # batch, instead of hiding several calls in one workflow entry.
+                return run_recorded(config.db_path, data['route'], 'resume_validation',
+                    partial(ai.complete, **kwargs), route, prompt, expected_route_fingerprint=fingerprint)
+
+            try:
+                result = await run_in_threadpool(partial(resume_validation.validate,
+                    snapshot, proposed, data['route'], complete=recorded_completion))
+            except ValueError as error:
+                result = {'status': 'failed', 'complete': False, 'export_allowed': False,
+                          'requirements': [], 'claims': {'complete': False, 'passages': []},
+                          'notices': [str(error)[:800]], 'created_at': datetime.now(timezone.utc).isoformat()}
+            with Store(config.db_path) as store:
+                revisions = Revisions(store)
+                store.connection.execute('BEGIN IMMEDIATE')
+                current = revision_snapshot(job_id, store)
+                if (digest(current) != digest(snapshot) or revisions.latest_id(job_id) != revision_id
+                        or store.stage_of(job_id) == 'submitted'):
+                    raise ValueError('Profile, posting or draft changed during validation; no result saved')
+                # Compare the complete stored revision too: another process may
+                # have revalidated/reviewed it without changing the revision ID.
+                latest = revisions.list(job_id, current)[0]
+                if latest != original:
+                    raise ValueError('Draft review changed during validation; reload before retrying')
+                if repair_requested:
+                    revision_id = revisions.save(job_id, snapshot, proposed)
+                clean = {k: v for k, v in proposed.items() if k not in {'id', 'stale', 'reviewed_at'}}
+                revisions.save_validation(revision_id, clean, result)
+                store.connection.commit()
+            return document_revisions(job_id)
+        finally:
+            ai_lock.release()
+
+    @app.post('/api/jobs/{job_id}/document-revisions/{revision_id}/validate')
+    async def validate_document_revision(job_id: str, revision_id: int, request: Request):
+        return await check_document_revision(job_id, revision_id, request)
+
+    @app.post('/api/jobs/{job_id}/document-revisions/{revision_id}/repair')
+    async def repair_document_revision(job_id: str, revision_id: int, request: Request):
+        return await check_document_revision(job_id, revision_id, request, True)
+
     def reviewed_ai_document(job_id, revision_id):
-        from .document_revisions import Revisions
+        from .document_revisions import Revisions, require_validation
         with Store(config.db_path) as store:
             revisions = Revisions(store)
             store.connection.execute('BEGIN')
@@ -671,6 +737,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             history = revisions.list(job_id, snapshot)
             if not history or history[0]['id'] != revision_id or history[0]['stale'] or not history[0]['reviewed_at']:
                 raise ValueError('Review the current revision before export')
+            require_validation(history[0])
             return history[0], snapshot
 
     @app.get('/api/jobs/{job_id}/document-revisions/{revision_id}/{kind}.{format}')
