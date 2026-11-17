@@ -425,7 +425,8 @@
           }
         }
         const validation = revision.validation;
-        const canReview = validation?.status === "completed" && validation.complete === true && validation.export_allowed === true && validation.claims?.complete === true;
+        const currentValidation = validation?.version === 2 && validation.support_audit?.complete === true;
+        const canReview = currentValidation && validation.status === "completed" && validation.complete === true && validation.export_allowed === true && validation.claims?.complete === true;
         const validationBox = node("section", "inline-suggestion resume-validation");
         validationBox.append(node("h4", "", "Resume validation against job requirements"), node("p", "muted",
           "Checks this generated resume against the full saved posting and checks both documents against verified facts. Results are evidence judgments, not an ATS score, hiring prediction or proof that an undocumented skill is absent."));
@@ -433,10 +434,16 @@
         if (!validation) {
           validationStatus.textContent = "Not validated. Validate this revision before confirming export.";
         } else {
-          const complete = validation.status === "completed" && validation.complete === true;
-          validationStatus.textContent = complete
-            ? (canReview ? "Validation completed. Review factual accuracy and remaining job requirements before export." : "Validation completed with claim issues. Repair unsupported wording before confirming export.")
-            : "Validation incomplete or failed. Export remains unavailable; retry validation after reviewing the notice.";
+          const complete = currentValidation && validation.status === "completed" && validation.complete === true;
+          validationStatus.textContent = validation.status === "completed" && !currentValidation
+            ? "Revalidation required: this saved result predates or lacks the additional match-support check. Run validation again before export."
+            : complete
+              ? (canReview ? "Validation completed. Review factual accuracy and remaining job requirements before export." : "Validation completed with claim issues. Repair unsupported wording before confirming export.")
+              : "Validation incomplete or failed. Export remains unavailable; retry validation after reviewing the notice.";
+          if (currentValidation) {
+            const checkedCount = Number.isInteger(validation.support_audit.checked) && validation.support_audit.checked >= 0 ? String(validation.support_audit.checked) : "Count unavailable;";
+            validationBox.append(node("p", "match-support-audit", "Match-support audit: " + checkedCount + " match and alternative-requirement assessments independently checked against the resume. This additional check is advisory, not a guarantee of qualification."));
+          }
           if (validation.created_at) validationBox.append(node("p", "muted", "Validated " + validation.created_at + (validation.model ? " · " + validation.model : "")));
           for (const notice of validation.notices || []) validationBox.append(node("p", "stale-warning", notice));
           const labels = {supported: "Supported", partial: "Partially supported", not_demonstrated: "Not demonstrated", needs_confirmation: "Condition unresolved", context: "Posting context"};
@@ -545,7 +552,7 @@
       if (!current()) return;
       renderRevisions(result.revisions);
       const validation = result.revisions[0]?.validation;
-      status.textContent = validation?.status === "completed" && validation.complete
+      status.textContent = validation?.version === 2 && validation.status === "completed" && validation.complete && validation.support_audit?.complete === true
         ? "Validation saved. Review the full requirement checklist and claim findings before export. Verified facts remain unchanged."
         : "Draft saved, but validation is incomplete. Review the validation notice and retry; export remains unavailable.";
     }
@@ -562,7 +569,7 @@
             route: route.route, route_fingerprint: route.route_fingerprint, acknowledged: true});
           if (!current()) return;
           renderRevisions(result.revisions);
-          status.textContent = result.revisions[0]?.validation?.status === "completed" && result.revisions[0].validation.complete
+          status.textContent = result.revisions[0]?.validation?.version === 2 && result.revisions[0].validation.status === "completed" && result.revisions[0].validation.complete && result.revisions[0].validation.support_audit?.complete === true
             ? "Repaired revision saved. Review its validation findings and wording before export. Verified facts remain unchanged."
             : "Repaired draft saved, but validation is incomplete. Review the notice and retry; export remains unavailable.";
         }

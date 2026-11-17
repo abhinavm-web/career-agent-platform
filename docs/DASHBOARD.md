@@ -138,6 +138,12 @@ and cover-letter passage against verified source statements. This replaces the
 manual 80% excerpt target. The separate profile requirement analyst remains an
 advisory subset analysis; it does not validate a generated document.
 
+A separate model task challenges claimed matches and alternative requirements
+against the actual indexed résumé. It checks contradictions between a supported
+label and an explanation admitting omissions, and preserves genuine AND/OR
+alternatives. Profile evidence absent from the résumé cannot justify a match.
+Older validations require this additional check before export review.
+
 The checklist distinguishes supported, partial, not demonstrated, practical
 conditions needing confirmation, and employer context. It shows résumé passages
 and relevant profile evidence that the draft may have omitted. Missing evidence

@@ -14,8 +14,9 @@ import re
 from . import ai
 from .claim_fidelity import audit_document
 from .fit_evidence import HEADINGS, requirement_inventory
+from .requirement_support import audit_candidate, audit_support
 
-VERSION = 1
+VERSION = 2
 BATCH_SIZE = 10
 STATUSES = {'supported', 'partial', 'not_demonstrated', 'needs_confirmation', 'context'}
 SYSTEM = '''Assess the ACTUAL generated resume against EVERY supplied requirement item exactly once.
@@ -40,6 +41,10 @@ context is only for employer background or nonqualification prose; never hide a 
 responsibility, minimum years, preferred qualification, sponsorship or practical condition as context.
 Required and preferred criteria are equally assessed but retain their original category.
 For compound requirements explicitly discuss each unmet material clause in reason.
+Preserve AND versus OR, including nested preferred/optional clauses. One evidenced genuine
+alternative suffices (Java OR Python, RAG OR agent workflows, evaluation OR fine-tuning).
+Do not demand all listed alternatives, or infer degree equivalence. Preserve mandatory AND
+clauses outside an alternative group and disclose optional/preferred gaps separately.
 List only resume_indices that supply actual relevant evidence. Do not use facts absent from the
 resume to mark supported: profile_fact_ids are verified facts that could strengthen the draft,
 not proof that those facts already appear in it. Supply relevant fact IDs even when absent.
@@ -66,6 +71,16 @@ MONTHS = {name: index for index, name in enumerate(
 MONTH = r'(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?'
 DATES = re.compile(r'\b(' + MONTH + r')\s+(\d{4})\s*(?:to|[-–—])\s*(?:(' + MONTH + r')\s+(\d{4})|(present|current))\b', re.I)
 YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b', re.I)
+
+
+def _duration_exceeds_evidence(quote, dated_months):
+    thresholds = YEARS.findall(quote)
+    # Multiple numeric alternatives need semantic review (e.g. 12 years with a
+    # bachelor's OR 8 with a master's). A single duration still binds skill ORs.
+    if len(thresholds) > 1 and re.search(r'\b(?:or|either)\b', quote, re.I):
+        return False
+    return bool(re.search(r'\bexperience\b', quote, re.I)
+                and any(float(n)*12 > dated_months for n in thresholds))
 
 
 def dated_tenure(texts, today=None):
@@ -217,11 +232,21 @@ def validate(snapshot, revision, route_name, *, complete=None):
                 row['reason'] += f" Dated résumé intervals total about {tenure['approximate_years']} years; specialized tenure is not inferred."
             # Contextual planning horizons are not employment thresholds. The model
             # still has to explicitly resolve all specialized years in its reason.
-            if (row['status'] == 'supported' and re.search(r'\bexperience\b', row['quote'], re.I)
-                    and any(float(n)*12 > tenure['dated_months'] for n in thresholds)):
+            if row['status'] == 'supported' and _duration_exceeds_evidence(row['quote'], tenure['dated_months']):
                 row['status'] = 'partial'
                 row['reason'] += ' The stated duration exceeds the explicitly dated evidence; no automatic tenure match.'
+    support_checked = sum(audit_candidate(row) for row in results)
+    results = audit_support(results, document, route, complete=completion)
+    # The independent reviewer may select different passages; claim-safety still applies.
+    for row in results:
+        if row['status'] == 'supported' and unsafe.intersection(row['resume_indices']):
+            row['status'] = 'partial'
+            row['reason'] = 'Linked résumé wording did not pass claim support review. ' + row['reason']
+        if row['status'] == 'supported' and _duration_exceeds_evidence(row['quote'], tenure['dated_months']):
+            row['status'] = 'partial'
+            row['reason'] += ' The stated duration exceeds the explicitly dated evidence; no automatic tenure match.'
     return {'version': VERSION, 'status': 'completed', 'complete': True,
+            'support_audit': {'complete': True, 'checked': support_checked},
             'export_allowed': claims['complete'] and all(p['status'] == 'supported' for p in claims['passages']),
             'document_sha256': document_digest(document), 'requirements': results, 'claims': claims,
             'tenure': tenure, 'notices': inventory.get('notices', []) + [

@@ -72,7 +72,7 @@ class ExportAPITests(unittest.TestCase):
             result = self.call('POST', path, request)
         self.assertEqual(result.status_code, 200, result.text)
         revision_path = path + '/' + str(result.json()['revisions'][0]['id'])
-        with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.resume_validation.validate', return_value={'status':'completed','complete':True,'export_allowed':True,'requirements':[],'claims':{'complete':True,'passages':[]},'notices':[]}):
+        with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.resume_validation.validate', return_value={'status':'completed','complete':True,'export_allowed':True,'support_audit':{'complete':True,'checked':0},'requirements':[],'claims':{'complete':True,'passages':[]},'notices':[]}):
             response = self.call('POST', revision_path + '/validate', {k:v for k,v in request.items() if k in {'route','route_fingerprint','acknowledged'}})
         self.assertEqual(response.status_code, 200, response.text)
         return revision_path

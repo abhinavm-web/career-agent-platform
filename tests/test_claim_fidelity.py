@@ -31,6 +31,20 @@ def supported_response(route, prompt, **kwargs):
 
 
 class ClaimFidelityTests(unittest.TestCase):
+    def test_negative_career_claim_receives_explicit_evidence_instruction(self):
+        document = copy.deepcopy(DOCUMENT)
+        document['cover_letter'] = [{
+            'text': 'My background is delivery rather than academic research.',
+            'fact_ids': ['project'],
+        }]
+        with patch('career_agent.ai.complete', side_effect=supported_response) as complete:
+            audit_document(document, FACTS, ROUTE)
+        system = complete.call_args.kwargs['system']
+        self.assertIn('Missing facts do not prove absence', system)
+        self.assertIn('classify an invented\nabsence as unsupported', system)
+        payload = json.loads(complete.call_args.args[1])
+        self.assertEqual(payload['passages'][-1]['text'], document['cover_letter'][0]['text'])
+
     def test_abridged_book_citation_does_not_warn_about_omitted_synopsis_negation(self):
         source = 'Author, Fictional Systems: A Guide (2024): Explores why capability alone does not create adoption.'
         wording = 'Author, Fictional Systems: A Guide (2024).'

@@ -27,6 +27,10 @@ def completion(route, prompt, **kwargs):
     if 'passages' in payload:
         return json.dumps({'passages': [{'passage_id': p['passage_id'], 'status': 'supported',
             'reason': 'Fictional cited statement and chronology are supported.'} for p in payload['passages']]})
+    if payload.get('purpose') == 'requirement_support_audit':
+        return json.dumps({'requirements': [{'id': r['id'], 'status': 'supported',
+            'resume_indices': [0, 1], 'reason': 'Independent fictional evidence check.'}
+            for r in payload['requirements']]})
     return json.dumps({'requirements': [{'id': r['id'], 'status': 'supported',
         'resume_indices': [0, 1], 'profile_fact_ids': [], 'reason': 'Fictional model evidence judgment.'}
         for r in payload['requirements']]})
@@ -43,7 +47,9 @@ class ResumeValidationTests(unittest.TestCase):
         desc = 'Requirements:\n' + '\n'.join(f'- Skill {n}' for n in range(23)) + '\n- 15 years experience including 4 years AI and 3 years leading teams'
         seen = []
         def complete(*args, **kwargs):
-            seen.extend(r['id'] for r in json.loads(args[1]).get('requirements', []))
+            payload = json.loads(args[1])
+            if payload.get('purpose') != 'requirement_support_audit':
+                seen.extend(r['id'] for r in payload.get('requirements', []))
             return completion(*args, **kwargs)
         with patch('career_agent.ai.routes', return_value={'test': ROUTE}):
             result = validation.validate(snapshot(desc), document(), 'test', complete=complete)
@@ -115,7 +121,7 @@ class ResumeValidationTests(unittest.TestCase):
         before = document()
         def complete(route, prompt, **kwargs):
             payload = json.loads(prompt)
-            if 'passages' in payload: return completion(route, prompt, **kwargs)
+            if 'passages' in payload or payload.get('purpose') == 'requirement_support_audit': return completion(route, prompt, **kwargs)
             prompts.append(payload)
             self.assertEqual(payload['allowed_resume_indices'], [0, 1])
             self.assertEqual([row['resume_index'] for row in payload['resume']], [0, 1])

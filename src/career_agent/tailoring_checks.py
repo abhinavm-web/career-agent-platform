@@ -66,7 +66,7 @@ def wording_review_warnings(source: str, wording: str) -> list[str]:
     source_qualified = {re.sub(r'\s+', ' ', x.casefold()) for x in QUALIFIED_NUMBER.findall(source)}
     proposed_qualified = {re.sub(r'\s+', ' ', x.casefold()) for x in QUALIFIED_NUMBER.findall(wording)}
     if source_qualified != proposed_qualified:
-        warnings.append('A numeric limit or approximation changed; verify the scope against the source.')
+        warnings.append('Numeric qualifiers differ from the combined sources, possibly because details were omitted. Check that retained numbers preserve their original scope.')
     if _negated_clauses(_negation_source(source, wording)) != _negated_clauses(wording):
         warnings.append('Negation or its surrounding wording changed; check that the meaning is unchanged.')
     added = {x.casefold() for x in HIGHER_CLAIMS.findall(wording)} - {x.casefold() for x in HIGHER_CLAIMS.findall(source)}

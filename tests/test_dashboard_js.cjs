@@ -1344,7 +1344,7 @@ function fictionalStudioRevision() {
     sources: {"fact-1": "Fictional Python delivery.", "fact-2": "Fictional finance delivery."}};
 }
 function supportedStudioValidation() {
-  return {status: "completed", complete: true, export_allowed: true, notices: [], requirements: [
+  return {version: 2, status: "completed", complete: true, export_allowed: true, support_audit: {complete: true, checked: 1}, notices: [], requirements: [
     {id: "r1", category: "required", quote: "Python experience", status: "supported", reason: "The résumé includes the source work.", resume_indices: [0], profile_fact_ids: []},
     {id: "r2", category: "required", quote: "15 years leading research", status: "not_demonstrated", reason: "The dated evidence does not establish fifteen years.", resume_indices: [], profile_fact_ids: []}],
     claims: {complete: true, passages: [{kind: "resume", index: 0, status: "supported", reason: "Source supports wording."}]}};
@@ -1364,6 +1364,8 @@ test('document generation automatically validates and requires explicit review a
   resolveValidation(supportedStudioValidation()); await running;
   assert.match(h.panel.textContent, /15 years leading research/);
   assert.match(h.panel.textContent, /Not demonstrated/);
+  assert.match(h.panel.textContent, /Match-support audit: 1 match and alternative-requirement assessments independently checked/);
+  assert.match(h.panel.textContent, /not a guarantee of qualification/);
   assert.doesNotMatch(h.panel.textContent, /target 80%|excerpts addressed/);
   assert.equal(h.control("Confirm AI revision for export").disabled, true);
   h.field(" I reviewed both AI documents").checked = true;
@@ -1407,4 +1409,28 @@ test('validation failure preserves a saved draft and late results cannot replace
   await late.load(); late.consent(); const work = late.control("Validate resume against job").click(); await flush();
   late.state.selectedId = ID_B; release(supportedStudioValidation()); await work;
   assert.doesNotMatch(late.panel.textContent, /15 years leading research/);
+});
+
+
+test('old completed validation and missing match-support audits require revalidation before export', async () => {
+  for (const variant of ['version-one', 'missing-audit', 'incomplete-audit']) {
+    const validation = supportedStudioValidation();
+    if (variant === 'version-one') validation.version = 1;
+    if (variant === 'missing-audit') delete validation.support_audit;
+    if (variant === 'incomplete-audit') validation.support_audit.complete = false;
+    const reviewed = {...fictionalStudioRevision(), validation, reviewed_at: 'previously-reviewed'};
+    const h = createRevisionStudioHarness({saved: [reviewed]}); await h.load();
+    assert.match(h.panel.textContent, /Revalidation required:.*additional match-support check/);
+    assert.doesNotMatch(h.panel.textContent, /Validation completed\./);
+    assert.equal(h.control('Download reviewed AI resume PDF'), undefined);
+    assert.equal(h.control('Confirm AI revision for export').disabled, true);
+    assert.equal(h.field(' I reviewed both AI documents').disabled, true);
+    assert.equal(h.control('Validate resume against job').disabled, false);
+    h.consent(); await h.control('Validate resume against job').click();
+    assert.match(h.panel.textContent, /Match-support audit: 1 match and alternative-requirement assessments independently checked/);
+    assert.doesNotMatch(h.panel.textContent, /Revalidation required:/);
+    assert.equal(h.field(' I reviewed both AI documents').disabled, false);
+    assert.equal(h.control('Confirm AI revision for export').disabled, true);
+    assert.equal(h.control('Download reviewed AI resume PDF'), undefined);
+  }
 });

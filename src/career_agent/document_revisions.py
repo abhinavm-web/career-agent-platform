@@ -14,6 +14,10 @@ Never invent employers, dates, numbers, skills, credentials, work authorization 
 Preserve employment dates and tense: ended roles must not be presented as current employment.
 Keep work associated with its supported employer and role; do not infer a different chronology.
 Keep accomplishments without explicit role/date linkage in a standalone projects section.
+Use standalone dated employment entries. Do not place unscoped accomplishments beneath a role
+as if its employer or dates applied to them. In cover letters, do not carry an employer from
+one sentence into another achievement unless its verified fact explicitly establishes that
+association. Keep general skill lists separate from explicitly evidenced hands-on work.
 Do not upgrade a skills list into hands-on proficiency or associate a tool with a project
 unless the same verified evidence explicitly connects them. Delivery leadership is not
 Product Manager/Product Owner leadership. Six direct reports is not a six-person total team.
@@ -26,6 +30,10 @@ Each resume item has text, fact_ids and section (summary, experience, projects, 
 Build a coherent new document with an evidence-backed summary and relevant sections; omit sections lacking facts.
 Keep review notes, coverage scores, fact IDs and comments about missing requirements out of the prose.
 Absent evidence does not establish that the candidate lacks experience.
+Do not infer absence of credentials, research or skills from missing facts. Negative or
+contrastive career claims (such as 'delivery rather than academic research') require explicit
+verified evidence just like positive claims; otherwise omit the comparison and state the
+supported experience affirmatively.
 Every resume item and cover-letter paragraph must cite one or more supplied fact IDs supporting its claims.
 Aim for 8-12 concise resume items and 2-3 cover-letter paragraphs; never exceed 20 resume items or 6 paragraphs. Do not add contact details, names or signoffs.
 The cover letter may express interest in the supplied role but must not claim employer-specific knowledge
@@ -154,6 +162,7 @@ def require_validation(revision):
     review = revision.get('validation', {})
     if (review.get('version') != VERSION or review.get('status') != 'completed'
             or review.get('complete') is not True or review.get('export_allowed') is not True
+            or review.get('support_audit', {}).get('complete') is not True
             or review.get('document_sha256') != document_digest(revision['document'])):
         raise ValueError('Validate the current resume against the full posting and repair unsupported wording before export review')
 

@@ -19,6 +19,7 @@ class DocumentRevisionTests(unittest.TestCase):
 
     def validate_revision(self, path):
         result = {'status': 'completed', 'complete': True, 'export_allowed': True,
+                  'support_audit': {'complete': True, 'checked': 0},
                   'requirements': [], 'claims': {'complete': True, 'passages': []}, 'notices': []}
         with patch('career_agent.resume_validation.validate', return_value=result):
             response = self.call('POST', path + '/validate', {k:v for k,v in self.request().items() if k in {'route','route_fingerprint','acknowledged'}})

@@ -23,7 +23,8 @@ def fictional_validation(snapshot, revision, route_name, **kwargs):
         requirements.append({**row, 'status': 'supported' if 'Python' in row['quote'] or 'AWS' in row['quote'] else 'not_demonstrated',
                              'resume_indices': [0] if 'Python' in row['quote'] or 'AWS' in row['quote'] else [],
                              'profile_fact_ids': [], 'reason': 'Fictional evidence assessment; unmatched requirements remain visible.'})
-    return {'status': 'completed', 'complete': True, 'export_allowed': True, 'requirements': requirements,
+    return {'version': 2, 'status': 'completed', 'complete': True, 'export_allowed': True, 'requirements': requirements,
+            'support_audit': {'complete': True, 'checked': sum(r['status'] == 'supported' for r in requirements)},
             'claims': {'complete': True, 'passages': [{'kind': kind, 'index': i, 'status': 'supported', 'reason': 'Supported by the cited fictional statement.'}
                        for kind in ('resume', 'cover_letter') for i, row in enumerate(revision['document'][kind])]},
             'notices': [], 'created_at': '2025-01-01T00:00:00+00:00', 'model': 'fictional-model', 'provider': 'anthropic'}

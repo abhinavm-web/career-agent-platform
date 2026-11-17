@@ -24,6 +24,10 @@ supported: every material career claim and linkage is supported by the passage's
 unsupported: a claim contradicts or materially strengthens its cited evidence, or invents a linkage.
 uncertain: the cited evidence cannot resolve the claim's scope, attribution, or chronology.
 Other verified facts provide contradiction/context checks; they do not repair incorrect citations.
+Missing facts do not prove absence of experience, credentials, research, or skills. Negative or
+contrastive career claims (for example, "delivery rather than academic research") require explicit
+verified evidence just like positive claims. Modest wording is not evidence: classify an invented
+absence as unsupported, even when the affirmative part of the sentence is supported.
 A list of skills does not establish hands-on implementation, production use, proficiency, or years.
 Do not connect a tool to a specific project just because each appears in separate facts.
 Delivery strategy, roadmaps and engineering leadership do not establish Product Manager/Product
