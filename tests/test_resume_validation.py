@@ -68,6 +68,21 @@ class ResumeValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'incomplete or invalid'):
                     validation.validate(snapshot(), document(), 'test', complete=bad)
 
+    def test_age_company_history_and_planning_horizons_do_not_get_employment_tenure(self):
+        desc = ('Requirements:\n- You must be 18 years or older.\n'
+                '- Build a leadership roadmap for the next 3 years.\n'
+                '- Our company has operated for 50 years.\n'
+                '- 15 years of relevant leadership experience.')
+        with patch('career_agent.ai.routes', return_value={'test': ROUTE}):
+            result = validation.validate(snapshot(desc), document(), 'test', complete=completion)
+        for row in result['requirements']:
+            if '15 years' in row['quote']:
+                self.assertIn('tenure', row)
+                self.assertEqual(row['status'], 'partial')
+            else:
+                self.assertNotIn('tenure', row)
+                self.assertNotIn('Dated résumé intervals', row['reason'])
+
     def test_requirement_failure_diagnostics_are_precise_and_private(self):
         cases = [
             ('id', 'PRIVATE_PROVIDER_TEXT', 'unknown_requirement_id'),

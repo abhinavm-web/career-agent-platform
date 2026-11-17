@@ -206,9 +206,15 @@ def validate(snapshot, revision, route_name, *, complete=None):
             row['status'] = 'partial'
             row['reason'] = 'Linked résumé wording did not pass claim support review. ' + row['reason']
         thresholds = YEARS.findall(row['quote'])
+        employment_duration = re.search(
+            r'\b(?:years?|yrs?)\s+(?:(?:of|relevant|professional|progressive|related|prior|proven|demonstrated)\s+)*'
+            r'(?:experience|background|leadership|career|leading|managing|working)\b'
+            r'|\b(?:experience|background|leadership|career)\s+(?:(?:of|for|spanning|at|least|over)\s+)*\d+(?:\.\d+)?\s*\+?\s*(?:years?|yrs?)\b',
+            row['quote'], re.I)
         if thresholds:
-            row['tenure'] = tenure
-            row['reason'] += f" Dated résumé intervals total about {tenure['approximate_years']} years; specialized tenure is not inferred."
+            if employment_duration and row['status'] != 'context':
+                row['tenure'] = tenure
+                row['reason'] += f" Dated résumé intervals total about {tenure['approximate_years']} years; specialized tenure is not inferred."
             # Contextual planning horizons are not employment thresholds. The model
             # still has to explicitly resolve all specialized years in its reason.
             if (row['status'] == 'supported' and re.search(r'\bexperience\b', row['quote'], re.I)
