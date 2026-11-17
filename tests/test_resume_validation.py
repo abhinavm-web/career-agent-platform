@@ -24,6 +24,9 @@ def document():
 
 def completion(route, prompt, **kwargs):
     payload = json.loads(prompt)
+    if 'passages' in payload:
+        return json.dumps({'passages': [{'passage_id': p['passage_id'], 'status': 'supported',
+            'reason': 'Fictional cited statement and chronology are supported.'} for p in payload['passages']]})
     return json.dumps({'requirements': [{'id': r['id'], 'status': 'supported',
         'resume_indices': [0, 1], 'profile_fact_ids': [], 'reason': 'Fictional model evidence judgment.'}
         for r in payload['requirements']]})
@@ -40,7 +43,7 @@ class ResumeValidationTests(unittest.TestCase):
         desc = 'Requirements:\n' + '\n'.join(f'- Skill {n}' for n in range(23)) + '\n- 15 years experience including 4 years AI and 3 years leading teams'
         seen = []
         def complete(*args, **kwargs):
-            seen.extend(r['id'] for r in json.loads(args[1])['requirements'])
+            seen.extend(r['id'] for r in json.loads(args[1]).get('requirements', []))
             return completion(*args, **kwargs)
         with patch('career_agent.ai.routes', return_value={'test': ROUTE}):
             result = validation.validate(snapshot(desc), document(), 'test', complete=complete)
@@ -53,7 +56,9 @@ class ResumeValidationTests(unittest.TestCase):
     def test_omitted_duplicate_or_unknown_ids_fail_the_whole_validation(self):
         for mode in ['missing', 'duplicate', 'unknown', 'false_index']:
             def bad(route, prompt, **kwargs):
-                rows = json.loads(completion(route, prompt))['requirements']
+                response = json.loads(completion(route, prompt))
+                if 'passages' in response: return json.dumps(response)
+                rows = response['requirements']
                 if mode == 'missing': rows.pop()
                 if mode == 'duplicate': rows[1] = rows[0]
                 if mode == 'unknown': rows[0]['id'] = 'invented'
@@ -77,7 +82,9 @@ class ResumeValidationTests(unittest.TestCase):
         ]
         for field, value, code in cases:
             def bad(route, prompt, **kwargs):
-                rows = json.loads(completion(route, prompt))['requirements']
+                response = json.loads(completion(route, prompt))
+                if 'passages' in response: return json.dumps(response)
+                rows = response['requirements']
                 rows[0][field] = value
                 return json.dumps({'requirements': rows})
             with self.subTest(field=field, code=code), patch('career_agent.ai.routes', return_value={'test': ROUTE}):
@@ -93,6 +100,7 @@ class ResumeValidationTests(unittest.TestCase):
         before = document()
         def complete(route, prompt, **kwargs):
             payload = json.loads(prompt)
+            if 'passages' in payload: return completion(route, prompt, **kwargs)
             prompts.append(payload)
             self.assertEqual(payload['allowed_resume_indices'], [0, 1])
             self.assertEqual([row['resume_index'] for row in payload['resume']], [0, 1])
@@ -108,8 +116,9 @@ class ResumeValidationTests(unittest.TestCase):
         calls = 0
         def bad(route, prompt, **kwargs):
             nonlocal calls
-            calls += 1
             response = json.loads(completion(route, prompt))
+            if 'passages' in response: return json.dumps(response)
+            calls += 1
             if calls == 3: response['requirements'].clear()
             return json.dumps(response)
         with patch('career_agent.ai.routes', return_value={'test': ROUTE}):
@@ -118,7 +127,9 @@ class ResumeValidationTests(unittest.TestCase):
 
     def test_explicit_qualification_cannot_be_reclassified_as_context(self):
         def context(route, prompt, **kwargs):
-            rows = json.loads(completion(route, prompt))['requirements']
+            response = json.loads(completion(route, prompt))
+            if 'passages' in response: return json.dumps(response)
+            rows = response['requirements']
             for row in rows: row['status'] = 'context'
             return json.dumps({'requirements': rows})
         with patch('career_agent.ai.routes', return_value={'test': ROUTE}):

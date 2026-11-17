@@ -95,10 +95,39 @@ class ClaimFidelityTests(unittest.TestCase):
             result = audit_document(document, FACTS, ROUTE)
         self.assertEqual(complete.call_count, 1)
         prompt = json.loads(complete.call_args.args[1])
-        self.assertEqual([r['passage_id'] for r in prompt['passages']], ['resume:1'])
+        self.assertEqual([r['passage_id'] for r in prompt['passages']], ['resume:0', 'resume:1'])
         self.assertEqual(prompt['context_document']['resume'][0]['text'], FACTS['dates'])
         self.assertEqual(len(prompt['context_document']['resume']), 3)
         self.assertEqual(len(result['passages']), 4)
+
+    def test_exact_dated_experience_never_bypasses_chronology_review(self):
+        facts = {'role': 'Example Co, Delivery Lead, January 2023 to January 2024.',
+                 'achievement': 'Implemented a knowledge system, January 2020 to January 2022.'}
+        document = {'resume': [
+            {'text': facts['role'], 'fact_ids': ['role'], 'section': 'experience'},
+            {'text': facts['achievement'], 'fact_ids': ['achievement'], 'section': 'experience'},
+        ], 'cover_letter': [{'text': facts['achievement'], 'fact_ids': ['achievement']}]}
+        def complete(route, prompt, **kwargs):
+            payload = json.loads(prompt)
+            self.assertEqual([r['passage_id'] for r in payload['passages']], ['resume:0', 'resume:1'])
+            self.assertEqual([r['text'] for r in payload['context_document']['resume']], list(facts.values()))
+            return json.dumps({'passages': [
+                {'passage_id': 'resume:0', 'status': 'supported', 'reason': 'Verified role interval.'},
+                {'passage_id': 'resume:1', 'status': 'uncertain', 'reason': 'Earlier achievement must not be attributed to the following role interval.'},
+            ]})
+        with patch('career_agent.ai.complete', side_effect=complete) as model:
+            result = audit_document(document, facts, ROUTE)
+        model.assert_called_once()
+        self.assertEqual(result['passages'][1]['status'], 'uncertain')
+
+    def test_missing_resume_section_is_treated_as_experience_for_audit(self):
+        document = {'resume': [{'text': FACTS['project'], 'fact_ids': ['project']}],
+                    'cover_letter': [{'text': FACTS['team'], 'fact_ids': ['team']}]}
+        with patch('career_agent.ai.complete', side_effect=supported_response) as model:
+            result = audit_document(document, FACTS, ROUTE)
+        model.assert_called_once()
+        self.assertEqual([r['passage_id'] for r in json.loads(model.call_args.args[1])['passages']], ['resume:0'])
+        self.assertTrue(result['complete'])
 
     def test_safe_diagnostics_identify_batch_without_echoing_model_text(self):
         document = {'resume': [copy.deepcopy(DOCUMENT['resume'][0]) for _ in range(9)],

@@ -46,7 +46,6 @@ passage accordingly and identify that part. Never treat citation presence as pro
 
 BATCH_SIZE = 8
 MAX_PROMPT_CHARS = 48000
-DATED_INTERVAL = re.compile(r'\b(?:19|20)\d{2}\s*(?:to|[-–—])\s*(?:[A-Za-z]{3,9}\.?\s+)?(?:19|20)\d{2}\b', re.I)
 
 
 class _InvalidAudit(ValueError):
@@ -97,7 +96,10 @@ def audit_document(document, claims, route, *, complete=None):
                     or any(not isinstance(fid, str) or fid not in claims for fid in ids)
                     or len(set(ids)) != len(ids)):
                 raise ValueError('Each document passage needs valid verified-fact citations')
-            standalone = kind == 'cover_letter' or row.get('section') != 'experience' or bool(DATED_INTERVAL.search(text))
+            # Experience passage order can imply attribution to an earlier role,
+            # even when both passages contain exact verified text and dates.
+            # Always assess that section in full assembled-document context.
+            standalone = kind == 'cover_letter' or row.get('section', 'experience') != 'experience'
             if len(ids) == 1 and text == claims[ids[0]] and standalone:
                 audited.append({'kind': kind, 'index': index, 'status': 'supported',
                                 'reason': 'Unchanged verified statement; no synthesized claim or linkage.'})
