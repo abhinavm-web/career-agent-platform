@@ -26,7 +26,8 @@ Return exactly one result for each id in the supplied requirements BATCH, copyin
 Do not renumber IDs or add entries from full_posting: that field supplies context only.
 Each result must have exactly those five fields. Use only status values supported, partial,
 not_demonstrated, needs_confirmation, context. resume_indices must contain unique integer
-positions from the supplied resume array (first passage is 0), not fact IDs or one-based numbers.
+resume_index labels from the supplied resume items, not fact IDs, visual positions or one-based
+numbers. Copy only values in allowed_resume_indices; do not count or renumber passages.
 profile_fact_ids must contain unique exact keys from verified_facts, never invented IDs.
 Use empty arrays when no relevant evidence exists. supported MUST cite at least one resume index.
 Keep each reason to 1-3 concise sentences, preferably under 600 characters; never exceed 1200.
@@ -127,7 +128,8 @@ def validate(snapshot, revision, route_name, *, complete=None):
         batch = rows[offset:offset+BATCH_SIZE]
         by_id = {r['id']: r for r in batch}
         prompt = json.dumps({'full_posting': snapshot['description'], 'requirements': batch,
-                             'resume': document['resume'], 'verified_facts': facts,
+                             'resume': [{**row, 'resume_index': index} for index, row in enumerate(document['resume'])],
+                             'allowed_resume_indices': list(range(len(document['resume']))), 'verified_facts': facts,
                              'dated_tenure': tenure}, ensure_ascii=False)
         if len(prompt) > 100000:
             raise ValueError('Full validation input exceeds 100,000 characters; no partial result accepted')
@@ -161,8 +163,13 @@ def validate(snapshot, revision, route_name, *, complete=None):
                     raise _InvalidValidation('invalid_status')
                 if not isinstance(indices, list):
                     raise _InvalidValidation('resume_indices_not_array')
-                if any(type(i) is not int or not 0 <= i < len(document['resume']) for i in indices):
-                    raise _InvalidValidation('invalid_resume_index')
+                if any(type(i) is not int for i in indices):
+                    raise _InvalidValidation('resume_index_wrong_type')
+                out_of_range = [i for i in indices if not 0 <= i < len(document['resume'])]
+                if out_of_range:
+                    # A model-provided integer can contain arbitrarily many digits.
+                    # Bound the numeric diagnostic rather than echoing its value.
+                    raise _InvalidValidation(f'resume_index_out_of_range allowed=0..{len(document["resume"])-1} invalid_count={len(out_of_range)}')
                 if len(indices) != len(set(indices)):
                     raise _InvalidValidation('duplicate_resume_indices')
                 if not isinstance(fids, list):

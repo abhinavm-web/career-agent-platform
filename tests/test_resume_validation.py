@@ -67,7 +67,8 @@ class ResumeValidationTests(unittest.TestCase):
         cases = [
             ('id', 'PRIVATE_PROVIDER_TEXT', 'unknown_requirement_id'),
             ('status', 'PRIVATE_PROVIDER_TEXT', 'invalid_status'),
-            ('resume_indices', [True], 'invalid_resume_index'),
+            ('resume_indices', [True], 'resume_index_wrong_type'),
+            ('resume_indices', [2], 'resume_index_out_of_range allowed=0..1 invalid_count=1'),
             ('resume_indices', [0, 0], 'duplicate_resume_indices'),
             ('resume_indices', [], 'supported_without_resume_evidence'),
             ('profile_fact_ids', ['PRIVATE_PROVIDER_TEXT'], 'unknown_fact_id'),
@@ -85,6 +86,22 @@ class ResumeValidationTests(unittest.TestCase):
             message = str(caught.exception)
             self.assertIn('batch 1/1; ' + code, message)
             self.assertNotIn('PRIVATE_PROVIDER_TEXT', message)
+
+    def test_resume_indices_are_explicit_in_every_batch_prompt(self):
+        desc = 'Requirements:\n' + '\n'.join(f'- Fictional skill {n}' for n in range(12))
+        prompts = []
+        before = document()
+        def complete(route, prompt, **kwargs):
+            payload = json.loads(prompt)
+            prompts.append(payload)
+            self.assertEqual(payload['allowed_resume_indices'], [0, 1])
+            self.assertEqual([row['resume_index'] for row in payload['resume']], [0, 1])
+            self.assertEqual([row['text'] for row in payload['resume']], [row['text'] for row in before['document']['resume']])
+            return completion(route, prompt, **kwargs)
+        with patch('career_agent.ai.routes', return_value={'test': ROUTE}):
+            validation.validate(snapshot(desc), before, 'test', complete=complete)
+        self.assertEqual(len(prompts), 2)
+        self.assertTrue(all('resume_index' not in row for row in before['document']['resume']))
 
     def test_later_requirement_batch_count_failure_reports_only_counts(self):
         desc = 'Requirements:\n' + '\n'.join(f'- Fictional skill {n}' for n in range(21))
