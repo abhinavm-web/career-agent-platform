@@ -71,7 +71,11 @@ class ExportAPITests(unittest.TestCase):
         with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)):
             result = self.call('POST', path, request)
         self.assertEqual(result.status_code, 200, result.text)
-        return path + '/' + str(result.json()['revisions'][0]['id'])
+        revision_path = path + '/' + str(result.json()['revisions'][0]['id'])
+        with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.resume_validation.validate', return_value={'status':'completed','complete':True,'export_allowed':True,'requirements':[],'claims':{'complete':True,'passages':[]},'notices':[]}):
+            response = self.call('POST', revision_path + '/validate', {k:v for k,v in request.items() if k in {'route','route_fingerprint','acknowledged'}})
+        self.assertEqual(response.status_code, 200, response.text)
+        return revision_path
 
     def test_all_formats_require_current_review_and_export_without_inference(self):
         path = self.create_revision()

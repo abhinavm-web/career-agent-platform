@@ -15,6 +15,7 @@ from career_agent.storage import Store
 from career_agent.workspace import CandidateWorkspace
 from test_dashboard import fake_fact_bank, fake_job
 from test_document_revisions import ROUTE
+from test_ai_revision_browser import fictional_validation
 from test_profile_review import QUESTIONS, RESUME
 
 
@@ -48,7 +49,7 @@ class ProfileReviewBrowserTests(unittest.TestCase):
                     if server.started: break
                     time.sleep(.05)
                 self.assertTrue(server.started)
-                with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', side_effect=complete), sync_playwright() as p:
+                with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', side_effect=complete), patch('career_agent.resume_validation.validate', side_effect=fictional_validation), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(viewport={'width': 1440, 'height': 1000}); errors = []
@@ -103,7 +104,7 @@ class ProfileReviewBrowserTests(unittest.TestCase):
                         expect(studio.get_by_label('Revision model')).to_have_value('claude')
                         studio.get_by_label('I consent to sharing', exact=False).check()
                         studio.get_by_role('button', name='Generate resume and cover letter').click()
-                        expect(studio).to_contain_text('Revision saved.')
+                        expect(studio).to_contain_text('Validation saved.')
                         self.assertEqual(set(prompts[-1]['verified_facts'].values()), {quality, skill})
                         studio.get_by_label('I reviewed both AI documents', exact=False).check()
                         studio.get_by_role('button', name='Confirm AI revision for export').click()

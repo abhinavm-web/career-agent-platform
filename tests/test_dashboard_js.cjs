@@ -1294,3 +1294,117 @@ test("resume leadership and platform headings classify statements without stagin
   assert.match(options[2].textContent, /^Suggested projects/);
   assert.equal(h.getWorkspace().facts.length, 0);
 });
+
+
+function createRevisionStudioHarness({saved = [], validationRequest = null} = {}) {
+  const route = {route: "fictional", provider: "ollama", model: "fictional-model", destination: "loopback", route_fingerprint: "f".repeat(64)};
+  let history = structuredClone(saved);
+  const calls = [];
+  const state = {selectedId: ID_A};
+  const create = (tag, className = "", text = "") => { const el = new Element(tag); el.className = className; el.textContent = text; el.isConnected = true; return el; };
+  const document = {createElement: create, createTextNode: (text) => create("text", "", text)};
+  const api = async (url, method = "GET", data) => {
+    calls.push({url, method, data});
+    if (url === "/api/ai/routes") return {routes: [route]};
+    if (url.endsWith("/validate")) {
+      const validation = validationRequest ? await validationRequest(data) : supportedStudioValidation();
+      history[0].validation = validation; history[0].reviewed_at = null;
+      return {revisions: structuredClone(history)};
+    }
+    if (url.endsWith("/repair")) {
+      history.unshift({...structuredClone(history[0]), id: history[0].id + 1, validation: supportedStudioValidation(), reviewed_at: null});
+      return {revisions: structuredClone(history)};
+    }
+    if (url.endsWith("/review")) {
+      history[0].reviewed_at = "reviewed"; return {revisions: structuredClone(history)};
+    }
+    if (url.endsWith("/document-revisions")) {
+      if (method === "POST") history.unshift(fictionalStudioRevision());
+      return {revisions: structuredClone(history)};
+    }
+    throw new Error("Unexpected studio request " + url);
+  };
+  const context = {state, document, node: create, api, console,
+    button: (label, className, handler) => { const el = create("button", className, label); if (handler) el.addEventListener("click", handler); return el; }};
+  const begin = SOURCE.indexOf("  function documentRevisionStudio(job) {");
+  const end = SOURCE.indexOf("  function inlineTailoring(job)", begin);
+  vm.runInNewContext(SOURCE.slice(begin, end) + "this.panel = documentRevisionStudio({id: '" + ID_A + "', application_stage: 'discovered'});", context);
+  const walk = (element, predicate) => predicate(element) ? element : element.children.map(child => walk(child, predicate)).find(Boolean);
+  const control = label => walk(context.panel, el => el.tagName === "button" && el.textContent === label);
+  const field = label => { const holder = walk(context.panel, el => el.tagName === "label" && el.textContent.startsWith(label)); return holder?.children.find(el => ["input", "select", "textarea"].includes(el.tagName)); };
+  return {calls, state, panel: context.panel, control, field, async load() {
+    await control("Load models and saved revisions").click();
+    field("Revision model").value = route.route; field("Revision model").handlers.change();
+  }, consent() { field(" I consent to sharing").checked = true; }};
+}
+function fictionalStudioRevision() {
+  return {id: 1, model: "fictional-model", provider: "ollama", created_at: "now", stale: false, reviewed_at: null,
+    document: {resume: [{section: "experience", text: "Fictional Python delivery.", fact_ids: ["fact-1"], warnings: []}],
+      cover_letter: [{text: "I delivered fictional Python work.", fact_ids: ["fact-1"], warnings: []}]},
+    sources: {"fact-1": "Fictional Python delivery.", "fact-2": "Fictional finance delivery."}};
+}
+function supportedStudioValidation() {
+  return {status: "completed", complete: true, export_allowed: true, notices: [], requirements: [
+    {id: "r1", category: "required", quote: "Python experience", status: "supported", reason: "The résumé includes the source work.", resume_indices: [0], profile_fact_ids: []},
+    {id: "r2", category: "required", quote: "15 years leading research", status: "not_demonstrated", reason: "The dated evidence does not establish fifteen years.", resume_indices: [], profile_fact_ids: []}],
+    claims: {complete: true, passages: [{kind: "resume", index: 0, status: "supported", reason: "Source supports wording."}]}};
+}
+
+test('document generation automatically validates and requires explicit review afterward', async () => {
+  let resolveValidation;
+  const h = createRevisionStudioHarness({validationRequest: () => new Promise(resolve => { resolveValidation = resolve; })});
+  await h.load();
+  await h.control("Generate resume and cover letter").click();
+  assert.equal(h.calls.filter(call => call.method === "POST").length, 0);
+  h.consent(); const running = h.control("Generate resume and cover letter").click(); await flush();
+  assert.match(h.panel.textContent, /Fictional Python delivery/);
+  assert.equal(h.control("Confirm AI revision for export").disabled, true);
+  assert.equal(h.control("Validate resume against job").disabled, true);
+  assert.equal(h.field(" I consent to sharing").disabled, true);
+  resolveValidation(supportedStudioValidation()); await running;
+  assert.match(h.panel.textContent, /15 years leading research/);
+  assert.match(h.panel.textContent, /Not demonstrated/);
+  assert.doesNotMatch(h.panel.textContent, /target 80%|excerpts addressed/);
+  assert.equal(h.control("Confirm AI revision for export").disabled, true);
+  h.field(" I reviewed both AI documents").checked = true;
+  h.field(" I reviewed both AI documents").handlers.change();
+  assert.equal(h.control("Confirm AI revision for export").disabled, false);
+  await h.control("Confirm AI revision for export").click();
+  assert.deepEqual(JSON.parse(JSON.stringify(h.calls.find(call => call.url.endsWith("/review")).data)), {acknowledged: true});
+  assert.ok(h.control("Download reviewed AI resume PDF"));
+});
+
+test('unvalidated legacy export and unsupported claims are gated; repair never auto-approves', async () => {
+  const legacy = {...fictionalStudioRevision(), reviewed_at: "previously-reviewed"};
+  const unsupported = supportedStudioValidation(); unsupported.export_allowed = false;
+  unsupported.claims.passages[0] = {kind: "resume", index: 0, status: "unsupported", reason: "A <script>tool</script> was linked to an unsupported project."};
+  unsupported.requirements[1].profile_fact_ids = ["fact-2"];
+  const h = createRevisionStudioHarness({saved: [legacy], validationRequest: async () => unsupported});
+  await h.load();
+  assert.equal(h.control("Download reviewed AI resume PDF"), undefined);
+  assert.equal(h.field(" I reviewed both AI documents").disabled, true);
+  await h.control("Validate resume against job").click();
+  assert.equal(h.calls.filter(call => call.url.endsWith("/validate")).length, 0);
+  h.consent(); await h.control("Validate resume against job").click();
+  assert.match(h.panel.textContent, /<script>tool<\/script>/);
+  assert.match(h.panel.textContent, /Fictional finance delivery/);
+  assert.equal(h.field(" I reviewed both AI documents").disabled, true);
+  assert.equal(h.control("Download reviewed AI resume PDF"), undefined);
+  h.consent(); await h.control("Repair wording and add verified evidence").click();
+  assert.match(h.panel.textContent, /Revision 2/);
+  assert.equal(h.control("Confirm AI revision for export").disabled, true);
+  assert.equal(h.control("Download reviewed AI resume PDF"), undefined);
+});
+
+test('validation failure preserves a saved draft and late results cannot replace another job', async () => {
+  const failed = createRevisionStudioHarness({validationRequest: async () => { throw new Error("Validation source changed"); }});
+  await failed.load(); failed.consent(); await failed.control("Generate resume and cover letter").click();
+  assert.match(failed.panel.textContent, /Fictional Python delivery/);
+  assert.match(failed.panel.textContent, /Validation source changed/);
+  assert.equal(failed.control("Confirm AI revision for export").disabled, true);
+  let release;
+  const late = createRevisionStudioHarness({saved: [fictionalStudioRevision()], validationRequest: () => new Promise(resolve => { release = resolve; })});
+  await late.load(); late.consent(); const work = late.control("Validate resume against job").click(); await flush();
+  late.state.selectedId = ID_B; release(supportedStudioValidation()); await work;
+  assert.doesNotMatch(late.panel.textContent, /15 years leading research/);
+});

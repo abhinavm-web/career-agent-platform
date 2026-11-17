@@ -387,11 +387,11 @@
     const questions = node("div", "experience-questions");
     const consentLabel = node("label", "check-label");
     const consent = node("input"); consent.type = "checkbox";
-    consentLabel.append(consent, document.createTextNode(" I consent to sharing the posting, verified facts, instructions and previous revision with this model. Cloud requests may incur charges."));
+    consentLabel.append(consent, document.createTextNode(" I consent to sharing the posting, verified facts, instructions and drafts with this model for generation, validation and any requested repair. These workflows can make multiple model requests and cloud charges may apply."));
     const run = button("Generate resume and cover letter", "button button-primary"); run.disabled = true;
     const status = node("p", "muted"); status.setAttribute("role", "status");
     const results = node("div");
-    let routes = [], parentId = 0, busy = false;
+    let routes = [], parentId = 0, busy = false, revisionActions = [], reviewActions = [];
     const current = () => panel.isConnected && state.selectedId === job.id;
     const updateRoute = () => {
       consent.checked = false;
@@ -399,18 +399,20 @@
       destination.textContent = route ? route.provider + " · " + route.model + " · " + route.destination : "No models configured. Open AI tools to configure a provider.";
       run.disabled = busy || !route?.route_fingerprint || job.application_stage === "submitted";
       interview.disabled = run.disabled;
+      revisionActions.forEach(action => { action.disabled = run.disabled; });
     };
     model.addEventListener("change", updateRoute);
     instructions.addEventListener("input", () => { panel.dataset.dirty = "true"; });
     function renderRevisions(history) {
-      results.replaceChildren(); parentId = history[0]?.id || 0;
+      results.replaceChildren(); revisionActions = []; reviewActions = []; parentId = history[0]?.id || 0;
       if (!history.length) results.append(node("p", "muted", "No AI document revisions saved for this opportunity."));
       history.forEach((revision, index) => {
         const card = node("details", "ai-document-version"); card.open = index === 0;
         card.append(node("summary", "", "Revision " + revision.id + " · " + revision.model + " · " + (revision.stale ? "Source changed" : revision.reviewed_at ? "Reviewed" : "Needs review")),
           node("p", "muted", revision.created_at + " · " + revision.provider + (revision.reported_model ? " · Reported model: " + revision.reported_model : "")));
+        const passages = node("div", "ai-document-passages");
         for (const kind of ["resume", "cover_letter"]) {
-          card.append(node("h4", "", kind === "resume" ? "AI resume revision" : "AI cover letter revision"));
+          passages.append(node("h4", "", kind === "resume" ? "AI resume revision" : "AI cover letter revision"));
           for (const row of revision.document[kind]) {
             const passage = node("section", "inline-suggestion");
             if (kind === "resume" && row.section) passage.append(node("strong", "", row.section));
@@ -419,35 +421,76 @@
             for (const id of row.fact_ids) source.append(node("p", "", id + " · " + revision.sources[id]));
             passage.append(source);
             for (const warning of row.warnings || []) passage.append(node("p", "stale-warning", warning));
-            card.append(passage);
+            passages.append(passage);
           }
         }
-        const coverageSelections = [];
-        const quotes = revision.requirement_quotes || [];
-        const coverageBox = node("section", "inline-suggestion");
-        coverageBox.append(node("h4", "", "Coverage review · target 80%"), node("p", "muted",
-          "Select the resume passage that accurately addresses each excerpt. This is your reviewed coverage of detected requirement sections, not an ATS score, whole-job match or hiring prediction. Do not claim experience just to reach the target."));
-        const coverageStatus = node("p"); coverageStatus.setAttribute("role", "status");
-        const updateCoverage = () => {
-          const addressed = coverageSelections.filter(select => select.value !== "").length;
-          coverageStatus.textContent = quotes.length ? addressed + " of " + quotes.length + " excerpts addressed (" + Math.floor(100 * addressed / quotes.length) + "%). " +
-            (revision.requirements_truncated ? "Coverage is incomplete; the target cannot be established." : addressed * 100 >= quotes.length * 80 ? "Review target reached for these excerpts only." : "Below target. Add genuine experience or leave unmet excerpts visible.") : "Coverage unavailable: no recognizable requirement bullets. The experience interview can still explore the posting.";
-        };
-        quotes.forEach((quote, i) => {
-          const label = node("label", "field", quote), select = node("select");
-          select.setAttribute("aria-label", "Resume evidence for requirement " + (i + 1));
-          const empty = node("option", "", "Not addressed / uncertain"); empty.value = ""; select.append(empty);
-          revision.document.resume.forEach((row, j) => { const option = node("option", "", "Passage " + (j + 1) + ": " + row.text.slice(0, 160)); option.value = String(j); select.append(option); });
-          const saved = revision.coverage?.selections?.[i]; if (Number.isInteger(saved)) select.value = String(saved);
-          select.disabled = Boolean(revision.reviewed_at) || revision.stale || index !== 0;
-          select.addEventListener("change", updateCoverage); coverageSelections.push(select);
-          label.append(select); coverageBox.append(label);
-        });
-        updateCoverage(); coverageBox.append(coverageStatus);
-        if (revision.requirements_truncated) coverageBox.append(node("p", "stale-warning", "Some requirement sections were unrecognized or exceeded parser limits. This coverage is incomplete."));
-        card.append(coverageBox);
+        const validation = revision.validation;
+        const canReview = validation?.status === "completed" && validation.complete === true && validation.export_allowed === true && validation.claims?.complete === true;
+        const validationBox = node("section", "inline-suggestion resume-validation");
+        validationBox.append(node("h4", "", "Resume validation against job requirements"), node("p", "muted",
+          "Checks this generated resume against the full saved posting and checks both documents against verified facts. Results are evidence judgments, not an ATS score, hiring prediction or proof that an undocumented skill is absent."));
+        const validationStatus = node("p"); validationStatus.setAttribute("role", "status"); validationBox.append(validationStatus);
+        if (!validation) {
+          validationStatus.textContent = "Not validated. Validate this revision before confirming export.";
+        } else {
+          const complete = validation.status === "completed" && validation.complete === true;
+          validationStatus.textContent = complete
+            ? (canReview ? "Validation completed. Review factual accuracy and remaining job requirements before export." : "Validation completed with claim issues. Repair unsupported wording before confirming export.")
+            : "Validation incomplete or failed. Export remains unavailable; retry validation after reviewing the notice.";
+          if (validation.created_at) validationBox.append(node("p", "muted", "Validated " + validation.created_at + (validation.model ? " · " + validation.model : "")));
+          for (const notice of validation.notices || []) validationBox.append(node("p", "stale-warning", notice));
+          const labels = {supported: "Supported", partial: "Partially supported", not_demonstrated: "Not demonstrated", needs_confirmation: "Condition unresolved", context: "Posting context"};
+          const requirements = validation.requirements || [];
+          const counts = requirements.reduce((all, row) => { all[row.status] = (all[row.status] || 0) + 1; return all; }, {});
+          validationBox.append(node("p", "", requirements.length + " posting items assessed. " + Object.entries(counts).map(([key, count]) => (labels[key] || key) + ": " + count).join(" · ")));
+          const requirementList = node("details", "full-requirement-checklist");
+          requirementList.append(node("summary", "", "Full posting checklist · " + requirements.length + " items"));
+          for (const requirement of requirements) {
+            const item = node("details", "requirement-validation");
+            item.open = !["supported", "context"].includes(requirement.status);
+            item.append(node("summary", "", (labels[requirement.status] || requirement.status) + " · " + (requirement.category || "unspecified") + " · " + requirement.quote),
+              node("p", "", requirement.reason));
+            for (const passageIndex of requirement.resume_indices || []) {
+              const passage = revision.document.resume[passageIndex];
+              if (passage) item.append(node("p", "description", "Resume passage " + (passageIndex + 1) + ": " + passage.text));
+            }
+            if ((requirement.profile_fact_ids || []).length) {
+              const omitted = node("details"); omitted.append(node("summary", "", "Relevant profile evidence to compare"));
+              for (const id of requirement.profile_fact_ids) {
+                if (revision.sources[id]) omitted.append(node("p", "", id + " · " + revision.sources[id]));
+              }
+              omitted.append(node("p", "muted", "A profile fact does not count as resume evidence unless this draft accurately includes it.")); item.append(omitted);
+            }
+            requirementList.append(item);
+          }
+          validationBox.append(requirementList);
+          const issues = (validation.claims?.passages || []).filter(row => row.status !== "supported");
+          if (issues.length) {
+            validationBox.append(node("h4", "", "Claim support issues"));
+            for (const issue of issues) {
+              const passage = revision.document[issue.kind]?.[issue.index];
+              const item = node("section", "inline-suggestion");
+              item.append(node("strong", "", (issue.kind === "resume" ? "Resume" : "Cover letter") + " passage " + (issue.index + 1) + " · " + issue.status), node("p", "", issue.reason));
+              if (passage) item.append(node("p", "description", passage.text));
+              validationBox.append(item);
+            }
+          }
+        }
         if (index === 0 && !revision.stale) {
-          if (revision.reviewed_at) {
+          const validate = button("Validate resume against job", "button", () => runRevisionAction("validate", revision.id));
+          validate.disabled = busy || !routes.some(r => r.route === model.value && r.route_fingerprint) || job.application_stage === "submitted";
+          revisionActions.push(validate); validationBox.append(validate);
+          const includedFactIds = new Set(revision.document.resume.flatMap(row => row.fact_ids));
+          const omittedEvidence = (validation?.requirements || []).some(row => (row.profile_fact_ids || []).some(id => !includedFactIds.has(id)));
+          if ((validation?.claims?.passages || []).some(row => row.status !== "supported") || omittedEvidence) {
+            const repair = button("Repair wording and add verified evidence", "button", () => runRevisionAction("repair", revision.id));
+            repair.disabled = validate.disabled; revisionActions.push(repair); validationBox.append(repair,
+              node("p", "muted", "Creates a new revision with supported wording and relevant verified evidence omitted from this draft, then validates it. It does not invent experience or change your profile."));
+          }
+        }
+        card.append(validationBox, passages);
+        if (index === 0 && !revision.stale) {
+          if (revision.reviewed_at && canReview) {
             for (const [kind, label] of [["resume", "resume"], ["cover_letter", "cover letter"]]) {
               for (const [format, formatLabel] of [["pdf", "PDF"], ["docx", "DOCX"], ["txt", "text"]]) {
                 const title = "Download reviewed AI " + label + " " + formatLabel;
@@ -471,14 +514,17 @@
             const label = node("label", "check-label"), checked = node("input"); checked.type = "checkbox";
             label.append(checked, document.createTextNode(" I reviewed both AI documents against the cited facts and confirm every claim is accurate."));
             const approve = button("Confirm AI revision for export", "button", async () => {
-              if (!checked.checked || approve.disabled) return;
-              approve.disabled = true;
+              if (!checked.checked || approve.disabled || busy) return;
+              setBusy(true);
               try {
-                const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/review", "POST", {acknowledged: true, coverage: coverageSelections.map(select => select.value === "" ? null : Number(select.value))});
+                const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revision.id + "/review", "POST", {acknowledged: true});
                 if (current()) renderRevisions(result.revisions);
-              } catch (error) { status.textContent = error.message; approve.disabled = false; }
+              } catch (error) { if (current()) status.textContent = error.message; }
+              finally { setBusy(false); updateRoute(); }
             });
-            approve.disabled = true; checked.addEventListener("change", () => { approve.disabled = !checked.checked; });
+            checked.disabled = busy || !canReview;
+            approve.disabled = true; checked.addEventListener("change", () => { approve.disabled = busy || !canReview || !checked.checked; });
+            reviewActions.push({checked, approve, canReview});
             card.append(label, approve);
           }
         }
@@ -486,9 +532,46 @@
         results.append(card);
       });
     }
+    function setBusy(value) {
+      busy = value; panel.dataset.pending = String(value);
+      load.disabled = value; model.disabled = value; instructions.disabled = value; fresh.disabled = value; consent.disabled = value;
+      run.disabled = value; interview.disabled = value; revisionActions.forEach(action => { action.disabled = value; });
+      reviewActions.forEach(({checked, approve, canReview}) => { checked.disabled = value || !canReview; approve.disabled = value || !canReview || !checked.checked; });
+    }
+    async function validateSavedRevision(route, revisionId) {
+      status.textContent = "Revision saved. Validating its claims and all job requirements with " + route.model + "…";
+      const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revisionId + "/validate", "POST", {
+        route: route.route, route_fingerprint: route.route_fingerprint, acknowledged: true});
+      if (!current()) return;
+      renderRevisions(result.revisions);
+      const validation = result.revisions[0]?.validation;
+      status.textContent = validation?.status === "completed" && validation.complete
+        ? "Validation saved. Review the full requirement checklist and claim findings before export. Verified facts remain unchanged."
+        : "Draft saved, but validation is incomplete. Review the validation notice and retry; export remains unavailable.";
+    }
+    async function runRevisionAction(action, revisionId) {
+      const route = routes.find(r => r.route === model.value);
+      if (busy || !current() || revisionId !== parentId) return;
+      if (!consent.checked || !route?.route_fingerprint) { status.textContent = "Choose a model and confirm sharing before validation or repair."; return; }
+      setBusy(true);
+      try {
+        if (action === "validate") await validateSavedRevision(route, revisionId);
+        else {
+          status.textContent = "Repairing wording, adding relevant verified evidence and validating a new revision…";
+          const result = await api("/api/jobs/" + job.id + "/document-revisions/" + revisionId + "/repair", "POST", {
+            route: route.route, route_fingerprint: route.route_fingerprint, acknowledged: true});
+          if (!current()) return;
+          renderRevisions(result.revisions);
+          status.textContent = result.revisions[0]?.validation?.status === "completed" && result.revisions[0].validation.complete
+            ? "Repaired revision saved. Review its validation findings and wording before export. Verified facts remain unchanged."
+            : "Repaired draft saved, but validation is incomplete. Review the notice and retry; export remains unavailable.";
+        }
+      } catch (error) { if (current()) status.textContent = error.message + " Saved drafts remain available; validation and candidate review are required before export."; }
+      finally { setBusy(false); updateRoute(); }
+    }
     load.addEventListener("click", async () => {
       if (busy) return;
-      busy = true; load.disabled = true; run.disabled = true;
+      setBusy(true);
       try {
         const [available, saved] = await Promise.all([api("/api/ai/routes"), api("/api/jobs/" + job.id + "/document-revisions")]);
         if (!current()) return;
@@ -496,21 +579,23 @@
         for (const route of routes) { const option = node("option", "", route.route + " · " + route.model); option.value = route.route; model.append(option); }
         renderRevisions(saved.revisions); status.textContent = "Choose a model, add revision instructions, and confirm sharing.";
       } catch (error) { if (current()) status.textContent = error.message; }
-      finally { busy = false; load.disabled = false; updateRoute(); }
+      finally { setBusy(false); updateRoute(); }
     });
     run.addEventListener("click", async () => {
       const route = routes.find(r => r.route === model.value);
-      if (busy || !consent.checked || !route?.route_fingerprint) return;
-      busy = true; panel.dataset.pending = "true"; load.disabled = true; run.disabled = true; model.disabled = true; instructions.disabled = true;
+      if (busy) return;
+      if (!consent.checked || !route?.route_fingerprint) { status.textContent = "Choose a model and confirm sharing before generation and validation."; return; }
+      setBusy(true);
       status.textContent = "Generating a saved revision with " + route.model + "…";
+      let generated = false;
       try {
         const result = await api("/api/jobs/" + job.id + "/document-revisions", "POST", {route: route.route,
           route_fingerprint: route.route_fingerprint, instructions: instructions.value, parent_id: parentId, fresh: fresh.checked, acknowledged: true});
         if (!current()) return;
-        panel.dataset.dirty = "false"; renderRevisions(result.revisions);
-        status.textContent = "Revision saved. Compare every claim with its cited facts before confirming export. Verified facts remain unchanged.";
-      } catch (error) { if (current()) status.textContent = error.message; }
-      finally { busy = false; panel.dataset.pending = "false"; load.disabled = false; model.disabled = false; instructions.disabled = false; updateRoute(); }
+        generated = true; panel.dataset.dirty = "false"; renderRevisions(result.revisions);
+        await validateSavedRevision(route, result.revisions[0].id);
+      } catch (error) { if (current()) status.textContent = (generated ? "Draft saved, but validation failed: " : "") + error.message; }
+      finally { setBusy(false); updateRoute(); }
     });
     interview.addEventListener("click", async () => {
       const route = routes.find(r => r.route === model.value);

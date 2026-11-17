@@ -15,6 +15,20 @@ from unittest.mock import patch
 from test_document_revisions import ROUTE, OUTPUT
 
 
+def fictional_validation(snapshot, revision, route_name, **kwargs):
+    """Fictional semantic results; browser test covers orchestration and review gates."""
+    from career_agent.fit_evidence import requirement_inventory
+    requirements = []
+    for row in requirement_inventory(snapshot['description'])['requirements']:
+        requirements.append({**row, 'status': 'supported' if 'Python' in row['quote'] or 'AWS' in row['quote'] else 'not_demonstrated',
+                             'resume_indices': [0] if 'Python' in row['quote'] or 'AWS' in row['quote'] else [],
+                             'profile_fact_ids': [], 'reason': 'Fictional evidence assessment; unmatched requirements remain visible.'})
+    return {'status': 'completed', 'complete': True, 'export_allowed': True, 'requirements': requirements,
+            'claims': {'complete': True, 'passages': [{'kind': kind, 'index': i, 'status': 'supported', 'reason': 'Supported by the cited fictional statement.'}
+                       for kind in ('resume', 'cover_letter') for i, row in enumerate(revision['document'][kind])]},
+            'notices': [], 'created_at': '2025-01-01T00:00:00+00:00', 'model': 'fictional-model', 'provider': 'anthropic'}
+
+
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class AIRevisionBrowserTests(unittest.TestCase):
     def test_ai_revision_model_selection_review_download_and_reload(self):
@@ -40,7 +54,7 @@ class AIRevisionBrowserTests(unittest.TestCase):
                     if server.started: break
                     time.sleep(0.05)
                 self.assertTrue(server.started)
-                with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)) as complete, sync_playwright() as p:
+                with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)) as complete, patch('career_agent.resume_validation.validate', side_effect=fictional_validation) as validate, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
@@ -70,17 +84,17 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         complete.return_value = json.dumps(OUTPUT)
                         panel.get_by_label('I consent to sharing', exact=False).check()
                         panel.get_by_role('button', name='Generate resume and cover letter').click()
-                        expect(panel).to_contain_text('Revision saved.')
+                        expect(panel).to_contain_text('Validation saved.')
                         expect(panel).to_contain_text('Delivered an AI program using Python and AWS.')
                         expect(panel).to_contain_text('My experience delivering an AI program')
                         expect(panel.get_by_role('button', name='Confirm AI revision for export')).to_be_disabled()
                         self.assertIn('Created Python training materials', complete.call_args.args[1])
                         self.assertIsNone(json.loads(complete.call_args.args[1])['previous_unverified_draft'])
-                        panel.get_by_label('Resume evidence for requirement 1').select_option('0')
-                        panel.get_by_label('Resume evidence for requirement 2').select_option('0')
-                        expect(panel).to_contain_text('2 of 2 excerpts addressed (100%)')
-                        expect(panel).to_contain_text('Coverage is incomplete; the target cannot be established.')
-                        expect(panel).not_to_contain_text('Review target reached')
+                        expect(panel).to_contain_text('Resume validation against job requirements')
+                        expect(panel).to_contain_text('Novel expertise')
+                        expect(panel).to_contain_text('Not demonstrated')
+                        expect(panel).not_to_contain_text('target 80%')
+                        self.assertEqual(validate.call_count, 1)
                         panel.get_by_label('I reviewed both AI documents', exact=False).check()
                         panel.get_by_role('button', name='Confirm AI revision for export').click()
                         for kind, label in (('resume', 'resume'), ('cover_letter', 'cover letter')):
@@ -111,6 +125,27 @@ class AIRevisionBrowserTests(unittest.TestCase):
                         panel.get_by_role('button', name='Load models and saved revisions').click()
                         expect(panel.get_by_role('button', name='Download reviewed AI resume text')).to_be_visible()
                         self.assertEqual(complete.call_count, 2)
+                        panel.get_by_role('button', name='Validate resume against job', exact=True).click()
+                        expect(panel).to_contain_text('confirm sharing before validation or repair')
+                        self.assertEqual(validate.call_count, 1)
+                        def unsupported(snapshot, revision, route_name, **kwargs):
+                            result = fictional_validation(snapshot, revision, route_name)
+                            result['export_allowed'] = False
+                            result['claims']['passages'][0].update(status='unsupported', reason='Fictional skill-to-project association is unsupported.')
+                            return result
+                        validate.side_effect = unsupported
+                        panel.get_by_label('I consent to sharing', exact=False).check()
+                        panel.get_by_role('button', name='Validate resume against job', exact=True).click()
+                        expect(panel).to_contain_text('Fictional skill-to-project association is unsupported.')
+                        expect(panel.get_by_role('button', name='Confirm AI revision for export')).to_be_disabled()
+                        expect(panel.get_by_role('button', name='Download reviewed AI resume text')).to_have_count(0)
+                        validate.side_effect = fictional_validation
+                        panel.get_by_label('I consent to sharing', exact=False).check()
+                        panel.get_by_role('button', name='Repair wording and add verified evidence', exact=True).click()
+                        expect(panel).to_contain_text('Repaired revision saved.')
+                        expect(panel.get_by_role('button', name='Confirm AI revision for export')).to_be_disabled()
+                        expect(panel.get_by_role('button', name='Download reviewed AI resume text')).to_have_count(0)
+                        self.assertEqual(validate.call_count, 3)
                         page.set_viewport_size({'width': 390, 'height': 844})
                         self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), 390)
                     finally:

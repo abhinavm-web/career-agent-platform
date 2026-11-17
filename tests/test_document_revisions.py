@@ -17,6 +17,13 @@ class DocumentRevisionTests(unittest.TestCase):
         return {'route': 'claude', 'route_fingerprint': ai.route_fingerprint('claude', ROUTE),
                 'instructions': 'Make it concise.', 'parent_id': parent, 'acknowledged': True}
 
+    def validate_revision(self, path):
+        result = {'status': 'completed', 'complete': True, 'export_allowed': True,
+                  'requirements': [], 'claims': {'complete': True, 'passages': []}, 'notices': []}
+        with patch('career_agent.resume_validation.validate', return_value=result):
+            response = self.call('POST', path + '/validate', {k:v for k,v in self.request().items() if k in {'route','route_fingerprint','acknowledged'}})
+        self.assertEqual(response.status_code, 200, response.text)
+
     def endpoint(self):
         return '/api/jobs/' + self.job.id + '/document-revisions'
 
@@ -33,6 +40,7 @@ class DocumentRevisionTests(unittest.TestCase):
             rid = revision['id']
             self.assertEqual(self.call('GET', path + f'/{rid}/resume.txt').status_code, 422)
             self.assertEqual(self.call('POST', path + f'/{rid}/review', {'acknowledged': False}).status_code, 422)
+            self.validate_revision(path + f'/{rid}')
             self.assertEqual(self.call('POST', path + f'/{rid}/review', {'acknowledged': True}).status_code, 200)
             exported = self.call('GET', path + f'/{rid}/cover_letter.txt')
             self.assertEqual(exported.status_code, 200, exported.text)
@@ -68,6 +76,7 @@ class DocumentRevisionTests(unittest.TestCase):
         with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)):
             path = self.endpoint()
             rid = self.call('POST', path, self.request()).json()['revisions'][0]['id']
+            self.validate_revision(path + f'/{rid}')
             self.call('POST', path + f'/{rid}/review', {'acknowledged': True})
             with Store(self.db) as store: store.correct_description(self.job.id, 'Changed posting.', 0, 'Fictional source')
             self.assertTrue(self.call('GET', path).json()['revisions'][0]['stale'])
@@ -86,13 +95,14 @@ class DocumentRevisionTests(unittest.TestCase):
             self.assertIsNone(prompt['previous_unverified_draft'])
             self.assertTrue(revision['fresh'])
             self.assertEqual(len(revision['requirement_quotes']), 5)
+            self.validate_revision(path + f'/{rid}')
             self.assertEqual(self.call('POST', path + f'/{rid}/review', {'acknowledged': True, 'coverage': [True]*5}).status_code, 422)
             self.assertEqual(self.call('POST', path + f'/{rid}/review', {'acknowledged': True, 'coverage': [99]*5}).status_code, 422)
             result = self.call('POST', path + f'/{rid}/review', {'acknowledged': True, 'coverage': [0,0,0,0,None]})
             self.assertEqual(result.status_code, 200, result.text)
             coverage = result.json()['revisions'][0]['coverage']
             self.assertEqual(coverage['percent'], 80)
-            self.assertTrue(coverage['target_met'])
+            self.assertFalse(coverage['target_met'])
             self.assertEqual(self.call('GET', path).json()['revisions'][0]['coverage']['selections'], [0,0,0,0,None])
             self.assertIn('Experience', self.call('GET', path + f'/{rid}/resume.txt').text)
 
@@ -126,6 +136,7 @@ class DocumentRevisionTests(unittest.TestCase):
             path = self.endpoint()
             revision = self.call('POST', path, self.request()).json()['revisions'][0]
             self.assertTrue(revision['requirements_truncated'])
+            self.validate_revision(path + '/' + str(revision['id']))
             result = self.call('POST', path + '/' + str(revision['id']) + '/review', {'acknowledged': True, 'coverage': [0]})
             self.assertEqual(result.status_code, 200, result.text)
             self.assertFalse(result.json()['revisions'][0]['coverage']['target_met'])

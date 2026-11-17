@@ -6,7 +6,7 @@ import hmac
 from . import ai
 from .storage import Store
 
-PURPOSES = {'route_test', 'sample_analysis', 'career_chat', 'requirements', 'resume_suggestions', 'resume_fact_suggestions', 'document_revision', 'profile_review'}
+PURPOSES = {'route_test', 'sample_analysis', 'career_chat', 'requirements', 'resume_suggestions', 'resume_fact_suggestions', 'document_revision', 'profile_review', 'resume_validation'}
 
 
 class DailyRequestLimit(ValueError):
