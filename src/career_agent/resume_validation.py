@@ -74,13 +74,26 @@ YEARS = re.compile(r'\b(\d+(?:\.\d+)?)\s*\+?\s*(?:years?|yrs?)\b', re.I)
 
 
 def _duration_exceeds_evidence(quote, dated_months):
-    thresholds = YEARS.findall(quote)
-    # Multiple numeric alternatives need semantic review (e.g. 12 years with a
-    # bachelor's OR 8 with a master's). A single duration still binds skill ORs.
-    if len(thresholds) > 1 and re.search(r'\b(?:or|either)\b', quote, re.I):
-        return False
+    thresholds = list(YEARS.finditer(quote))
+    # Only an OR introducing the next duration joins alternative bounds. An OR
+    # between skills must not erase a mandatory duration elsewhere in the quote.
+    # Degree eligibility remains a semantic check; even the shortest numeric
+    # alternative cannot exceed all explicitly dated career evidence.
+    alternative = re.compile(
+        r'\bor\s+(?:(?:a\s+|an\s+|the\s+)?'
+        r'(?:bachelor(?:[\u2019\']s|s)?|master(?:[\u2019\']s|s)?|ph\.?d\.?|doctorate)'
+        r'(?:\s+degree)?\s+(?:with|and)\s+)?$', re.I)
+    groups = []
+    previous = None
+    for threshold in thresholds:
+        years = float(threshold[1])
+        if previous is not None and alternative.search(quote[previous.end():threshold.start()]):
+            groups[-1] = min(groups[-1], years)
+        else:
+            groups.append(years)
+        previous = threshold
     return bool(re.search(r'\bexperience\b', quote, re.I)
-                and any(float(n)*12 > dated_months for n in thresholds))
+                and any(years*12 > dated_months for years in groups))
 
 
 def dated_tenure(texts, today=None):

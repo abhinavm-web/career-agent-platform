@@ -54,6 +54,31 @@ class RequirementSupportTests(unittest.TestCase):
         rows = [requirement(1, 'not_demonstrated')]
         self.assertEqual(audit.audit_support(rows, document()['document'], ROUTE, forbidden), rows)
 
+    def test_at_least_one_example_list_gets_independent_review(self):
+        row = requirement(1, 'partial')
+        row['quote'] = 'Proficiency with at least one framework such as FictionalGraph, FictionalAgents, FictionalCrew.'
+        with patch('career_agent.requirement_support.ai.complete', side_effect=answer) as model:
+            audit.audit_support([row], document()['document'], ROUTE)
+        model.assert_called_once()
+        self.assertEqual(json.loads(model.call_args.args[1])['requirements'][0]['id'], 'r1')
+
+    def test_skill_alternatives_do_not_disable_mandatory_duration_bounds(self):
+        for quote in [
+            '15 years of experience, including 4 years using Java or Python.',
+            '15 years of experience AND 4 years of leadership, with Python OR Java.',
+            '15 years experience with Java OR Python including 4 years of leadership.',
+            '15 years of experience AND 4 years using Java OR 3 years using Python.',
+        ]:
+            with self.subTest(quote=quote):
+                self.assertTrue(validation._duration_exceeds_evidence(quote, 120))
+        for quote in [
+            '12 years experience with a bachelors OR 8 years with a masters.',
+            '12 years experience OR a masters degree with 8 years experience.',
+        ]:
+            with self.subTest(quote=quote):
+                self.assertFalse(validation._duration_exceeds_evidence(quote, 120))
+                self.assertTrue(validation._duration_exceeds_evidence(quote, 84))
+
     def test_three_compound_or_profile_only_false_positives_are_corrected(self):
         rows = [requirement(1), requirement(2), requirement(3)]
         rows[1].update(quote='Use coding assistants for code generation, debugging and refactoring.',

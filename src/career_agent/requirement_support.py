@@ -50,7 +50,7 @@ class _InvalidAudit(ValueError):
 
 def audit_candidate(row):
     return row['status'] == 'supported' or (row['status'] != 'context'
-        and bool(re.search(r'\b(?:or|one of|either)\b', row['quote'], re.I)))
+        and bool(re.search(r'\b(?:or|one of|at least one|either)\b', row['quote'], re.I)))
 
 
 def audit_support(requirements, document, route, complete=None):
