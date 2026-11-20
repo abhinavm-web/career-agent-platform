@@ -741,6 +741,100 @@
     return panel;
   }
 
+  function resumeGapPanel(job) {
+    const panel = section("Resume gap analysis");
+    panel.id = "resume-gap";
+    panel.dataset.jobId = job.id;
+    panel.dataset.revision = String(job.description_revision ?? 0);
+    const fileLabel = node("label", "block-label", "Import resume");
+    const file = node("input"); file.type = "file"; file.accept = ".docx,.pdf,.txt"; fileLabel.append(file);
+    const textLabel = node("label", "block-label", "Resume text for comparison");
+    const input = node("textarea"); input.rows = 5; input.maxLength = 20000; textLabel.append(input);
+    const routeLabel = node("label", "block-label", "Model");
+    const select = node("select"); routeLabel.append(select);
+    const load = button("Load comparison models", "button");
+    const consentLabel = node("label", "check-label");
+    const consent = node("input"); consent.type = "checkbox";
+    consentLabel.append(consent, document.createTextNode(" Share the displayed resume and posting with the selected model. Longer postings use multiple requests and cloud charges may apply."));
+    const run = button("Compare my resume", "button button-primary");
+    const status = node("p", "muted"); status.setAttribute("role", "status");
+    const results = node("div");
+    let routes = [], busy = false;
+    const route = () => routes.find(r => r.route === select.value);
+    function sync() {
+      for (const control of [file, input, load, select, consent]) control.disabled = busy;
+      run.disabled = busy || !job.description?.trim() || !route()?.route_fingerprint || !consent.checked || !input.value?.trim();
+    }
+    function reset() {
+      consent.checked = false; results.replaceChildren(); status.textContent = ""; sync();
+    }
+    input.addEventListener("input", reset); select.addEventListener("change", reset);
+    consent.addEventListener("change", sync);
+    file.addEventListener("change", async () => {
+      const chosen = file.files[0];
+      if (!chosen) return;
+      reset(); input.value = ""; busy = true; sync();
+      try {
+        if (chosen.size > 2 * 1024 * 1024) throw new Error("Choose a file up to 2 MB.");
+        const encoded = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.onerror = () => reject(new Error("Unable to read the file."));
+          reader.readAsDataURL(chosen);
+        });
+        const extracted = await api("/api/workspace/resume-extract", "POST", {filename: chosen.name, content: encoded});
+        input.value = extracted.text; status.textContent = "Review the extracted text before sharing.";
+      } catch (error) { status.textContent = error.message; }
+      finally { busy = false; file.value = ""; sync(); }
+    });
+    load.addEventListener("click", async () => {
+      reset(); busy = true; sync(); routes = []; select.replaceChildren();
+      try {
+        routes = (await api("/api/ai/routes")).routes;
+        for (const r of routes) {
+          const option = node("option", "", r.route + " · " + r.model + " · " + r.destination);
+          option.value = r.route; select.append(option);
+        }
+        if (!routes.length) status.textContent = "Configure a model in AI tools.";
+      } catch (error) { status.textContent = error.message; }
+      finally { busy = false; sync(); }
+    });
+    run.addEventListener("click", async () => {
+      if (run.disabled) return;
+      busy = true; sync(); results.replaceChildren(); status.textContent = "Comparing your resume with the posting…";
+      try {
+        const response = await api("/api/jobs/" + job.id + "/resume-gap", "POST", {
+          resume_text: input.value, route: select.value, route_fingerprint: route().route_fingerprint,
+          acknowledged: true, description_revision: job.description_revision ?? 0});
+        const labels = {partial: "Partial evidence", missing_evidence: "Evidence missing", clarify: "Needs clarification", covered: "Covered", context: "Posting context"};
+        for (const [key, label] of Object.entries(labels)) {
+          const rows = response.items.filter(row => row.status === key);
+          if (!rows.length) continue;
+          const group = node("details", "gap-group"); group.open = ["partial", "missing_evidence", "clarify"].includes(key);
+          group.append(node("summary", "", label + " (" + rows.length + ")"));
+          for (const row of rows) {
+            const item = node("section", "fit-evidence-item");
+            const comparison = node("div", "gap-passages");
+            const posting = node("div"), resume = node("div");
+            posting.append(node("strong", "", "Posting · " + row.category), node("blockquote", "", row.quote));
+            resume.append(node("strong", "", "Your resume"), node("blockquote", "", row.resume_quote || "No passage cited."));
+            comparison.append(posting, resume);
+            item.append(comparison, node("strong", "", "Assessment"), node("p", "", row.difference));
+            if (row.next_step) item.append(node("strong", "", "Next step"), node("p", "", row.next_step));
+            group.append(item);
+          }
+          results.append(group);
+        }
+        status.textContent = response.items.length + " posting items compared with " + route().model + ".";
+      } catch (error) { status.textContent = error.message; }
+      finally { busy = false; consent.checked = false; sync(); }
+    });
+    panel.append(node("p", "muted", job.description?.trim() ? "Paste or import your resume to see supporting passages, gaps and next steps for this opportunity." : "Add the job description to compare this opportunity."),
+      fileLabel, textLabel, load, routeLabel, consentLabel, run, status, results);
+    sync(); return panel;
+  }
+
+
   function renderDetailPreservingEditor() {
     const revisionEditor = byId("detail-panel").querySelector?.(".document-revision-studio");
     const keepRevision = revisionEditor?.dataset.jobId === state.selectedId;
@@ -753,9 +847,12 @@
       duplicates.dataset.archived === String(Boolean(state.jobs.find(job => job.id === state.selectedId)?.archive));
     const inline = byId("detail-panel").querySelector?.("#inline-tailoring");
     const currentJob = state.jobs.find(job => job.id === state.selectedId);
+    const gap = byId("detail-panel").querySelector?.("#resume-gap");
+    const keepGap = gap && currentJob && gap.dataset.jobId === currentJob.id && gap.dataset.revision === String(currentJob.description_revision ?? 0);
     const keepInline = inline?.open && inline.dataset.jobId === state.selectedId && currentJob &&
       inline.dataset.descriptionRevision === String(currentJob.description_revision ?? 0);
     renderDetail();
+    if (keepGap) byId("detail-panel").querySelector?.("#resume-gap")?.replaceWith(gap);
     if (keepRevision) byId("detail-panel").querySelector?.(".document-revision-studio")?.replaceWith(revisionEditor);
     if (keepInline) byId("detail-panel").querySelector?.("#inline-tailoring")?.replaceWith(inline);
     if (keepDuplicates) byId("detail-panel").querySelector?.("#possible-duplicates")?.replaceWith(duplicates);
@@ -1039,6 +1136,8 @@
       byId("nav-h1b").click();
     }));
     panes.sponsorship.append(sponsor);
+
+    panes.fit.append(resumeGapPanel(job));
 
     if (job.constraint_evidence?.length) {
       const constraints = section("Your hard constraints");

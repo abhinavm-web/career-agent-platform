@@ -1283,6 +1283,38 @@ def create_app(config: DashboardConfig) -> FastAPI:
             job = _get_job(store, job_id)
             return {"job_id": job.id, "revisions": store.description_history(job.id)}
 
+    @app.post('/api/jobs/{job_id}/resume-gap')
+    async def resume_gap(job_id: str, request: Request):
+        from .resume_gap import compare, SYSTEM, SCHEMA
+        data = await request.json()
+        fields = {'resume_text', 'description_revision', 'route', 'route_fingerprint', 'acknowledged'}
+        if not isinstance(data, dict) or set(data) != fields or data['acknowledged'] is not True:
+            raise ValueError('Confirm sharing this resume and posting with the selected model')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                store.connection.execute('BEGIN')
+                job = _get_job(store, job_id)
+                revision = store.description_revision(job_id)
+                if type(data['description_revision']) is not int or revision != data['description_revision']:
+                    raise HTTPException(status_code=409, detail='Posting changed. Refresh and compare again.')
+
+            def complete_batch(prompt):
+                def invoke():
+                    return ai.complete(ai._route(data['route']), prompt, system=SYSTEM, json_schema=SCHEMA)
+                return run_recorded(config.db_path, data['route'], 'resume_gap', invoke,
+                                    expected_route_fingerprint=fingerprint)
+
+            rows = await run_in_threadpool(compare, job.description, data['resume_text'], complete_batch)
+            with Store(config.db_path) as store:
+                if store.description_revision(job_id) != revision:
+                    raise HTTPException(status_code=409, detail='Posting changed during comparison. Refresh and retry.')
+            return {'job_id': job_id, 'description_revision': revision, 'items': rows}
+        finally:
+            ai_lock.release()
+
     @app.get("/api/jobs/{job_id}/fit-evidence")
     def fit_evidence(job_id: str):
         from .fit_evidence import requirement_evidence
