@@ -80,7 +80,7 @@ def submit(db_path, job_id, data):
             parsed = form.locator('.resume-upload-success')
             if parsed.count():
                 parsed.wait_for(state='visible', timeout=45000)
-                if form.locator('.visible-resume-upload .filename').inner_text().strip() != fields['filename']:
+                if form.locator('.visible-resume-upload .filename').text_content().strip() != fields['filename']:
                     raise ValueError('The employer did not acknowledge the selected PDF.')
             # Lever may derive a current employer, location and links from past roles.
             # These optional answers are outside the approved contact information.

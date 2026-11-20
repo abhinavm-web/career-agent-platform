@@ -31,8 +31,14 @@ class LeverSubmitTests(unittest.TestCase):
         from playwright.sync_api import BrowserType, Browser, Page, TimeoutError as BrowserTimeout
         real_launch, real_page, real_wait = BrowserType.launch, Browser.new_page, Page.wait_for_url
         form = """<h2>Example role</h2><form id="application-form" method="post">
-        <input name="name"><input name="email"><input name="phone"><input name="resume" type="file">
-        <input name="org" value="Incorrect parsed employer">
+        <input name="name"><input name="email"><input name="phone">
+        <input name="resume" type="file" onchange="setTimeout(() => {
+            this.form.org.value='Incorrect parsed employer';
+            document.querySelector('.filename').textContent=this.files[0].name;
+            document.querySelector('.resume-upload-success').hidden=false;
+        },100)">
+        <span class="visible-resume-upload" style="text-transform:uppercase"><span class="filename"></span></span>
+        <span class="resume-upload-success" hidden>Success!</span><input name="org">
         <button type="button" id="btn-submit" onclick="if(!this.form.org.value) location.href='thanks'">Submit application</button></form>"""
         for confirm in (True, False):
             with self.subTest(confirm=confirm), tempfile.TemporaryDirectory() as directory:
