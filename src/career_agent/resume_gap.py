@@ -3,6 +3,7 @@ import json
 import re
 
 from .fit_evidence import requirement_inventory
+from .requirement_support import audit_support
 
 STATUSES = ('covered', 'partial', 'missing_evidence', 'clarify', 'context')
 FIELDS = ('id', 'status', 'resume_quote', 'difference', 'next_step')
@@ -28,7 +29,7 @@ or missing. Give one specific feasible next step: for partial evidence, say whic
 for a skill without evidence, propose a concrete project, learning milestone, or evidence to collect;
 for an eligibility condition suggest a question for the employer. Never invent experience, tenure,
 credentials, achievements or legal status. For explicitly required licenses, advise checking current
-licensure and listing the issuing body only if held. Never downgrade a required credential to preferred. For covered items identify what wording to keep. For context
+licensure and listing the issuing body only if held. Do not request credential numbers or documents. Never downgrade a required credential to preferred. For covered items identify what wording to keep. For context
 use an empty next_step. Keep each field concise. Use only the given IDs and status values."""
 
 
@@ -72,3 +73,33 @@ def compare(description, resume_text, completion):
         except (ValueError, KeyError, TypeError, AttributeError):
             raise ValueError('The model returned an incomplete comparison or invalid resume citation. Retry with the selected model or choose another.') from None
     return output
+
+
+def audited_comparison(description, resume_text, complete):
+    rows = compare(description, resume_text, lambda prompt: complete(prompt, system=SYSTEM, json_schema=SCHEMA))
+    passages = [{'text': line.strip()} for line in resume_text.splitlines() if line.strip()]
+    statuses = {'covered': 'supported', 'partial': 'partial', 'missing_evidence': 'not_demonstrated',
+                'clarify': 'needs_confirmation', 'context': 'context'}
+    labels = {value: key for key, value in statuses.items()}
+    candidates = [{**row, 'status': statuses[row['status']], 'reason': row['difference']} for row in rows]
+
+    def request_audit(_route, prompt, **kwargs):
+        return complete(prompt, **kwargs)
+
+    audited = audit_support(candidates, {'resume': passages}, None, complete=request_audit, include_partial=True)
+    for row, audit in zip(rows, audited):
+        if 'resume_indices' not in audit:
+            continue
+        status = labels[audit['status']]
+        if row['status'] != status:
+            row['next_step'] = {
+                'partial': 'Review the missing details above. Add a specific example only if you can substantiate it.',
+                'missing_evidence': 'Check for a project or credential that demonstrates this specific requirement.',
+                'clarify': 'Confirm this condition with the employer before tailoring your application.',
+                'covered': 'Retain the cited evidence when tailoring your resume.',
+            }[status]
+        row['difference'] = audit['reason']
+        row['status'] = status
+        cited = [passages[index]['text'] for index in audit['resume_indices']]
+        row['resume_quote'] = '\n'.join(cited) if status != 'missing_evidence' else ''
+    return rows

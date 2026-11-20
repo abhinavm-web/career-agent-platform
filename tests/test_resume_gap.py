@@ -30,3 +30,18 @@ class ResumeGapTests(unittest.TestCase):
                          lambda prompt: self.answers(prompt).replace('Python', 'Rust')]:
             with self.assertRaisesRegex(ValueError, 'invalid resume citation'):
                 compare('Requirements\n- Build reporting services.', self.resume, response)
+
+    def test_second_pass_downgrades_overbroad_match(self):
+        from career_agent.resume_gap import audited_comparison
+
+        def complete(prompt, **kwargs):
+            if 'allowed_resume_indices' in json.loads(prompt):
+                return json.dumps({'requirements': [{'id': 'r1', 'status': 'partial',
+                    'reason': 'Production scale is undocumented.', 'resume_indices': [0]}]})
+            return self.answers(prompt).replace('"partial"', '"covered"')
+
+        row, = audited_comparison('Requirements\n- Build reporting services at production scale.', self.resume, complete)
+        self.assertEqual(row['status'], 'partial')
+        self.assertIn('scale', row['difference'])
+        self.assertEqual(row['resume_quote'], self.resume)
+        self.assertNotIn('Retain', row['next_step'])

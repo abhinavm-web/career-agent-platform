@@ -53,13 +53,13 @@ def audit_candidate(row):
         and bool(re.search(r'\b(?:or|one of|at least one|either)\b', row['quote'], re.I)))
 
 
-def audit_support(requirements, document, route, complete=None):
+def audit_support(requirements, document, route, complete=None, *, include_partial=False):
     """Return all original rows in order, with positive judgments independently checked.
 
     A missing/malformed batch raises instead of accepting a partial audit. The supplied
     completion callback owns consent, accounting and provider limits for every request.
     """
-    positive = [row for row in requirements if audit_candidate(row)]
+    positive = [row for row in requirements if audit_candidate(row) or (include_partial and row['status'] == 'partial')]
     if not positive:
         return [dict(row) for row in requirements]
     resume = [{'resume_index': i, 'text': row['text'], 'section': row.get('section')}

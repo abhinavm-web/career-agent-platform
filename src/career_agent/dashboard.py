@@ -1285,7 +1285,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.post('/api/jobs/{job_id}/resume-gap')
     async def resume_gap(job_id: str, request: Request):
-        from .resume_gap import compare, SYSTEM, SCHEMA
+        from .resume_gap import audited_comparison
         data = await request.json()
         fields = {'resume_text', 'description_revision', 'route', 'route_fingerprint', 'acknowledged'}
         if not isinstance(data, dict) or set(data) != fields or data['acknowledged'] is not True:
@@ -1301,13 +1301,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 if type(data['description_revision']) is not int or revision != data['description_revision']:
                     raise HTTPException(status_code=409, detail='Posting changed. Refresh and compare again.')
 
-            def complete_batch(prompt):
+            def complete_batch(prompt, **kwargs):
                 def invoke():
-                    return ai.complete(ai._route(data['route']), prompt, system=SYSTEM, json_schema=SCHEMA)
+                    return ai.complete(ai._route(data['route']), prompt, **kwargs)
                 return run_recorded(config.db_path, data['route'], 'resume_gap', invoke,
                                     expected_route_fingerprint=fingerprint)
 
-            rows = await run_in_threadpool(compare, job.description, data['resume_text'], complete_batch)
+            rows = await run_in_threadpool(audited_comparison, job.description, data['resume_text'], complete_batch)
             with Store(config.db_path) as store:
                 if store.description_revision(job_id) != revision:
                     raise HTTPException(status_code=409, detail='Posting changed during comparison. Refresh and retry.')
