@@ -430,7 +430,7 @@ class H1BResearch:
                 'recent_certified_cases': sum(r['cases'] for r in rows if r['case_status'] == 'certified')}
 
     def board_history(self, jobs):
-        """Batch existence hints for saved jobs; never infer sponsorship policy."""
+        """Read recorded entity names and fiscal years for all employers on one page."""
         if not jobs:
             return {}
         ids = [job.id for job in jobs]
@@ -443,17 +443,21 @@ class H1BResearch:
         employers = {job.id: associations.get(job.id, job.company) for job in jobs}
         keys = list({employer_key(name) for name in employers.values()})
         key_marks = ','.join('?' for _ in keys)
-        dol = {row[0] for row in self.conn.execute(
-            f'SELECT DISTINCT employer_key FROM h1b_lca WHERE employer_key IN ({key_marks})', keys)}
-        uscis = {row[0] for row in self.conn.execute(
-            f'SELECT DISTINCT employer_key FROM uscis_employers WHERE employer_key IN ({key_marks})', keys)}
+        filings = {}
+        for table, source in [('h1b_lca', 'DOL LCA'), ('uscis_employers', 'USCIS decisions')]:
+            rows = self.conn.execute(f'''SELECT employer_key,employer,MIN(fiscal_year),MAX(fiscal_year)
+                FROM {table} WHERE employer_key IN ({key_marks})
+                GROUP BY employer_key,employer ORDER BY employer_key,employer''', keys)
+            for key, entity, first, last in rows:
+                filings.setdefault(key, []).append({'source': source, 'employer': entity,
+                                                    'first_year': first, 'last_year': last})
         results = {}
         for job in jobs:
             name = employers[job.id]
             key = employer_key(name)
-            sources = (['DOL LCA'] if key in dol else []) + (['USCIS decisions'] if key in uscis else [])
-            if sources:
-                results[job.id] = {'employer': name, 'sources': sources,
+            if key in filings:
+                results[job.id] = {'employer': name, 'filings': filings[key],
+                                   'sources': list(dict.fromkeys(row['source'] for row in filings[key])),
                                    'match': 'candidate_association' if job.id in associations else 'exact_name'}
         return results
 

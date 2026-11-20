@@ -841,16 +841,33 @@ test("opportunity filters combine and old observations are never shown as listed
 
 test("imported employer history is separate from posting policy", async () => {
   const historical = {...fakeJob(ID_A, "Fictional role"), sponsorship_status: "explicit_exclusion",
-    imported_sponsorship_history: {employer: "Legal Corp", sources: ["DOL LCA"], match: "candidate_association"}};
+    decision_summary: {
+      verified_fact: {id: "py-01", section: "projects", statement: "Built a Python tool.",
+        source_note: "Reviewed résumé, project 2", matched_terms: ["Python"]},
+      requirement_to_verify: {quote: "Rust experience", category: "required", term_link: false},
+      posting_quotes: ["No visa sponsorship for this role."]
+    },
+    discovery_observations: [{source: "sample", posted_date_status: "partial", reported_posted_date: "2024-05-12"}],
+    live_check: {availability: "listed", checked_at: "2024-06-01T12:00:00Z"},
+    imported_sponsorship_history: {employer: "Legal Corp", sources: ["DOL LCA"], match: "candidate_association",
+      filings: [{employer: "Legal Corp", source: "DOL LCA", first_year: 2021, last_year: 2023}]}};
   const absent = {...fakeJob(ID_B, "Other role"), imported_sponsorship_history: null};
   const h = createHarness({jobsOverride: [historical, absent]}); await flush();
+  const unknown = h.get("job-list").children.find(item => item.textContent.includes("Other role")).textContent;
+  for (const label of ["No verified fact linked", "Unknown · no classified requirement", "Unknown · No linked records",
+                       "Source-reported posting date Unknown", "Active check Not checked"]) assert.ok(unknown.includes(label));
   const filter = h.get("filter"); filter.value = "imported-history"; filter.handlers.change({target: filter});
   assert.match(h.get("job-list").textContent, /Imported employer history/);
   assert.doesNotMatch(h.get("job-list").textContent, /Other role/);
   h.get("job-list").children[0].click();
-  assert.match(h.get("detail-panel").textContent, /Evidence at a glance/);
+  assert.match(h.get("detail-panel").textContent, /Decision summary/);
   assert.match(h.get("detail-panel").textContent, /Posting excludes sponsorship/);
-  assert.match(h.get("detail-panel").textContent, /Historical records found/);
+  for (const view of [h.get("job-list"), h.get("detail-panel")]) {
+    for (const value of ["Built a Python tool.", "py-01", "Reviewed résumé, project 2", "Shared posting terms: Python",
+      "Rust experience", "No visa sponsorship for this role.", "2024-05-12 (partial)",
+      "Active check Check is stale · 2024-06-01", "Legal Corp · DOL LCA · FY 2021–2023",
+      "candidate-linked entity (unverified)"]) assert.ok(view.textContent.includes(value), value);
+  }
   assert.match(h.get("detail-panel").textContent, /do not establish sponsorship for this role/);
   assert.match(h.get("detail-panel").textContent, /unverified employer association/);
   assert.match(h.get("detail-panel").textContent, /do not establish current job sponsorship/);
