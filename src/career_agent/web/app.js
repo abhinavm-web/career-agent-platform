@@ -188,8 +188,11 @@
   function decisionSummary(job, compact) {
     const summary = job.decision_summary || {};
     const container = node("div", compact ? "board-decision-compact" : "evidence-summary-grid");
+    // Cards keep only the two triage signals visible; the remaining fields stay
+    // readable by assistive technology and appear in full in the detail pane.
+    const cardPrimary = ["Verified evidence", "Requirement to verify"];
     function field(label, value, note) {
-      const row = node("div", compact ? "board-decision-field" : "evidence-tile");
+      const row = node("div", compact ? "board-decision-field" + (cardPrimary.includes(label) ? "" : " board-decision-secondary") : "evidence-tile");
       const content = node("strong", "", value);
       row.append(node("small", "", label + " "), content);
       if (note) row.append(node("p", "", note));

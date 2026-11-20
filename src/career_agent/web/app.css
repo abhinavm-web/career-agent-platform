@@ -295,6 +295,18 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 .board-empty .button {margin:0 8px 8px 0;}
 .detail-panel {position:sticky;top:20px;max-height:calc(100vh - 40px);overflow:auto;min-height:490px;}
 .empty-detail {min-height:400px;}
+/* Master-detail: on wide screens the list and the detail each scroll inside the
+   viewport, so choosing a role never leaves the other pane thousands of pixels away. */
+@media(min-width:1051px) {
+  #jobs-screen:not(.studio-open) .board:not(:has(> #detail-panel > .empty-detail)) > .list-panel,
+  #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) > .list-panel {position:sticky;top:20px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;}
+  #jobs-screen:not(.studio-open) .board:not(:has(> #detail-panel > .empty-detail)) .job-list,
+  #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) .job-list {flex:1 1 auto;min-height:0;overflow-y:auto;}
+  #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) .list-panel .crm-form {grid-template-columns:1fr 1fr;}
+  #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) .list-panel .crm-form > :is(label:first-child,p,button,span) {grid-column:1 / -1;}
+  #jobs-screen:not(.studio-open) .board:not(:has(> #detail-panel > .empty-detail)) > .list-panel > :not(.job-list),
+  #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) > .list-panel > :not(.job-list) {flex-shrink:0;}
+}
 .detail-section p,.detail-section li {font-size:13px;line-height:1.6;}
 #ai-form {display:grid;gap:14px;margin-top:18px;}
 #ai-form > label:not(.check-label) {display:grid;gap:7px;color:var(--muted);font-size:12px;}
@@ -492,6 +504,7 @@ input[type="checkbox"],input[type="radio"] {accent-color:#4a45a8;}
 .board-decision-field small {font-weight:600;}
 .board-decision-field strong {font-weight:400;}
 .board-decision-field p {margin:0;color:#555e72;}
+.board-decision-secondary {position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;}
 .board-decision-field strong,.board-decision-field p {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 footer {color:#656c7d;}
 @media(max-width:1080px) {.rail {width:205px;}.workspace {padding:0 22px;}}
