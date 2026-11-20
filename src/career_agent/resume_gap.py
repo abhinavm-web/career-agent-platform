@@ -19,6 +19,10 @@ Return JSON {"items":[...]} with exactly one row per id. Each row contains id, s
 difference and next_step. Copy a short contiguous exact resume_quote from the resume for covered or
 partial. Use missing_evidence with an empty quote when no relevant evidence appears. Do not infer a
 candidate lacks a skill. Use clarify for employer or eligibility conditions, context for boilerplate.
+Employer reporting lines, manager titles and office addresses are posting context. Never ask a
+candidate to put the employer's reporting line or office location on a resume. If onsite presence
+or relocation is explicitly required, use clarify and suggest checking the work arrangement.
+For partial evidence name the specific missing domain or activity, and avoid judgments about passion.
 Respect alternatives, scope, dates and conjunctive requirements. Explain exactly which clause is evidenced
 or missing. Give one specific feasible next step: for partial evidence, say which detail to add if true;
 for a skill without evidence, propose a concrete project, learning milestone, or evidence to collect;
