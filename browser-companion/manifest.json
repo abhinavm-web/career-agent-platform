@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Career Agent job capture",
-  "version": "0.2.0",
-  "description": "Copy selected or structured job text for review in your local Career Agent workspace.",
+  "name": "Career Agent companion",
+  "version": "0.3.0",
+  "description": "Capture opportunities, review and submit supported applications, and open your browser password vault.",
   "permissions": ["activeTab", "scripting", "clipboardWrite"],
   "action": {"default_popup": "popup.html"}
 }

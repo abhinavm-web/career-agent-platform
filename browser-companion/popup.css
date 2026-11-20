@@ -2,3 +2,11 @@ body { font: 14px system-ui, sans-serif; width: 300px; margin: 0; color: #182438
 main { padding: 16px; }
 h1 { font-size: 18px; }
 button { background: #243e70; color: white; border: 0; border-radius: 5px; padding: 9px 12px; cursor: pointer; }
+
+section {border-bottom:1px solid #ced4dc;padding-bottom:12px;}
+h2 {font-size:15px;}
+#application-preview {overflow-wrap:anywhere;white-space:pre-wrap;}
+dt {margin-top:8px;font-weight:600;}
+dd {margin:2px 0 8px;}
+details,label {display:block;margin:10px 0;}
+input {box-sizing:border-box;display:block;width:100%;margin-top:4px;padding:6px;}
