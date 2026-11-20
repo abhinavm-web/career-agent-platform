@@ -13,6 +13,7 @@ const SOURCE = fs.readFileSync(
 );
 const ID_A = "aaaaaaaaaaaaaaaa";
 const ID_B = "bbbbbbbbbbbbbbbb";
+const ANSWER_SOURCE = fs.readFileSync(path.join(__dirname, "../src/career_agent/web/application-answers.js"), "utf8");
 
 class Element {
   constructor(tag) {
@@ -319,11 +320,73 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
     crypto: {randomUUID: () => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
     console,
   };
+  vm.runInNewContext(ANSWER_SOURCE, context);
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
   return {get, waiting, downloads, discoveryRequests, chatRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("profile and application studio expose answer panels", async () => {
+  const h = createHarness();
+  await flush();
+  assert.match(h.get("application-answer-bank").textContent, /Application answer bank/);
+  h.get("job-list").children[0].click();
+  assert.match(h.get("detail-panel").textContent, /Application form answers/);
+});
+
+test("role answers require exact wording and explicit reuse before copy, and reject stale copies", async () => {
+  const copies = [], writes = [];
+  const context = {window: {}, navigator: {clipboard: {writeText: async value => copies.push(value)}}};
+  vm.runInNewContext(ANSWER_SOURCE, context);
+  const bank = [{topic: "work_authorization", label: "Authorization", answer: "Fictional response", revision: 2}];
+  const data = {bank, answers: [], locked: false};
+  const api = async (path, method, payload) => {
+    assert.equal(path, "/api/jobs/" + ID_A + "/application-answers");
+    if (method === "PUT") {
+      writes.push(payload);
+      data.answers = [{...payload, revision: 1, reused: true, stale: false}];
+    }
+    return data;
+  };
+  const node = (tag, cls, text = "") => {
+    const el = new Element(tag); el.className = cls; el.textContent = text; return el;
+  };
+  const button = (text, cls, action) => {
+    const el = node("button", cls, text); el.handlers.click = action; return el;
+  };
+  const panel = context.window.applicationAnswers({api, node, button})(ID_A);
+  panel.isConnected = panel.open = true;
+  panel.closest = () => null;
+  await panel.handlers.toggle();
+  const find = (el, tag, text) => el.tagName === tag && el.textContent.startsWith(text)
+    ? el : el.children.map(child => find(child, tag, text)).find(Boolean);
+  const action = text => find(panel, "button", text);
+  const control = text => find(panel, "label", text).children[0];
+  const reuse = action("Confirm reuse");
+  const select = control("Question topic");
+  select.value = bank[0].topic;
+  select.handlers.change();
+  assert.equal(reuse.disabled, true);
+  const question = control("Employer’s exact question");
+  question.value = "  Can you work here\nunder these conditions? ";
+  question.handlers.input();
+  assert.equal(reuse.disabled, false);
+  assert.equal(control("Your answer for this role only").value, "");
+  assert.equal(control("Saved profile answer").value, bank[0].answer);
+  assert.equal(action("Copy confirmed answer"), undefined);
+  assert.equal(writes.length, 0);
+  await reuse.click();
+  assert.deepEqual({...writes[0]}, {topic: bank[0].topic, question: question.value, mode: "reuse",
+    confirmed: true, expected_revision: 0, profile_revision: 2, answer: bank[0].answer});
+  await action("Copy confirmed answer").click();
+  assert.deepEqual(copies, [bank[0].answer]);
+  data.answers = [{...data.answers[0], answer: "", stale: true}];
+  await action("Copy confirmed answer").click();
+  assert.deepEqual(copies, [bank[0].answer]);
+  assert.equal(action("Copy confirmed answer"), undefined);
+  assert.match(panel.textContent, /Profile answer changed/);
+});
 
 test('possible duplicates show source and recorded submission without merging', async () => {
   const h = createHarness(); await flush();

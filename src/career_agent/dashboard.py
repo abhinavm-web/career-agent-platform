@@ -32,6 +32,7 @@ from .application import MAX_TAILORED_FACTS, _reject_symlink_components, load_pa
 from .candidate import FactBank, SECTIONS
 from .capture_matching import linkedin_capture_matches, linkedin_current_id_conflicts
 from . import ai
+from . import answer_bank
 from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
@@ -290,6 +291,39 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get('/assets/profile-review.js')
     def profile_review_script():
         return Response(assets('profile-review.js'), media_type='text/javascript')
+
+    @app.get('/assets/application-answers.js')
+    def application_answers_script():
+        return Response(assets('application-answers.js'), media_type='text/javascript')
+
+    @app.exception_handler(answer_bank.AnswerConflict)
+    async def answer_conflict(request: Request, error: answer_bank.AnswerConflict):
+        return JSONResponse({'detail': str(error)}, status_code=409)
+
+    @app.get('/api/workspace/application-answers')
+    def profile_application_answers():
+        with Store(config.db_path) as store:
+            return answer_bank.profile_answers(store.connection)
+
+    @app.put('/api/workspace/application-answers')
+    async def save_profile_application_answer(request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return answer_bank.save_profile(store.connection, data)
+
+    @app.get('/api/jobs/{job_id}/application-answers')
+    def role_application_answers(job_id: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            store.connection.execute('BEGIN')
+            return answer_bank.role_answers(store, job_id)
+
+    @app.put('/api/jobs/{job_id}/application-answers')
+    async def save_role_application_answer(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return answer_bank.save_role(store, job_id, data)
 
     @app.get('/api/automation')
     def automation_status():

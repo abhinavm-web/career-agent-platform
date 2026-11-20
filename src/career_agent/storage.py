@@ -64,6 +64,14 @@ class Store:
                 receipt TEXT,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS profile_answers(
+                topic TEXT PRIMARY KEY, answer TEXT NOT NULL, revision INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS role_answers(
+                job_id TEXT NOT NULL REFERENCES jobs(job_id), question TEXT NOT NULL,
+                topic TEXT NOT NULL, answer TEXT NOT NULL, profile_revision INTEGER,
+                revision INTEGER NOT NULL, PRIMARY KEY(job_id, question)
+            );
             CREATE TABLE IF NOT EXISTS lever_dispatches(
                 job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
                 destination TEXT UNIQUE NOT NULL,

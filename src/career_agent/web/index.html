@@ -7,6 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <title>Career Agent · Career Workspace</title>
   <link rel="stylesheet" href="/assets/app.css">
+  <script defer src="/assets/application-answers.js"></script>
   <script defer src="/assets/app.js"></script>
   <script defer src="/assets/profile-review.js"></script>
   <script defer src="/assets/h1b.js"></script>
@@ -311,7 +312,7 @@
         <section id="profile-wizard-resume" class="panel profile-editor" aria-label="Résumé import step" hidden></section>
         <details id="profile-portability" class="panel profile-editor">
           <summary>Export or import career profile</summary>
-          <p class="muted">Export the current profile and facts, including contact details, private source notes and any AI wording source excerpts, to an unencrypted JSON file. This is not a full backup: jobs, application history, previous revisions and documents are excluded. Keep the file private.</p>
+          <p class="muted">Export the current profile and facts, including contact details, private source notes and any AI wording source excerpts, to an unencrypted JSON file. This is not a full backup: application answers, jobs, application history, previous revisions and documents are excluded. Keep the file private.</p>
           <button id="career-export" type="button" class="button">Download career profile JSON</button>
           <div id="career-portable-import">
             <p class="muted">Import only into an empty saved profile. Imported facts and their provenance are retained but all facts require verification again. Unsaved editor text will be replaced.</p>
@@ -325,6 +326,7 @@
           <p class="muted">You can copy the configured profile and verified fact bank into this editable workspace. Your original files will not be changed.</p>
           <button id="import-career-data" type="button" class="button">Import configured files</button>
         </div>
+        <div id="application-answer-bank"></div>
         <details id="profile-review" class="panel profile-editor">
           <summary>Review and strengthen my career profile</summary>
           <p class="muted">Let the application ask focused questions about conflicting claims, unclear responsibilities and missing detail. Questions and answers are saved. Your exact answers can add or replace facts; verification remains a separate decision.</p>

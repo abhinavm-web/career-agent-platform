@@ -82,6 +82,8 @@ Reviews and application statuses are distinct: approving a packet means **ready 
 
 The local dashboard now supports a **Career profile** screen. Start with no additional arguments: career-agent serve. Enter name, headline, target roles, skills, preferred locations and remote preference. Add, edit, verify, revoke or remove career statements. Only explicitly verified facts may appear in newly generated application packets.
 
+In **Career profile → Application answer bank**, save your own answers by topic. In a role’s **Application → Application form answers**, paste the employer’s exact question and choose its topic. Leave it unanswered, confirm reuse of the displayed profile answer, or enter a role-only answer. Use **Copy confirmed answer** to paste the reviewed text into the employer’s form. Changing or clearing a profile answer requires a new confirmation on roles that reused it. Role-only answers are independent. Full workspace backups include these local records.
+
 The profile and all revisions are stored as **unencrypted plaintext** in the existing SQLite file, not in the public repository. Source notes remain private to the local workspace. Edits to a confirmed claim automatically revoke verification. Requests include a revision token, with stale edits rejected as HTTP 409.
 
 An explicit one-time import can copy existing configured --profile and --facts files into the workspace, without altering them. See [Career Workspace](CAREER_WORKSPACE.md).
