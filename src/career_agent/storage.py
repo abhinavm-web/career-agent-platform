@@ -64,6 +64,12 @@ class Store:
                 receipt TEXT,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS lever_dispatches(
+                job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
+                destination TEXT UNIQUE NOT NULL,
+                resume_sha256 TEXT NOT NULL,
+                requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS packet_reviews(
                 review_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id TEXT NOT NULL REFERENCES jobs(job_id),

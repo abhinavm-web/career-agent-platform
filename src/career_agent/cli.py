@@ -87,6 +87,7 @@ def parser() -> argparse.ArgumentParser:
     flow.add_argument("--resume-run", help="Resume an existing durable run with unchanged inputs")
 
     web = cmd.add_parser("serve", help="Start the loopback-only local web workspace")
+    web.add_argument("--live-apply", action="store_true", help="Enable supervised submissions in desktop Chromium")
     web.add_argument("--profile", help="Path to local candidate preferences JSON")
     web.add_argument("--facts", help="Path to candidate-confirmed facts JSON")
     web.add_argument("--filings", help="Optional manually researched filing evidence CSV")
@@ -173,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             serve(
                 DashboardConfig(
                     db_path=Path(args.db),
+                    live_apply=args.live_apply,
                     packet_dir=Path(args.packet_dir),
                     profile_path=Path(args.profile) if args.profile else None,
                     facts_path=Path(args.facts) if args.facts else None,

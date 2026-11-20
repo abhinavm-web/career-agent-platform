@@ -362,6 +362,45 @@
     }
   }
 
+  function liveApplication(job, destination) {
+    const form = node("form", "form-stack"), fields = {};
+    form.append(node("h4", "", "Submit with Career Agent"),
+      node("p", "muted", job.title + " · " + job.company + " · " + destination));
+    for (const [key, label, type] of [["name", "Full name", "text"], ["email", "Contact email", "email"],
+      ["phone", "Contact phone", "tel"], ["resume", "Reviewed résumé PDF (up to 2 MiB)", "file"]]) {
+      const wrapper = node("label", "", label), input = node("input");
+      input.type = type; input.required = true;
+      if (key === "resume") input.accept = "application/pdf";
+      if (key === "name") input.value = state.workspace?.profile?.name || "";
+      wrapper.append(input); form.append(wrapper); fields[key] = input;
+    }
+    const send = node("button", "button button-primary", "Approve and send to " + job.company);
+    send.type = "submit";
+    const status = node("p", "muted"); status.setAttribute("role", "status");
+    form.append(send, status);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (send.disabled) return;
+      const file = fields.resume.files[0];
+      if (!file || file.size > 2 * 1024 * 1024) { status.textContent = "Choose a PDF up to 2 MiB."; return; }
+      if (!window.confirm("Send " + file.name + " and the displayed contact information to " + job.company + " for " + job.title + "?")) return;
+      const data = {name: fields.name.value, email: fields.email.value, phone: fields.phone.value,
+        destination, approved: true, filename: file.name};
+      send.disabled = true;
+      status.textContent = "Career Agent is opening the employer’s form. Complete any verification in the Chromium window.";
+      try {
+        data.content = await new Promise((resolve, reject) => {
+          const reader = new FileReader(); reader.onload = () => resolve(reader.result.split(",")[1]);
+          reader.onerror = () => reject(new Error("Unable to read the PDF.")); reader.readAsDataURL(file);
+        });
+        const result = await api("/api/jobs/" + job.id + "/lever-submit", "POST", data);
+        status.textContent = result.status === "confirmed" ? "Employer confirmation received. Application recorded." : result.detail;
+        if (result.status === "confirmed") await refresh(true);
+      } catch (error) { status.textContent = error.message; send.disabled = false; }
+    });
+    return form;
+  }
+
   function section(heading) {
     const box = node("section", "detail-section");
     box.append(node("h4", "", heading));
@@ -1015,6 +1054,11 @@
       assistant.append(safeLink(target ? "Open Lever application form" : "Open posting to apply", target?.href || job.url),
         node("p", "muted", "For a Lever application, open the Career Agent companion in Chrome or Edge to fill contact details. Attach your reviewed resume on the employer’s page, then choose Review this application in the companion."),
         node("p", "muted", "For an employer account, use the browser’s save-password prompt during sign-up. Choose Open password vault in the companion to manage saved logins."));
+      if (job.lever_dispatch_requested) {
+        assistant.prepend(node("p", "", "Career Agent requested submission. Employer confirmation is pending. Check the employer portal or your email before applying again."));
+      } else if (target && state.settings.application_submission_enabled) {
+        assistant.prepend(liveApplication(job, target.origin + target.pathname));
+      }
       panes.application.append(assistant);
     }
     const openJobAI = () => {
