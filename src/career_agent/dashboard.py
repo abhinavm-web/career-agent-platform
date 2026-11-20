@@ -291,6 +291,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def profile_review_script():
         return Response(assets('profile-review.js'), media_type='text/javascript')
 
+    @app.get('/assets/workspace-guide.js')
+    def workspace_guide_asset():
+        return Response(assets('workspace-guide.js'), media_type='text/javascript')
+
     @app.get('/api/automation')
     def automation_status():
         return {**automation.list(), 'workflows': workflows.list()}

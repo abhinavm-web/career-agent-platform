@@ -12,6 +12,7 @@
   <script defer src="/assets/h1b.js"></script>
   <script defer src="/assets/ai.js"></script>
   <script defer src="/assets/automation.js"></script>
+  <script defer src="/assets/workspace-guide.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -22,7 +23,8 @@
         <div class="identity-text"><strong>Career Agent</strong><small>CAREER WORKSPACE</small></div>
       </div>
       <div class="rail-divider"></div>
-      <nav class="navigation" aria-label="Main">
+      <button type="button" id="menu-toggle" aria-controls="workspace-nav" aria-expanded="false">Menu</button>
+      <nav id="workspace-nav" class="navigation" aria-label="Main">
         <button class="nav-item active" id="nav-home" type="button" aria-current="page"><span class="nav-glyph" aria-hidden="true">⌂</span> Home</button>
         <span class="nav-group-label">YOUR SEARCH</span>
         <button class="nav-item" id="nav-jobs" type="button"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
@@ -49,6 +51,7 @@
       <header class="topbar">
         <div class="breadcrumbs"><span>Workspace</span><span class="slash">/</span><strong id="section-name">Home</strong></div>
         <div class="top-actions">
+          <button id="control-help" type="button" class="guide-toggle" aria-pressed="false" data-help="Select a field, action or tab to read its help. Press Escape to exit."><span aria-hidden="true" class="info-symbol">i</span> Control help</button>
           <span id="configuration-status" class="config-pill">Checking profile…</span>
           <button id="refresh" type="button" class="icon-action" title="Refresh data" aria-label="Refresh data">↻</button>
         </div>
@@ -65,11 +68,11 @@
       </section>
 
       <section id="home-screen" class="screen">
-        <div class="section-heading home-heading"><div><span class="eyebrow">YOUR WORKSPACE</span><h2>Your next move, in focus.</h2><p class="section-description">Find the right roles, prepare with evidence, and keep your search moving.</p></div></div>
+        <div class="section-heading home-heading"><div><h2>Search overview</h2><p class="section-description">Review opportunities, prepare your answers and follow up on applications.</p></div></div>
         <div class="home-grid">
           <section class="home-feature panel"><span class="eyebrow">START HERE</span><h3 id="home-next-title">Review your career profile</h3><p id="home-next-description">Add your goals and verify your experience to prepare application drafts.</p><button id="home-next" type="button" class="button button-primary">Open career profile</button></section>
           <section class="home-card panel"><span class="eyebrow">OPPORTUNITIES</span><strong id="home-jobs-count">—</strong><p id="home-jobs-copy">Saved roles in your workspace</p><button id="home-jobs" type="button" class="button">Explore opportunities</button></section>
-          <section class="home-card panel"><span class="eyebrow">APPLICATIONS</span><strong id="home-submitted-count">—</strong><p>Manually recorded submissions</p><button id="home-tracker" type="button" class="button">Open application tracker</button></section>
+          <section class="home-card panel"><span class="eyebrow">APPLICATIONS</span><strong id="home-submitted-count">—</strong><p>Confirmed submissions</p><button id="home-tracker" type="button" class="button">Open application tracker</button></section>
           <section class="home-card panel"><span class="eyebrow">SPONSORSHIP</span><h3>Research with context</h3><p>Review posting language and historical employer records side by side.</p><button id="home-h1b" type="button" class="button">Research employers</button></section>
         </div>
         <section class="home-followups panel"><div><span class="eyebrow">KEEP MOVING</span><h3>Upcoming follow-ups</h3></div><div id="home-followups" role="status">Open Home to load your local reminders.</div></section>
@@ -519,8 +522,13 @@
         </details>
       </details>
       </section>
-      <footer>Career Agent · Discover opportunities. Prepare with confidence.</footer>
+      <footer>Career Agent</footer>
     </main>
   </div>
+  <p id="guide-announcement" class="sr-only" role="status"></p>
+  <dialog id="workspace-help" aria-labelledby="guide-title" aria-describedby="guide-copy">
+    <div class="guide-heading"><h2 id="guide-title">Workspace help</h2><button type="button" id="guide-close" aria-label="Close help" autofocus>×</button></div>
+    <p id="guide-copy"></p>
+  </dialog>
 </body>
 </html>

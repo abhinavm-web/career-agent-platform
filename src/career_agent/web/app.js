@@ -301,6 +301,14 @@
   }
 
   async function selectJob(id) {
+    const compact = window.matchMedia?.("(max-width: 1050px)").matches;
+    const board = byId("jobs-screen");
+    if (compact && state.selectedId === id && board.classList.contains("compact-list")) {
+      board.classList.toggle("compact-list", false);
+      board.classList.toggle("compact-detail", true);
+      byId("detail-panel").focus?.();
+      return;
+    }
     if (state.selectedId !== id) {
       const editor = byId("detail-panel").querySelector?.("#job-description-editor");
       const description = editor?.querySelector?.("textarea");
@@ -318,13 +326,15 @@
     }
     if (state.selectedId !== id) { state.detailTab = "overview"; state.studioOpen = false; }
     state.selectedId = id;
+    board.classList.toggle("compact-list", false);
+    board.classList.toggle("compact-detail", true);
     state.packet = null;
     renderJobs();
     renderDetail();
     if (state.screen === "jobs" && window.matchMedia?.("(max-width: 1050px)").matches) {
       const detail = byId("detail-panel");
       detail.setAttribute("tabindex", "-1");
-      detail.scrollIntoView?.({behavior: "smooth", block: "start"});
+      detail.scrollIntoView?.({block: "start"});
       detail.focus?.({preventScroll: true});
     }
     const initialWorkspaceRevision = state.workspace?.revision ?? null;
@@ -941,7 +951,15 @@
     studioToggle.setAttribute("aria-controls", "job-pane-application");
     headerActions.append(node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"), studioToggle);
     header.append(heading, headerActions);
-    detail.append(header);
+    const returnToList = button("← Back to opportunities", "compact-back", () => {
+      byId("jobs-screen").classList.toggle("compact-detail", false);
+      byId("jobs-screen").classList.toggle("compact-list", true);
+      state.studioOpen = false;
+      syncStudio();
+      const current = byId("job-list").querySelector?.(".selected") || byId("job-list").querySelector?.("button");
+      current?.focus();
+    });
+    detail.append(returnToList, header);
     const scopeWarning = node("p", "warning", "This selected opportunity is outside your current filters. Its details are kept open to preserve your work. Select a matching opportunity or clear the filters.");
     scopeWarning.id = "selection-scope-warning";
     scopeWarning.setAttribute("role", "status");
@@ -967,6 +985,7 @@
     const panes = {}, tabs = {};
     const sections = [["overview", "Overview"], ["fit", "Fit"], ["sponsorship", "Sponsorship"], ["application", "Application"]];
     function syncStudio() {
+      info.hidden = state.detailTab !== "overview";
       byId("jobs-screen").classList.toggle("studio-open", state.studioOpen);
       studioToggle.textContent = state.studioOpen ? "Exit application studio" : "Open application studio";
       studioToggle.setAttribute("aria-pressed", String(state.studioOpen));
