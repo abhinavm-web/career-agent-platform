@@ -21,7 +21,12 @@ class WorkspaceGuideTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, socket.socket() as sock:
             db = Path(folder) / "workspace.sqlite3"
             with Store(db) as store:
-                store.add_jobs([Job("Example", "Example product lead", "Remote", "https://example.invalid/jobs/1")])
+                pending = Job("Example", "Prior application", "Remote",
+                              "https://jobs.lever.co/example/00000000-0000-4000-8000-000000000001")
+                store.add_jobs([Job("Example", "Example product lead", "Remote", "https://example.invalid/jobs/1"), pending])
+                with store.connection:
+                    store.connection.execute("INSERT INTO lever_dispatches(job_id,destination,resume_sha256) VALUES(?,?,?)",
+                                             (pending.id, pending.url + "/apply", "a" * 64))
             app = create_app(DashboardConfig(db_path=db, packet_dir=Path(folder) / "packets"))
             sock.bind(("127.0.0.1", 0))
             server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
@@ -58,6 +63,43 @@ class WorkspaceGuideTests(unittest.TestCase):
                         self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
                     page.get_by_role("button", name=re.compile("^Information about Opportunity board$")).click()
                     expect(page.get_by_role("dialog")).to_be_visible()
+                    page.keyboard.press("Escape")
+                    page.locator("#nav-profile").click()
+                    bank = page.locator("#application-answer-bank")
+                    bank.locator("summary").click()
+                    bank.get_by_label("Question topic").select_option("availability")
+                    bank.get_by_label("Your answer", exact=True).fill("Three weeks")
+                    bank.get_by_role("button", name="Confirm and save profile answer").click()
+                    expect(bank.get_by_role("status")).to_have_text("Profile answer saved.")
+                    page.locator("#nav-jobs").click()
+                    page.locator(".job-item").filter(has_text="Example product lead").click()
+                    expect(page.locator("#job-list .board-decision-compact").first).to_contain_text("Verified evidence")
+                    page.get_by_role("tab", name="Application", exact=True).click()
+                    form = page.locator(".role-application-answers")
+                    form.locator("summary").click()
+                    form.get_by_label("Employer’s exact question").fill("What is your notice period?")
+                    form.get_by_label("Question topic").select_option("availability")
+                    expect(form.get_by_label("Saved profile answer for review")).to_have_value("Three weeks")
+                    form.get_by_role("button", name="Confirm reuse for this exact question").click()
+                    expect(form.get_by_label("Confirmed from profile")).to_have_value("Three weeks")
+                    form.get_by_role("button", name="Review this question").click()
+                    form.get_by_label("Your answer for this role only").fill("Four weeks")
+                    form.get_by_role("button", name="Confirm role-only answer").click()
+                    expect(form.get_by_label("Confirmed for this role")).to_have_value("Four weeks")
+                    page.locator(".job-item").filter(has_text="Prior application").click()
+                    page.get_by_role("tab", name="Application", exact=True).click()
+                    page.get_by_label("Employer confirmation reference", exact=True).fill("EXAMPLE-RECEIPT")
+                    page.get_by_label("I verified this outcome with the employer for this posting.").check()
+                    page.get_by_role("button", name="Record verified outcome locally").click()
+                    expect(page.locator("#detail-panel")).to_contain_text("Delivery confirmed")
+                    page.reload()
+                    page.locator("#nav-profile").click()
+                    bank.locator("summary").click()
+                    bank.get_by_label("Question topic").select_option("availability")
+                    expect(bank.get_by_label("Your answer", exact=True)).to_have_value("Three weeks")
+                    with Store(db) as saved:
+                        receipt = saved.connection.execute("SELECT receipt FROM applications WHERE job_id=?", (pending.id,)).fetchone()
+                        self.assertEqual(receipt["receipt"], "EXAMPLE-RECEIPT")
                     browser.close()
             finally:
                 server.should_exit = True
