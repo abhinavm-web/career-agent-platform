@@ -15,6 +15,14 @@
     activity: "Inspect earlier review decisions and the application materials each decision concerned."
   };
   const topics = [
+    [/source-reported posting date/i, "Each job source supplies its own posting date. A missing, partial or conflicting date means the age of the opening is uncertain."],
+    [/active check/i, "This is the last result of checking the posting URL. Use Check live availability to refresh it before preparing an application."],
+    [/match reason|verified evidence/i, "Shared terms link a verified career fact to the posting. Open Fit to inspect the requirement and decide whether that experience covers it."],
+    [/your answer for this role|role-only answer/i, "This answer belongs to one employer question on this role. Your reusable profile answer stays available for other applications."],
+    [/confirm reuse|saved profile answer for review/i, "Compare your saved answer with the employer’s exact wording, then confirm it for this role. A later change to the default requires another review."],
+    [/save as unanswered/i, "Keep the employer’s question on this role so you can return when you have an accurate answer."],
+    [/verified employer outcome|verified outcome locally/i, "Choose the outcome you checked with the employer and enter a reference or verification note. Saving records the outcome in the tracker."],
+    [/download dispatched résumé/i, "Download the exact PDF Career Agent retained at dispatch. New résumé revisions are stored separately."],
     [/^refresh data$/i, "Reload saved workspace data, delivery records and the current opportunity list."],
     [/^menu$|^close menu$/i, "Show or close the workspace navigation on small screens."],
     [/^fit$/i, "Review matched and missing evidence beside the relevant job requirements."],

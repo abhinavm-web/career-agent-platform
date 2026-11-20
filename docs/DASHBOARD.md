@@ -18,6 +18,14 @@ All private candidate files should be outside the public repository or under a g
 
 ## What works
 
+### Daily application workflow
+
+1. Open **Opportunities** and select a role. Read the linked career fact, requirement to verify, posting date, availability check and sponsorship evidence. **Fit** and **Sponsorship** show the underlying details.
+2. Open **Career profile → Application answer bank** to save frequently used responses. In the role's **Application → Application form answers**, enter the exact employer question and confirm the saved answer or write a role-specific response.
+3. Open **Tracker** after a delivery attempt. If the employer confirms receipt outside the app, record the reference or how you verified the outcome. The delivery record retains the available evidence.
+
+The circled information icon beside a heading explains that section. Choose **Control help**, then select a field, badge or action to read its explanation. Use **F1** for help on the focused control and **Escape** to close help. On smaller screens, **Menu** opens navigation and **Back to opportunities** returns to the role list.
+
 - View locally tracked jobs in bounded batches, search/filter by title/company, match relevance and sponsorship flags.
 - Track a new job by pasting its published URL and details.
 - Draft a Markdown resume and cover note containing **only candidate-attested statements**.
