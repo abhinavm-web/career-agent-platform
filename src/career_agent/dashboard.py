@@ -32,6 +32,7 @@ from .application import MAX_TAILORED_FACTS, _reject_symlink_components, load_pa
 from .candidate import FactBank, SECTIONS
 from .capture_matching import linkedin_capture_matches, linkedin_current_id_conflicts
 from . import ai
+from . import answer_bank
 from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
@@ -295,6 +296,39 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def workspace_guide_asset():
         return Response(assets('workspace-guide.js'), media_type='text/javascript')
 
+    @app.get('/assets/application-answers.js')
+    def application_answers_script():
+        return Response(assets('application-answers.js'), media_type='text/javascript')
+
+    @app.exception_handler(answer_bank.AnswerConflict)
+    async def answer_conflict(request: Request, error: answer_bank.AnswerConflict):
+        return JSONResponse({'detail': str(error)}, status_code=409)
+
+    @app.get('/api/workspace/application-answers')
+    def profile_application_answers():
+        with Store(config.db_path) as store:
+            return answer_bank.profile_answers(store.connection)
+
+    @app.put('/api/workspace/application-answers')
+    async def save_profile_application_answer(request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return answer_bank.save_profile(store.connection, data)
+
+    @app.get('/api/jobs/{job_id}/application-answers')
+    def role_application_answers(job_id: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            store.connection.execute('BEGIN')
+            return answer_bank.role_answers(store, job_id)
+
+    @app.put('/api/jobs/{job_id}/application-answers')
+    async def save_role_application_answer(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return answer_bank.save_role(store, job_id, data)
+
     @app.get('/api/automation')
     def automation_status():
         return {**automation.list(), 'workflows': workflows.list()}
@@ -547,7 +581,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         from .resume_import import extract_resume
         data = await request.json()
         if not isinstance(data, dict) or set(data) != {"filename", "content"}:
-            raise ValueError("Choose a résumé file to extract locally")
+            raise ValueError("Choose a rÃ©sumÃ© file to extract locally")
         text = await run_in_threadpool(extract_resume, data["filename"], data["content"])
         return {"text": text}
 
@@ -555,7 +589,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     async def ai_resume_suggestions(request: Request):
         data = await request.json()
         if not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'resume_text', 'acknowledged'} or data['acknowledged'] is not True:
-            raise ValueError('Confirm sending the résumé text to the selected provider')
+            raise ValueError('Confirm sending the rÃ©sumÃ© text to the selected provider')
         fingerprint = route_consent_fingerprint(data)
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail='An AI request is already running')
@@ -1165,9 +1199,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=422, detail="Confirm sending this search to external job sources")
         query, location, results = data.get("query"), data.get("location"), data.get("results", 20)
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 200:
-            raise HTTPException(status_code=422, detail="Search query must be 1–200 characters")
+            raise HTTPException(status_code=422, detail="Search query must be 1â€“200 characters")
         if not isinstance(location, str) or not 1 <= len(location.strip()) <= 240:
-            raise HTTPException(status_code=422, detail="Location must be 1–240 characters")
+            raise HTTPException(status_code=422, detail="Location must be 1â€“240 characters")
         if type(results) is not int or not 1 <= results <= 100:
             raise HTTPException(status_code=422, detail="Results per source must be an integer from 1 to 100")
         fetch_details = data.get('fetch_details', False)
@@ -1464,7 +1498,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             if (not isinstance(selection, list) or not 1 <= len(selection) <= MAX_TAILORED_FACTS
                     or not all(isinstance(item, str) and item in verified for item in selection)
                     or len(set(selection)) != len(selection)):
-                raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
+                raise ValueError(f'Select 1â€“{MAX_TAILORED_FACTS} distinct verified career facts')
         if section_order is not None and (not isinstance(section_order, list) or len(section_order) != len(SECTIONS)
                 or not all(isinstance(item, str) and item in SECTIONS for item in section_order)
                 or len(set(section_order)) != len(SECTIONS) or selection is None):
@@ -1492,7 +1526,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if type(data['workspace_revision']) is not int or data['workspace_revision'] < 0:
             raise ValueError('Invalid profile revision')
         if not isinstance(data['fact_ids'], list):
-            raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
+            raise ValueError(f'Select 1â€“{MAX_TAILORED_FACTS} distinct verified career facts')
         if 'section_order' in data and not isinstance(data['section_order'], list):
             raise ValueError('Choose each resume section exactly once')
         if 'job_description_revision' in data and (type(data['job_description_revision']) is not int or data['job_description_revision'] < 0):

@@ -55,6 +55,9 @@
     return data;
   }
 
+  const applicationAnswers = window.applicationAnswers({api, node, button});
+  byId("application-answer-bank").append(applicationAnswers());
+
   function notice(message, error) {
     const el = byId("notice");
     el.hidden = false;
@@ -892,6 +895,7 @@
 
 
   function renderDetailPreservingEditor() {
+    const answers = byId("detail-panel").querySelector?.(".role-application-answers");
     const revisionEditor = byId("detail-panel").querySelector?.(".document-revision-studio");
     const keepRevision = revisionEditor?.dataset.jobId === state.selectedId;
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
@@ -908,6 +912,9 @@
     const keepInline = inline?.open && inline.dataset.jobId === state.selectedId && currentJob &&
       inline.dataset.descriptionRevision === String(currentJob.description_revision ?? 0);
     renderDetail();
+    if (answers?.dataset.jobId === state.selectedId && answers.open) {
+      byId("detail-panel").querySelector?.(".role-application-answers")?.replaceWith(answers);
+    }
     if (keepGap) byId("detail-panel").querySelector?.("#resume-gap")?.replaceWith(gap);
     if (keepRevision) byId("detail-panel").querySelector?.(".document-revision-studio")?.replaceWith(revisionEditor);
     if (keepInline) byId("detail-panel").querySelector?.("#inline-tailoring")?.replaceWith(inline);
@@ -1448,6 +1455,7 @@
       if (state.screen === "tracker") await selectCRMJob(job.id);
     }));
     drafts.append(workflowActions);
+    drafts.append(applicationAnswers(job.id));
     drafts.append(documentRevisionStudio(job), inlineTailoring(job));
     const missingProfile = state.settings.profile_configured === false;
     const missingFacts = state.settings.facts_configured === false;
