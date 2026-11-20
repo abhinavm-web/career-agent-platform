@@ -262,6 +262,83 @@ class DashboardTests(unittest.TestCase):
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
 
+    def test_private_delivery_snapshot_and_reconciliation_without_replay(self):
+        from career_agent.delivery import record_dispatch
+        target = 'https://jobs.lever.co/example/01234567-1234-4234-8234-123456789abc/apply'
+        owner = Job('Example', 'Role', '', target[:-6])
+        alias = Job('Example', 'Role', '', target)
+        content = b'%PDF-1.7\x00\xff\r\nfixture'
+        fields = dict(name='Example Candidate', email='fixture@example.invalid', phone='555-0100',
+                      filename='Reviewed version.pdf', destination=target)
+        base = f'/api/jobs/{owner.id}/delivery/'
+        with Store(self.db) as store, store.connection:
+            store.add_jobs([owner, alias])
+            store.connection.execute('BEGIN IMMEDIATE')
+            record_dispatch(store, owner.id, fields, content, '2026-11-01T08:00:00+00:00')
+        def summaries():
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            tracked = self.call('GET', '/api/crm').json()['job_stages']
+            detail = self.call('GET', f'/api/jobs/{owner.id}/crm').json()
+            self.assertNotIn(fields['email'], json.dumps([jobs, tracked, detail]))
+            states = {j['id']: j['delivery'] for j in jobs}
+            self.assertEqual(states[owner.id], detail['delivery'])
+            self.assertEqual(states[owner.id], next(j['delivery'] for j in tracked if j['job_id'] == owner.id))
+            self.assertEqual(states[alias.id]['owner_id'], owner.id)
+            return states[owner.id]['state']
+        self.assertEqual(summaries(), 'awaiting_confirmation')
+        for filename in ('resume.pdf', 'record.json'):
+            self.assertEqual(self.call('GET', base + filename, token='invalid').status_code, 403)
+            self.assertEqual(self.call('GET', base.replace(owner.id, alias.id) + filename).status_code, 404)
+            response = self.call('GET', base + filename)
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            self.assertIn('attachment', response.headers['Content-Disposition'])
+        self.assertEqual(self.call('GET', base + 'resume.pdf').content, content)
+        positive = dict(state='confirmed', receipt='example-reference', attest_verified=True)
+        self.assertEqual(self.call('POST', base+'reconcile', {**positive, 'attest_verified': 1}).status_code, 422)
+        self.assertEqual(self.call('POST', base.replace(owner.id, alias.id)+'reconcile', positive).status_code, 409)
+        negative = dict(state='verified_not_received', attest_verified=True, note='Example employer checked the posting.')
+        self.assertEqual(self.call('POST', base+'reconcile', negative).status_code, 200)
+        self.assertEqual(summaries(), 'verified_not_received')
+        with Store(self.db) as store:
+            self.assertNotEqual(store.stage_of(owner.id), 'submitted')
+            for job in (owner, alias):
+                with self.assertRaisesRegex(ValueError, 'already requested'):
+                    record_dispatch(store, job.id, fields, content, 'later')
+        for _ in range(2):
+            self.assertEqual(self.call('POST', base+'reconcile', positive).status_code, 200)
+        self.assertEqual(self.call('POST', base+'reconcile', negative).status_code, 409)
+        self.assertEqual(summaries(), 'confirmed')
+        record = self.call('GET', base+'record.json').json()
+        self.assertEqual(record['receipt'], positive['receipt'])
+        self.assertEqual([item['state'] for item in record['verifications']], ['verified_not_received', 'confirmed'])
+        self.assertEqual(record['destination'], target)
+        self.assertEqual(record['filename'], fields['filename'])
+        self.assertEqual(record['answers'], {k: fields[k] for k in ('name','email','phone')})
+        self.assertEqual(record['approved_at'], '2026-11-01T08:00:00+00:00')
+        self.assertTrue(record['requested_at'] and record['confirmed_at'])
+        self.assertEqual(self.call('GET', base+'resume.pdf').content, content)
+
+    def test_historical_dispatch_and_verified_receipt_without_reference(self):
+        base = f'/api/jobs/{self.job.id}/delivery/'
+        with Store(self.db) as store, store.connection:
+            store.connection.execute('INSERT INTO lever_dispatches(job_id,destination,resume_sha256) VALUES(?,?,?)',
+                                     (self.job.id, self.job.url, 'a'*64))
+        record = self.call('GET', base+'record.json').json()
+        self.assertEqual(record['source'], 'historical_dispatch')
+        self.assertEqual(record['state'], 'awaiting_confirmation')
+        self.assertIsNone(record['answers'])
+        self.assertEqual(self.call('GET', base+'resume.pdf').status_code, 404)
+        payload = dict(state='confirmed', attest_verified=True, verified_without_reference=True)
+        self.assertEqual(self.call('POST', base+'reconcile', payload).status_code, 422)
+        payload['note'] = 'Fictional recruiter confirmed receipt by phone.'
+        self.assertEqual(self.call('POST', base+'reconcile', payload).status_code, 200)
+        record = self.call('GET', base+'record.json').json()
+        self.assertEqual(record['state'], 'confirmed')
+        self.assertEqual(record['source'], 'candidate_verification')
+        self.assertIsNone(record['receipt'])
+        self.assertEqual(record['note'], payload['note'])
+        self.assertEqual(self.call('GET', base+'resume.pdf').status_code, 404)
+
     def test_setup_status_distinguishes_name_targets_and_skills(self):
         legacy = self.call('GET', '/api/settings').json()
         self.assertTrue(legacy['target_titles_configured'])
