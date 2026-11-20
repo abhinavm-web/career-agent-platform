@@ -167,6 +167,10 @@ class CRMStoreTests(unittest.TestCase):
             'job_id': job.id, 'stage': self.crm._stage(job.id),
             'title': job.title, 'company': job.company, 'location': job.location,
             'application_stage': self.store.stage_of(job.id), 'priority': self.crm.priority(job.id),
+            'delivery': dict(state='confirmed', dispatched=False, has_pdf=False,
+                             updated_at=self.store.connection.execute(
+                                 'SELECT updated_at FROM applications WHERE job_id=?', (job.id,)
+                             ).fetchone()[0]) if self.store.stage_of(job.id) == 'submitted' else None,
         } for job in ordered_jobs]
         statements = []
         self.store.connection.set_trace_callback(statements.append)

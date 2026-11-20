@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 from .models import Job, merge_discovery_rows
+from .delivery import delivery_for_job
 
 
 def _description_digest(description: str) -> str | None:
@@ -70,6 +71,27 @@ class Store:
                 resume_sha256 TEXT NOT NULL,
                 requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS delivery_records(
+                job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
+                state TEXT NOT NULL CHECK(state IN ('needs_user_action','failed_before_sending',
+                    'awaiting_confirmation','confirmed','verified_not_received')),
+                source TEXT NOT NULL, note TEXT, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                destination TEXT NOT NULL, approved_at TEXT, filename TEXT, pdf BLOB, answers TEXT
+            );
+            CREATE VIEW IF NOT EXISTS delivery_status AS
+                SELECT j.job_id, d.destination, r.pdf IS NOT NULL AS has_pdf,
+                    CASE WHEN a.stage='submitted' THEN 'confirmed' WHEN d.job_id IS NULL THEN r.state
+                         ELSE COALESCE(r.state,'awaiting_confirmation') END AS delivery_state,
+                    CASE WHEN a.stage='submitted' THEN a.updated_at
+                         ELSE COALESCE(r.updated_at,d.requested_at) END AS delivery_updated_at
+                FROM jobs j LEFT JOIN applications a USING(job_id)
+                LEFT JOIN delivery_records r USING(job_id) LEFT JOIN lever_dispatches d USING(job_id);
+            CREATE TABLE IF NOT EXISTS delivery_verifications(
+                id INTEGER PRIMARY KEY, job_id TEXT NOT NULL REFERENCES lever_dispatches(job_id),
+                state TEXT NOT NULL, source TEXT NOT NULL, receipt TEXT, note TEXT,
+                verified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_delivery_verifications_job ON delivery_verifications(job_id,id);
             CREATE TABLE IF NOT EXISTS packet_reviews(
                 review_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id TEXT NOT NULL REFERENCES jobs(job_id),
@@ -390,9 +412,10 @@ class Store:
 
     def stage(self, job_id: str) -> None:
         self.get_job(job_id)
-        if self.stage_of(job_id) == "submitted":
-            raise ValueError("Submitted jobs cannot be restaged")
         with self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            if self.stage_of(job_id) == "submitted":
+                raise ValueError("Submitted jobs cannot be restaged")
             self.connection.execute(
                 """
                 INSERT INTO applications(job_id,stage)
@@ -407,9 +430,13 @@ class Store:
             raise ValueError("Explicit user attestation of submission is required")
         if len(receipt.strip()) < 4:
             raise ValueError("Employer confirmation reference must be provided")
-        if self.stage_of(job_id) != "ready_for_review":
-            raise ValueError("Stage this job before recording a submission")
         with self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            if self.stage_of(job_id) != "ready_for_review":
+                raise ValueError("Stage this job before recording a submission")
+            delivery = delivery_for_job(self, self.get_job(job_id))
+            if delivery and (delivery['dispatched'] or delivery['state'] == 'duplicate'):
+                raise ValueError("Reconcile the existing dispatch in Application delivery.")
             self.connection.execute(
                 """
                 UPDATE applications SET

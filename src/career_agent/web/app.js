@@ -262,6 +262,7 @@
     for (const job of jobs.slice(state.jobsPage * 10, (state.jobsPage + 1) * 10)) {
       const item = button("", "job-item" + (state.selectedId === job.id ? " selected" : ""), () => selectJob(job.id));
       item.setAttribute("aria-label", "View " + job.title + " at " + job.company +
+        (job.delivery ? ", " + deliveryLabel(job.delivery) : "") +
         (job.fit_score !== null && !job.description?.trim() ? "; keyword score incomplete, description missing" : ""));
       item.setAttribute("aria-pressed", String(state.selectedId === job.id));
       const top = node("div", "job-item-top");
@@ -286,7 +287,8 @@
         job.packet_stale ? "Draft outdated" : (job.review_decision ? "Reviewed" : "Draft ready"),
         job.review_decision && !job.packet_stale ? "teal" : "amber"
       ));
-      if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
+      if (job.delivery) lower.append(chip(deliveryLabel(job.delivery), job.delivery.state === "confirmed" ? "teal" : "amber"));
+      else if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
       if (job.archive) lower.append(chip("Archived", ""));
       if (job.fit_score !== null) lower.append(node("span", "score", "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
       item.append(top, lower);
@@ -395,8 +397,9 @@
         });
         const result = await api("/api/jobs/" + job.id + "/lever-submit", "POST", data);
         status.textContent = result.status === "confirmed" ? "Employer confirmation received. Application recorded." : result.detail;
-        if (result.status === "confirmed") await refresh(true);
-      } catch (error) { status.textContent = error.message; send.disabled = false; }
+        notice(status.textContent);
+      } catch (error) { notice(error.message, true); }
+      await refresh(state.selectedId);
     });
     return form;
   }
@@ -405,6 +408,83 @@
     const box = node("section", "detail-section");
     box.append(node("h4", "", heading));
     return box;
+  }
+
+  function deliveryLabel(delivery) {
+    return {needs_user_action: "Needs user action", failed_before_sending: "Failed before sending",
+      awaiting_confirmation: "Awaiting confirmation", confirmed: "Delivery confirmed",
+      verified_not_received: "Employer verified non-receipt", duplicate: "Dispatch on another saved posting"}[delivery.state];
+  }
+
+  function deliveryPanel(jobId, delivery) {
+    const panel = section("Application delivery");
+    panel.append(node("strong", "", deliveryLabel(delivery)));
+    if (delivery.state === "duplicate") {
+      panel.append(button("View original dispatch in tracker", "button", async () => {
+        showScreen("tracker"); await loadCRM();
+        if (state.screen === "tracker") await selectCRMJob(delivery.owner_id);
+      }));
+      return panel;
+    }
+    if (delivery.updated_at) panel.append(node("p", "muted", "Recorded " + delivery.updated_at + " UTC"));
+    if (delivery.dispatched && !delivery.has_pdf) {
+      panel.append(node("p", "muted", "The historical dispatch retained a PDF fingerprint. The file and approved answers are unavailable."));
+    }
+    const base = "/api/jobs/" + jobId + "/delivery/";
+    function download(label, artifact) {
+      return button(label, "button", async () => {
+        try {
+          const response = await fetch(base + artifact, {headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"});
+          if (!response.ok) throw new Error("Unable to download this private delivery artifact.");
+          const url = URL.createObjectURL(await response.blob());
+          const link = node("a"); link.href = url; link.download = jobId + "-" + artifact;
+          document.body.append(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) { notice(error.message, true); }
+      });
+    }
+    const downloads = node("div", "button-row");
+    downloads.append(download("Download private delivery record", "record.json"));
+    if (delivery.has_pdf) downloads.append(download("Download dispatched résumé PDF", "resume.pdf"));
+    panel.append(downloads);
+    if (!["awaiting_confirmation", "verified_not_received"].includes(delivery.state)) return panel;
+
+    const form = node("form", "form-stack");
+    form.append(node("p", "", "Check the employer portal, confirmation email, or recruiting team. Record only an outcome you verified. An empty inbox alone leaves delivery unresolved."));
+    const label = node("label", "field", "Verified employer outcome");
+    const choice = node("select");
+    for (const [value, text] of [["confirmed", "Received with confirmation reference"],
+      ["without_reference", "Received, employer supplied no reference"], ["verified_not_received", "Employer verified it was not received"]]) {
+      const option = node("option", "", text); option.value = value; choice.append(option);
+    }
+    label.append(choice);
+    const description = node("span", "", "Employer confirmation reference");
+    const evidenceLabel = node("label", "field"), input = node("input");
+    input.required = true; input.minLength = 4; input.maxLength = 200;
+    evidenceLabel.append(description, input);
+    const consent = node("label", "check-label"), check = node("input"); check.type = "checkbox"; check.required = true;
+    consent.append(check, document.createTextNode("I verified this outcome with the employer for this posting."));
+    choice.addEventListener("change", () => {
+      description.textContent = choice.value === "confirmed" ? "Employer confirmation reference" : "How the employer verified this outcome";
+      input.maxLength = choice.value === "confirmed" ? 200 : 500; input.value = ""; check.checked = false;
+    });
+    const save = node("button", "button", "Record verified outcome locally"); save.type = "submit";
+    form.append(label, evidenceLabel, consent, save); panel.append(form);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (save.disabled || !check.checked) return;
+      const payload = {attest_verified: true, state: choice.value === "verified_not_received" ? choice.value : "confirmed"};
+      if (choice.value === "confirmed") payload.receipt = input.value;
+      else { payload.note = input.value; payload.verified_without_reference = choice.value === "without_reference"; }
+      save.disabled = true;
+      try {
+        await api(base + "reconcile", "POST", payload);
+        notice("Verified delivery outcome recorded locally.");
+        await refresh(state.selectedId);
+      } catch (error) { notice(error.message, true); }
+      finally { save.disabled = false; }
+    });
+    return panel;
   }
 
   function documentRevisionStudio(job) {
@@ -954,6 +1034,7 @@
         job.remote_evidence?.status === "ambiguous" ? "Remote marked; arrangement unclear" :
         job.remote ? "Saved as remote" : "Not confirmed remote"],
       ["TRACKING", job.application_stage],
+      ...(job.delivery ? [["DELIVERY", deliveryLabel(job.delivery)]] : []),
       ["SOURCE", job.source || "Manual"],
     ];
     for (const pair of facts) {
@@ -1046,7 +1127,8 @@
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
     actions.append(button(job.application_stage === "submitted" ? "View application" : "Prepare application", "button button-primary", () => activateTab("application", true)));
-    if (job.application_stage !== "submitted") {
+    if (job.delivery) panes.application.append(deliveryPanel(job.id, job.delivery));
+    if (job.application_stage !== "submitted" && !job.lever_dispatch_requested && job.delivery?.state !== "duplicate" && !job.archive) {
       const target = /^https:\/\/jobs(?:\.eu)?\.lever\.co\/[a-z0-9_-]+\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:\/apply)?\/?(?:[?#].*)?$/i.test(job.url)
         ? new URL(job.url) : null;
       const assistant = section("Apply on the employer’s site");
@@ -1054,9 +1136,7 @@
       assistant.append(safeLink(target ? "Open Lever application form" : "Open posting to apply", target?.href || job.url),
         node("p", "muted", "For a Lever application, open the Career Agent companion in Chrome or Edge to fill contact details. Attach your reviewed resume on the employer’s page, then choose Review this application in the companion."),
         node("p", "muted", "For an employer account, use the browser’s save-password prompt during sign-up. Choose Open password vault in the companion to manage saved logins."));
-      if (job.lever_dispatch_requested) {
-        assistant.prepend(node("p", "", "Career Agent requested submission. Employer confirmation is pending. Check the employer portal or your email before applying again."));
-      } else if (target && state.settings.application_submission_enabled) {
+      if (target && state.settings.application_submission_enabled) {
         assistant.prepend(liveApplication(job, target.origin + target.pathname));
       }
       panes.application.append(assistant);
@@ -1780,7 +1860,8 @@
       decisionButtons.append(approve, reject);
       card.append(decisionButtons);
     }
-    if (!stale && review && review.decision === "approved_for_manual_submission" && job.application_stage !== "submitted") {
+    if (!stale && review && review.decision === "approved_for_manual_submission" && job.application_stage !== "submitted" &&
+        !job.lever_dispatch_requested && job.delivery?.state !== "duplicate") {
       const submitted = node("div", "detail-section");
       submitted.append(node("h4", "", "Already applied on employer site?"));
       submitted.append(node("p", "", "Only record submission after you have submitted it yourself and received confirmation."));
@@ -1799,7 +1880,7 @@
       submitted.append(button("Record confirmed submission", "button", () => markSubmitted(packet.packet_sha256, receipt.value, consentBox.checked)));
       card.append(submitted);
     }
-    if (job.application_stage === "submitted") card.append(node("p", "", "Submission recorded from your attestation. Nothing was sent by this app."));
+    if (job.application_stage === "submitted") card.append(node("p", "", "Submission recorded. See Application delivery for the receipt."));
     container.append(card);
   }
 
@@ -2216,7 +2297,7 @@
     root.append(due);
     const suggestions = node("div", "crm-due-list");
     suggestions.append(node("h3", "", "Applications to review"), node("p", "muted",
-      "Attested applications with no pending follow-up and at least 14 days since the last recorded active stage. This does not check messages or employer status; review before deciding whether to follow up. No task or message is created."));
+      "Confirmed applications with no pending follow-up and at least 14 days since the last recorded active stage. Check the employer’s latest response before deciding whether to follow up."));
     const review = summary.review_suggestions || [];
     if (!review.length) suggestions.append(node("p", "muted", "No applications currently meet these criteria."));
     for (const item of review) {
@@ -2234,7 +2315,7 @@
     const outcomes = summary.outcomes;
     if (!outcomes) return;
     const milestones = node("div", "crm-stage-counts");
-    for (const [key, label] of [["submitted", "Attested submissions"], ["interviewed", "Interview recorded"],
+    for (const [key, label] of [["submitted", "Confirmed submissions"], ["interviewed", "Interview recorded"],
       ["offered", "Offer recorded"], ["accepted", "Accepted offer"]]) {
       const metric = node("div", "crm-count");
       metric.append(node("strong", "", outcomes[key]), node("small", "", label));
@@ -2243,9 +2324,9 @@
     outcomePanel.append(milestones);
     if (outcomes.submitted) {
       outcomePanel.append(node("p", "muted", "Interview rate: " + outcomes.interview_rate + "% · Offer rate: " +
-        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " attested submissions."));
+        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " confirmed submissions."));
     } else {
-      outcomePanel.append(node("p", "muted", "Rates appear after a manual submission is attested. Drafts and approvals are excluded."));
+      outcomePanel.append(node("p", "muted", "Rates appear after a submission is confirmed. Drafts and approvals are excluded."));
     }
     outcomePanel.append(node("p", "muted", "All-time candidate-recorded milestones, counted once per opportunity. Later outcomes retain earlier milestones; skipped stages are not inferred. These records are not independently verified or predictions."));
   }
@@ -2300,7 +2381,8 @@
       const chips = node("div", "job-item-bottom");
       chips.append(chip(job.stage, "teal"));
       if (job.priority && job.priority !== "none") chips.append(chip(job.priority + " priority", ""));
-      if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
+      if (job.delivery) chips.append(chip(deliveryLabel(job.delivery), job.delivery.state === "confirmed" ? "teal" : "amber"));
+      else if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
       item.append(chips);
       (boardView ? columns.get(job.id) : list).append(item);
     }
@@ -2346,7 +2428,8 @@
     identity.append(node("span", "eyebrow", "APPLICATION TRACKER"), node("h3", "", item.title), node("p", "", item.company));
     heading.append(identity, chip(data.stage, "teal"));
     panel.append(heading);
-    panel.append(node("p", "muted", data.application_submitted
+    if (data.delivery) panel.append(deliveryPanel(item.id, data.delivery));
+    else panel.append(node("p", "muted", data.application_submitted
       ? "Submission recorded from your independent attestation. Pipeline updates do not change that receipt."
       : "This application has not been recorded as submitted. Advancing the hiring pipeline requires a separate manual application submission."));
 

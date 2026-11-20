@@ -3,21 +3,16 @@ import base64
 import binascii
 import hashlib
 import re
+from datetime import datetime, timezone
 from pathlib import PurePath
-from urllib.parse import urlsplit
 
+from .delivery import (application_url, check_pending, record_dispatch,
+                       record_preflight, resolve_dispatch)
 from .storage import Store
 
-POSTING = re.compile(r'/[a-z0-9_-]+/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', re.I)
 
-
-def application_url(value):
-    parts = urlsplit(value)
-    path = parts.path.rstrip('/').removesuffix('/apply')
-    if (parts.scheme != 'https' or parts.netloc not in {'jobs.lever.co', 'jobs.eu.lever.co'}
-            or not POSTING.fullmatch(path)):
-        raise ValueError('Choose a saved Lever-hosted posting.')
-    return f'https://{parts.netloc}{path}/apply'
+class NeedsUserAction(ValueError):
+    pass
 
 
 def reviewed_materials(data):
@@ -43,16 +38,9 @@ def reviewed_materials(data):
     return fields, content
 
 
-def check_pending(store, job_id, target):
-    if store.archive_state(job_id) or store.stage_of(job_id) == 'submitted':
-        raise ValueError('This opportunity is archived or already submitted.')
-    if store.connection.execute('SELECT 1 FROM lever_dispatches WHERE destination=? OR job_id=?',
-                                (target, job_id)).fetchone():
-        raise ValueError('Submission was already requested. Check the employer confirmation before taking further action.')
-
-
 def submit(db_path, job_id, data):
     fields, content = reviewed_materials(data)
+    approved_at = datetime.now(timezone.utc).isoformat()
     with Store(db_path) as store:
         job = store.get_job(job_id)
         target = application_url(job.url)
@@ -62,7 +50,10 @@ def submit(db_path, job_id, data):
     try:
         from playwright.sync_api import sync_playwright, Error
     except ImportError as error:
-        raise ValueError('Install the pdf extra and Playwright Chromium on the dashboard host.') from error
+        detail = 'Install the pdf extra and Playwright Chromium on the dashboard host.'
+        with Store(db_path) as store:
+            record_preflight(store, job_id, target, 'failed_before_sending', detail)
+        raise ValueError(detail) from error
     dispatched = False
     try:
         with sync_playwright() as playwright:
@@ -74,14 +65,14 @@ def submit(db_path, job_id, data):
             if (page.url != target or page.locator('h2').first.inner_text().strip().casefold() != job.title.strip().casefold()
                     or not form.evaluate("(f)=>f.method==='post' && f.action===location.href && !f.querySelector('input[type=password]')")
                     or button.get_attribute('id') != 'btn-submit' or button.get_attribute('formaction') is not None):
-                raise ValueError('Employer form or role changed. Review the posting again.')
+                raise NeedsUserAction('Employer form or role changed. Review the posting again.')
             form.locator('input[type=file][name=resume]').set_input_files(
                 {'name': fields['filename'], 'mimeType': 'application/pdf', 'buffer': content})
             parsed = form.locator('.resume-upload-success')
             if parsed.count():
                 parsed.wait_for(state='visible', timeout=45000)
                 if form.locator('.visible-resume-upload .filename').text_content().strip() != fields['filename']:
-                    raise ValueError('The employer did not acknowledge the selected PDF.')
+                    raise NeedsUserAction('The employer did not acknowledge the selected PDF.')
             # Lever may derive a current employer, location and links from past roles.
             # These optional answers are outside the approved contact information.
             for optional in form.locator('input[name=org], input[name=location], input[name^="urls["]').all():
@@ -94,15 +85,21 @@ def submit(db_path, job_id, data):
                     ['name','phone','email','resume'].includes(e.name) || e.type === 'submit') return true;
                 return ['radio','checkbox'].includes(e.type) ? !e.checked : !e.value;
             })"""):
-                raise ValueError('The employer requires additional answers. Complete the form using the browser companion.')
+                raise NeedsUserAction('The employer requires additional answers. Review the form on the employer site.')
             with Store(db_path) as store:
                 store.connection.execute('BEGIN IMMEDIATE')
-                check_pending(store, job_id, target)
                 if page.url != target or not all(form.locator(f'input[name="{key}"]').input_value() == fields[key]
                                                   for key in ('name', 'email', 'phone')):
-                    raise ValueError('The application changed before submission.')
-                store.connection.execute('INSERT INTO lever_dispatches(job_id,destination,resume_sha256) VALUES(?,?,?)',
-                                         (job_id, target, hashlib.sha256(content).hexdigest()))
+                    raise NeedsUserAction('The application changed before submission.')
+                selected_digest = form.evaluate("""async (form, filename) => {
+                    const files = form.elements.namedItem('resume')?.files;
+                    if (files?.length !== 1 || files[0].name !== filename || files[0].size > 2097152) return null;
+                    const hash = await crypto.subtle.digest('SHA-256', await files[0].arrayBuffer());
+                    return Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2,'0')).join('');
+                }""", fields['filename'])
+                if selected_digest != hashlib.sha256(content).hexdigest():
+                    raise NeedsUserAction('The selected PDF changed. Review the file before approving again.')
+                record_dispatch(store, job_id, fields, content, approved_at)
                 store.connection.commit()
             dispatched = True
             button.click(timeout=15000)
@@ -111,14 +108,15 @@ def submit(db_path, job_id, data):
             page.wait_for_url(re.compile(re.escape(thanks) + r'/?(?:\?[^#]*)?$'), timeout=180000)
             page.get_by_text(re.compile(r'^Thank you for applying[!.]?$', re.I)).first.wait_for(timeout=10000)
             if page.url.split('?')[0].rstrip('/') != thanks:
-                raise ValueError('Employer confirmation could not be verified.')
+                return {'status': 'unconfirmed', 'detail': 'Check the employer portal or email for confirmation.'}
             with Store(db_path) as store:
-                store.connection.execute("""INSERT INTO applications(job_id,stage,receipt) VALUES(?,'submitted',?)
-                    ON CONFLICT(job_id) DO UPDATE SET stage='submitted',receipt=excluded.receipt,
-                    updated_at=CURRENT_TIMESTAMP""", (job_id, thanks))
-                store.connection.commit()
+                resolve_dispatch(store, job_id, 'confirmed', thanks, None, 'employer_thanks_page')
             return {'status': 'confirmed', 'receipt': thanks}
-    except Error as error:
+    except (Error, NeedsUserAction) as error:
         if dispatched:
-            return {'status': 'unconfirmed', 'detail': 'Career Agent requested submission. Check your employer email or portal before retrying.'}
-        raise ValueError('Could not open or complete the recognized employer form in desktop Chromium. No submission was requested.') from error
+            return {'status': 'unconfirmed', 'detail': 'Check the employer portal or email for confirmation.'}
+        needs_action = isinstance(error, NeedsUserAction)
+        detail = str(error) if needs_action else 'Could not complete form preparation in desktop Chromium.'
+        with Store(db_path) as store:
+            record_preflight(store, job_id, target, 'needs_user_action' if needs_action else 'failed_before_sending', detail)
+        raise ValueError(detail) from error

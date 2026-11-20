@@ -188,7 +188,8 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       outcomes,
       stages: {[crmStage]: 1, discovered: crmStage === "discovered" ? 2 : 1},
       job_stages: [
-        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority},
+        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority,
+          delivery: jobsOverride?.find(job => job.id === ID_A)?.delivery},
         {...fakeJob(ID_B, "Role Beta"), job_id: ID_B, stage: "discovered"}
       ],
       open_followups: crmTask && !crmTask.completed_at ? [{
@@ -198,6 +199,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
     }));
     if (url === "/api/jobs/" + ID_A + "/crm") return Promise.resolve(ok({
       job: fakeJob(ID_A, "Role Alpha"),
+      delivery: jobsOverride?.find(job => job.id === ID_A)?.delivery,
       priority: crmPriority, priority_events: [], interview_notes: interviewNotes,
       job_id: ID_A, stage: crmStage, application_submitted: false,
       allowed_transitions: crmStage === "discovered" ? ["saved", "shortlisted", "archived"] : ["shortlisted", "archived"],
@@ -969,8 +971,30 @@ test("outcome metrics explain empty and recorded submission denominators", async
   const content = recorded.get("crm-outcomes").textContent;
   assert.match(content, /Interview rate: 50%/);
   assert.match(content, /Offer rate: 25%/);
-  assert.match(content, /Denominator: 4 attested submissions/);
+  assert.match(content, /Denominator: 4 confirmed submissions/);
   assert.match(content, /skipped stages are not inferred/);
+});
+
+test("board, tracker and application show pending delivery and scoped evidence controls", async () => {
+  for (const historical of [true, false]) {
+    const job = {...fakeJob(ID_A, "Role Alpha"), lever_dispatch_requested: true,
+      delivery: {state: "awaiting_confirmation", dispatched: true, has_pdf: !historical}};
+    const h = createHarness({jobsOverride: [job]});
+    await flush();
+    assert.match(h.get("job-list").textContent, /Awaiting confirmation/);
+    h.get("job-list").children[0].click();
+    h.waiting.get(ID_A)(ok(fakePacket(ID_A, "Fictional current draft")));
+    await flush();
+    await h.get("nav-tracker").click();
+    assert.match(h.get("crm-jobs").textContent, /Awaiting confirmation/);
+    await h.get("crm-jobs").children[0].click();
+    for (const panel of [h.get("detail-panel"), h.get("crm-detail")]) {
+      assert.match(panel.textContent, /Record verified outcome locally/);
+      assert.match(panel.textContent, /Download private delivery record/);
+      assert.equal(panel.textContent.includes("Download dispatched résumé PDF"), !historical);
+      assert.doesNotMatch(panel.textContent, /Approve and send|Submit with Career Agent/);
+    }
+  }
 });
 
 test("tracker combines filters and saves priority and plain-text interview notes", async () => {
