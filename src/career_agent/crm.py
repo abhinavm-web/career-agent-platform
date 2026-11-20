@@ -543,7 +543,8 @@ class ApplicationCRM:
                 "job_id": job["job_id"], "stage": stage, "title": job["title"],
                 "company": job["company"], "location": job["location"],
                 "application_stage": job["application_stage"],
-                "external_date": job["applied_date"], "external_status": job["external_status"],
+                **({"external_date": job["applied_date"], "external_status": job["external_status"]}
+                   if job["applied_date"] is not None else {}),
                 "delivery": job_delivery(deliveries, job["job_id"], job["url"]),
                 "priority": job["priority"],
             })

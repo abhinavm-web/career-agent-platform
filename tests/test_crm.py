@@ -242,7 +242,8 @@ class CRMStoreTests(unittest.TestCase):
     def test_export_empty_store_has_all_collections(self):
         with Store(Path(self.tmp.name) / "empty.sqlite3") as store:
             rows = ApplicationCRM(store).export_history()["records"]
-        self.assertEqual(len(rows), 10)
+            self.assertIn("external_applications", rows)
+            self.assertEqual(len(rows), 11)
         self.assertTrue(all(value == [] for value in rows.values()))
 
     def test_export_uses_one_snapshot_during_concurrent_edit(self):
