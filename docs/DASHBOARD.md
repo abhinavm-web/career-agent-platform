@@ -18,6 +18,14 @@ All private candidate files should be outside the public repository or under a g
 
 ## What works
 
+### Daily application workflow
+
+1. Open **Opportunities** and select a role. Read the linked career fact, requirement to verify, posting date, availability check and sponsorship evidence. **Fit** and **Sponsorship** show the underlying details.
+2. Open **Career profile → Application answer bank** to save frequently used responses. In the role's **Application → Application form answers**, enter the exact employer question and confirm the saved answer or write a role-specific response.
+3. Open **Tracker** after a delivery attempt. If the employer confirms receipt outside the app, record the reference or how you verified the outcome. The delivery record retains the available evidence.
+
+The circled information icon beside a heading explains that section. Choose **Control help**, then select a field, badge or action to read its explanation. Use **F1** for help on the focused control and **Escape** to close help. On smaller screens, **Menu** opens navigation and **Back to opportunities** returns to the role list.
+
 - View locally tracked jobs in bounded batches, search/filter by title/company, match relevance and sponsorship flags.
 - Track a new job by pasting its published URL and details.
 - Draft a Markdown resume and cover note containing **only candidate-attested statements**.
@@ -34,6 +42,8 @@ JobSpy discovery is available through the CLI, the Opportunity board's **Find jo
 To correct an outdated saved posting, open its details and choose **Correct saved description**. Enter the text you personally reviewed and optionally record a source note; both are stored locally as user-entered information, not independently verified. The previous and replacement descriptions are retained in local revision history. Each actual change invalidates existing drafts and approvals, even if later reverted. Regenerate and review a new packet. Jobs with a recorded submission remain locked. Existing unsaved editor text survives a board refresh; conflicting edits are rejected rather than overwriting newer corrections.
 
 The opportunity board loads saved jobs in stable batches and can combine location, source, remote flag, sponsorship evidence, and posting observation filters over the loaded set. The remote filter uses the saved job flag, so conflicting or ambiguous work-arrangement labels can still appear and are flagged for review. To bound browser memory, loading stops at 10,000 jobs or 32 Mi characters of JSON; a warning states when older jobs are excluded. Job additions during a load are included on the next refresh. The AI job picker also loads in batches, up to 10,000 jobs, and warns if older jobs are excluded. Other callers using the default jobs API receive at most 500 jobs per page. Open a job to explicitly check a supported Greenhouse or Lever posting. The saved observation shows its date and source; after 24 hours, or if its date is invalid or in the future, availability is treated as unknown. A listed observation does not guarantee that the employer is hiring or offers sponsorship, and no live check runs merely by loading the board.
+
+Each opportunity card and its **Decision summary** show the candidate-confirmed fact most closely linked by literal posting terms, including its fact ID and profile section. Private source notes stay in the career profile. Required excerpts take priority over preferred excerpts. Among excerpts at the same level, the summary highlights one without a linked fact for review first. A shared term alone cannot establish the full qualification. The summary pairs saved sponsorship wording with the entity named in historical records, the basis for linking that entity and the earliest and latest fiscal years represented in each source. Opening the board uses local data.
 
 New JobSpy discoveries also retain the latest source-reported posting date for each job and source when supplied as an unambiguous calendar date. Missing or conflicting dates are disclosed; if duplicate results disagree or omit a date, the display does not silently present a single certain value. Future dates are flagged against the UTC calendar date. Dates from earlier searches are not retained, and observations created before this feature have no posting date. These are provider reports, not verified original publication dates or evidence that a role is currently open. They do not change ranking, application packets or review approvals.
 
@@ -81,6 +91,8 @@ Reviews and application statuses are distinct: approving a packet means **ready 
 ## Editable candidate profile (v0.4)
 
 The local dashboard now supports a **Career profile** screen. Start with no additional arguments: career-agent serve. Enter name, headline, target roles, skills, preferred locations and remote preference. Add, edit, verify, revoke or remove career statements. Only explicitly verified facts may appear in newly generated application packets.
+
+In **Career profile → Application answer bank**, save your own answers by topic. In a role’s **Application → Application form answers**, paste the employer’s exact question and choose its topic. Leave it unanswered, confirm reuse of the displayed profile answer, or enter a role-only answer. Use **Copy confirmed answer** to paste the reviewed text into the employer’s form. Changing or clearing a profile answer requires a new confirmation on roles that reused it. Role-only answers are independent. Full workspace backups include these local records.
 
 The profile and all revisions are stored as **unencrypted plaintext** in the existing SQLite file, not in the public repository. Source notes remain private to the local workspace. Edits to a confirmed claim automatically revoke verification. Requests include a revision token, with stale edits rejected as HTTP 409.
 

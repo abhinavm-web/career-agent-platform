@@ -13,6 +13,7 @@ const SOURCE = fs.readFileSync(
 );
 const ID_A = "aaaaaaaaaaaaaaaa";
 const ID_B = "bbbbbbbbbbbbbbbb";
+const ANSWER_SOURCE = fs.readFileSync(path.join(__dirname, "../src/career_agent/web/application-answers.js"), "utf8");
 
 class Element {
   constructor(tag) {
@@ -188,7 +189,8 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       outcomes,
       stages: {[crmStage]: 1, discovered: crmStage === "discovered" ? 2 : 1},
       job_stages: [
-        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority},
+        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority,
+          delivery: jobsOverride?.find(job => job.id === ID_A)?.delivery},
         {...fakeJob(ID_B, "Role Beta"), job_id: ID_B, stage: "discovered"}
       ],
       open_followups: crmTask && !crmTask.completed_at ? [{
@@ -198,6 +200,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
     }));
     if (url === "/api/jobs/" + ID_A + "/crm") return Promise.resolve(ok({
       job: fakeJob(ID_A, "Role Alpha"),
+      delivery: jobsOverride?.find(job => job.id === ID_A)?.delivery,
       priority: crmPriority, priority_events: [], interview_notes: interviewNotes,
       job_id: ID_A, stage: crmStage, application_submitted: false,
       allowed_transitions: crmStage === "discovered" ? ["saved", "shortlisted", "archived"] : ["shortlisted", "archived"],
@@ -319,11 +322,73 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
     crypto: {randomUUID: () => "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
     console,
   };
+  vm.runInNewContext(ANSWER_SOURCE, context);
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
   return {get, waiting, downloads, discoveryRequests, chatRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("profile and application studio expose answer panels", async () => {
+  const h = createHarness();
+  await flush();
+  assert.match(h.get("application-answer-bank").textContent, /Application answer bank/);
+  h.get("job-list").children[0].click();
+  assert.match(h.get("detail-panel").textContent, /Application form answers/);
+});
+
+test("role answers require exact wording and explicit reuse before copy, and reject stale copies", async () => {
+  const copies = [], writes = [];
+  const context = {window: {}, navigator: {clipboard: {writeText: async value => copies.push(value)}}};
+  vm.runInNewContext(ANSWER_SOURCE, context);
+  const bank = [{topic: "work_authorization", label: "Authorization", answer: "Fictional response", revision: 2}];
+  const data = {bank, answers: [], locked: false};
+  const api = async (path, method, payload) => {
+    assert.equal(path, "/api/jobs/" + ID_A + "/application-answers");
+    if (method === "PUT") {
+      writes.push(payload);
+      data.answers = [{...payload, revision: 1, reused: true, stale: false}];
+    }
+    return data;
+  };
+  const node = (tag, cls, text = "") => {
+    const el = new Element(tag); el.className = cls; el.textContent = text; return el;
+  };
+  const button = (text, cls, action) => {
+    const el = node("button", cls, text); el.handlers.click = action; return el;
+  };
+  const panel = context.window.applicationAnswers({api, node, button})(ID_A);
+  panel.isConnected = panel.open = true;
+  panel.closest = () => null;
+  await panel.handlers.toggle();
+  const find = (el, tag, text) => el.tagName === tag && el.textContent.startsWith(text)
+    ? el : el.children.map(child => find(child, tag, text)).find(Boolean);
+  const action = text => find(panel, "button", text);
+  const control = text => find(panel, "label", text).children[0];
+  const reuse = action("Confirm reuse");
+  const select = control("Question topic");
+  select.value = bank[0].topic;
+  select.handlers.change();
+  assert.equal(reuse.disabled, true);
+  const question = control("Employer’s exact question");
+  question.value = "  Can you work here\nunder these conditions? ";
+  question.handlers.input();
+  assert.equal(reuse.disabled, false);
+  assert.equal(control("Your answer for this role only").value, "");
+  assert.equal(control("Saved profile answer").value, bank[0].answer);
+  assert.equal(action("Copy confirmed answer"), undefined);
+  assert.equal(writes.length, 0);
+  await reuse.click();
+  assert.deepEqual({...writes[0]}, {topic: bank[0].topic, question: question.value, mode: "reuse",
+    confirmed: true, expected_revision: 0, profile_revision: 2, answer: bank[0].answer});
+  await action("Copy confirmed answer").click();
+  assert.deepEqual(copies, [bank[0].answer]);
+  data.answers = [{...data.answers[0], answer: "", stale: true}];
+  await action("Copy confirmed answer").click();
+  assert.deepEqual(copies, [bank[0].answer]);
+  assert.equal(action("Copy confirmed answer"), undefined);
+  assert.match(panel.textContent, /Profile answer changed/);
+});
 
 test('possible duplicates show source and recorded submission without merging', async () => {
   const h = createHarness(); await flush();
@@ -778,16 +843,34 @@ test("opportunity filters combine and old observations are never shown as listed
 
 test("imported employer history is separate from posting policy", async () => {
   const historical = {...fakeJob(ID_A, "Fictional role"), sponsorship_status: "explicit_exclusion",
-    imported_sponsorship_history: {employer: "Legal Corp", sources: ["DOL LCA"], match: "candidate_association"}};
+    decision_summary: {
+      verified_fact: {id: "py-01", section: "projects", statement: "Built a Python tool.",
+        source_note: "Reviewed résumé, project 2", matched_terms: ["Python"]},
+      requirement_to_verify: {quote: "Rust experience", category: "required", term_link: false},
+      posting_quotes: ["No visa sponsorship for this role."]
+    },
+    discovery_observations: [{source: "sample", posted_date_status: "partial", reported_posted_date: "2024-05-12"}],
+    live_check: {availability: "listed", checked_at: "2024-06-01T12:00:00Z"},
+    imported_sponsorship_history: {employer: "Legal Corp", sources: ["DOL LCA"], match: "candidate_association",
+      filings: [{employer: "Legal Corp", source: "DOL LCA", first_year: 2021, last_year: 2023}]}};
   const absent = {...fakeJob(ID_B, "Other role"), imported_sponsorship_history: null};
   const h = createHarness({jobsOverride: [historical, absent]}); await flush();
+  const unknown = h.get("job-list").children.find(item => item.textContent.includes("Other role")).textContent;
+  for (const label of ["No verified fact linked", "Unknown · no classified requirement", "Unknown · No linked records",
+                       "Source-reported posting date Unknown", "Active check Not checked"]) assert.ok(unknown.includes(label));
   const filter = h.get("filter"); filter.value = "imported-history"; filter.handlers.change({target: filter});
   assert.match(h.get("job-list").textContent, /Imported employer history/);
   assert.doesNotMatch(h.get("job-list").textContent, /Other role/);
   h.get("job-list").children[0].click();
-  assert.match(h.get("detail-panel").textContent, /Evidence at a glance/);
+  assert.match(h.get("detail-panel").textContent, /Decision summary/);
   assert.match(h.get("detail-panel").textContent, /Posting excludes sponsorship/);
-  assert.match(h.get("detail-panel").textContent, /Historical records found/);
+  for (const view of [h.get("job-list"), h.get("detail-panel")]) {
+    assert.doesNotMatch(view.textContent, /Reviewed résumé, project 2/);
+    for (const value of ["Built a Python tool.", "py-01", "Shared posting terms: Python",
+      "Rust experience", "No visa sponsorship for this role.", "2024-05-12 (partial)",
+      "Active check Check is stale · 2024-06-01", "Legal Corp · DOL LCA · FY 2021–2023",
+      "candidate-linked entity (unverified)"]) assert.ok(view.textContent.includes(value), value);
+  }
   assert.match(h.get("detail-panel").textContent, /do not establish sponsorship for this role/);
   assert.match(h.get("detail-panel").textContent, /unverified employer association/);
   assert.match(h.get("detail-panel").textContent, /do not establish current job sponsorship/);
@@ -969,8 +1052,30 @@ test("outcome metrics explain empty and recorded submission denominators", async
   const content = recorded.get("crm-outcomes").textContent;
   assert.match(content, /Interview rate: 50%/);
   assert.match(content, /Offer rate: 25%/);
-  assert.match(content, /Denominator: 4 attested submissions/);
+  assert.match(content, /Denominator: 4 confirmed submissions/);
   assert.match(content, /skipped stages are not inferred/);
+});
+
+test("board, tracker and application show pending delivery and scoped evidence controls", async () => {
+  for (const historical of [true, false]) {
+    const job = {...fakeJob(ID_A, "Role Alpha"), lever_dispatch_requested: true,
+      delivery: {state: "awaiting_confirmation", dispatched: true, has_pdf: !historical}};
+    const h = createHarness({jobsOverride: [job]});
+    await flush();
+    assert.match(h.get("job-list").textContent, /Awaiting confirmation/);
+    h.get("job-list").children[0].click();
+    h.waiting.get(ID_A)(ok(fakePacket(ID_A, "Fictional current draft")));
+    await flush();
+    await h.get("nav-tracker").click();
+    assert.match(h.get("crm-jobs").textContent, /Awaiting confirmation/);
+    await h.get("crm-jobs").children[0].click();
+    for (const panel of [h.get("detail-panel"), h.get("crm-detail")]) {
+      assert.match(panel.textContent, /Record verified outcome locally/);
+      assert.match(panel.textContent, /Download private delivery record/);
+      assert.equal(panel.textContent.includes("Download dispatched résumé PDF"), !historical);
+      assert.doesNotMatch(panel.textContent, /Approve and send|Submit with Career Agent/);
+    }
+  }
 });
 
 test("tracker combines filters and saves priority and plain-text interview notes", async () => {

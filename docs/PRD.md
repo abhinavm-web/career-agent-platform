@@ -24,6 +24,8 @@ We should build an **original product with modular integrations**, not copy/past
 
 ### End-state experience
 
+The daily workflow starts in Opportunities, where the board surfaces verified experience, uncovered requirements, posting status and sponsorship evidence. In Career profile, candidates maintain reusable screening answers. The Application tab records which answer a candidate confirms for an employer’s exact question. The tracker distinguishes an attempted delivery from receipt confirmation. See [Dashboard](DASHBOARD.md) for the screens and controls.
+
 A job seeker should be able to describe their career goals once, maintain a trusted career profile, and receive a continuously updated, explainable shortlist of opportunities. For each role, the platform should show *why it fits*, *what is unknown*, *what the employer says about sponsorship*, and *which verified facts support the application*. The user can then review and approve individualized documents, submit through a supported and authorized process or manually, and track outcomes through interviews and offers.
 
 The core promise is **better career decisions and more qualified conversations with employers**, not the largest number of applications.

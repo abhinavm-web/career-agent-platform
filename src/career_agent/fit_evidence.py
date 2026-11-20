@@ -116,15 +116,48 @@ OPTIONAL_UNDER_REQUIRED = re.compile(
 )
 
 
-def shared_source_terms(statement, quote):
-    """Literal suggestions for untagged facts; never establish qualification equivalence."""
+def source_terms(statement):
+    """Candidate terms for literal suggestions from untagged facts."""
     words = re.findall(r'[a-z][a-z0-9+#-]*', statement.casefold())
     stop = set('a an the and or of in on to for with by from at as is are was were be been being have has had that this these those which who we i my our their it its across through using used built led managed experience skills ability work working team teams support supporting years'.split())
     technologies = set('python sql java aws azure gcp rag llm llms bedrock langchain langgraph selenium docker kubernetes'.split())
     candidates = [word for word in words if word in technologies]
     candidates += [' '.join(pair) for pair in zip(words, words[1:])
                    if all(word not in stop and len(word) > 1 for word in pair)]
-    return list(dict.fromkeys(term for term in candidates if contains_phrase(statement, term) and contains_phrase(quote, term)))[:8]
+    return list(dict.fromkeys(term for term in candidates if contains_phrase(statement, term)))
+
+
+def shared_source_terms(statement, quote):
+    return [term for term in source_terms(statement) if contains_phrase(quote, term)][:8]
+
+
+def board_evidence(job, facts):
+    """Rank literal links by requirement level, then distinct terms. Preserve source-order ties."""
+    text = ' '.join((job.title + '\n' + job.description).lower().split())
+    linked = []
+    for fact in facts:
+        terms = [term for term in fact['keywords'] if ' '.join(term.lower().split()) in text
+                 and contains_phrase(text, term)]
+        if terms:
+            linked.append({**fact, 'keywords': terms})
+    rows = requirement_evidence(job.description, linked)['requirements']
+    priorities = {'required': 3, 'preferred': 2, 'unspecified': 1, 'candidate_context': 1}
+    matches = [(priorities[row['category']], len(link['matched_keywords']), link['id'], link['matched_keywords'])
+               for row in rows for link in row['suggested_facts']]
+    matches.extend((0, len(fact['keywords']), fact['id'], fact['keywords']) for fact in linked)
+    evidence = None
+    if matches:
+        _, _, fact_id, terms = max(matches, key=lambda match: match[:2])
+        fact = next(item for item in linked if item['id'] == fact_id)
+        evidence = {key: fact[key] for key in ('id', 'statement', 'section')}
+        evidence['matched_terms'] = terms
+    # A term match is only a lead, even for a required qualification.
+    gap = max((row for row in rows if row['category'] in ('required', 'preferred', 'unspecified')
+               and not row.get('classification_note') and not NEGATED_LEVEL.search(row['quote'])),
+              key=lambda row: (priorities[row['category']], not row['suggested_facts']), default=None)
+    return {'verified_fact': evidence, 'requirement_to_verify': {
+        'quote': gap['quote'], 'category': gap['category'], 'term_link': bool(gap['suggested_facts'])
+    } if gap else None}
 
 
 def requirement_evidence(description: str, facts: list[dict]) -> dict:

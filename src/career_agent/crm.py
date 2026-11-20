@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from .storage import Store
+from .delivery import delivery_for_job, delivery_index, job_delivery
 
 PRE_APPLICATION = {
     "discovered": ("saved", "shortlisted", "archived"),
@@ -435,6 +436,7 @@ class ApplicationCRM:
             "stage": self._stage(job_id),
             "allowed_transitions": list(self.allowed(job_id)),
             "application_submitted": self.store.stage_of(job_id) == "submitted",
+            "delivery": delivery_for_job(self.store, job),
             "stage_events": self.stage_history(job_id),
             "correction_option": self.correction_option(job_id),
             "contacts": self.contacts(job_id),
@@ -498,7 +500,8 @@ class ApplicationCRM:
 
     def summary(self) -> dict:
         jobs = self.conn.execute(
-            "SELECT j.job_id,j.title,j.company,j.location, "
+            "SELECT j.job_id,j.title,j.company,j.location,j.url, "
+            "ds.destination,ds.has_pdf,ds.delivery_state,ds.delivery_updated_at, "
             "COALESCE(a.stage,'discovered') AS application_stage, "
             "(SELECT stage FROM crm_stage_events WHERE job_id=j.job_id "
             "ORDER BY event_id DESC LIMIT 1) AS crm_stage, "
@@ -509,12 +512,14 @@ class ApplicationCRM:
             "COALESCE((SELECT priority FROM crm_priority_events WHERE job_id=j.job_id "
             "ORDER BY event_id DESC LIMIT 1),'none') AS priority "
             " , EXISTS(SELECT 1 FROM job_archives ar WHERE ar.job_id=j.job_id AND ar.restored_at IS NULL) AS archived "
-            "FROM jobs j LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY j.rowid DESC"
+            "FROM jobs j JOIN delivery_status ds ON ds.job_id=j.job_id "
+            "LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY j.rowid DESC"
         ).fetchall()
         counts: dict[str, int] = {}
         job_stages = []
         review_candidates = []
         today_utc = datetime.now(timezone.utc).date()
+        deliveries = delivery_index(jobs)
         for job in jobs:
             submitted = job["application_stage"] == "submitted"
             valid_stages = POST_APPLICATION if submitted else PRE_APPLICATION
@@ -525,6 +530,7 @@ class ApplicationCRM:
                 "job_id": job["job_id"], "stage": stage, "title": job["title"],
                 "company": job["company"], "location": job["location"],
                 "application_stage": job["application_stage"],
+                "delivery": job_delivery(deliveries, job["job_id"], job["url"]),
                 "priority": job["priority"],
             })
             counts[stage] = counts.get(stage, 0) + 1

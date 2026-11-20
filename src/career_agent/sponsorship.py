@@ -46,7 +46,10 @@ def load_historical_evidence(path: str | Path | None) -> set[str]:
 
 
 def assess_sponsorship(job: Job, historical_employers: set[str] | None = None) -> Sponsorship:
-    policy = h1b_policy(job.description)
+    return posting_assessment(h1b_policy(job.description), job.company.casefold() in (historical_employers or set()))
+
+
+def posting_assessment(policy: dict, historical_match: bool) -> Sponsorship:
     if policy['policy'] == 'conflicting':
         return Sponsorship('conflicting', policy['reason'])
     if policy['policy'] == 'excluded':
@@ -61,7 +64,7 @@ def assess_sponsorship(job: Job, historical_employers: set[str] | None = None) -
         )
     if policy['policy'] == 'conditional':
         return Sponsorship('conditional', policy['reason'])
-    if job.company.casefold() in (historical_employers or set()):
+    if historical_match:
         return Sponsorship(
             "historical_only",
             "Historical employer filing evidence does not establish sponsorship for this role.",

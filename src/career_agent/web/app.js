@@ -55,6 +55,9 @@
     return data;
   }
 
+  const applicationAnswers = window.applicationAnswers({api, node, button});
+  byId("application-answer-bank").append(applicationAnswers());
+
   function notice(message, error) {
     const el = byId("notice");
     el.hidden = false;
@@ -178,6 +181,55 @@
         (row.candidate_differs === true || (row.candidate_differs === undefined && !job.description?.trim())));
   }
 
+  function activeCheckText(job) {
+    return postingObservation(job).label + (job.live_check?.checked_at ? " · " + job.live_check.checked_at : "");
+  }
+
+  function decisionSummary(job, compact) {
+    const summary = job.decision_summary || {};
+    const container = node("div", compact ? "board-decision-compact" : "evidence-summary-grid");
+    function field(label, value, note) {
+      const row = node("div", compact ? "board-decision-field" : "evidence-tile");
+      const content = node("strong", "", value);
+      row.append(node("small", "", label + " "), content);
+      if (note) row.append(node("p", "", note));
+      container.append(row);
+      return content;
+    }
+    const fact = summary.verified_fact;
+    field("Verified evidence", fact?.statement || "No verified fact linked",
+      fact && [fact.section, fact.id].join(" · "));
+    field("Match reason", fact ? "Shared posting terms: " + fact.matched_terms.join(", ")
+      : job.fit_reasons?.[0] || "Unknown");
+    const gap = summary.requirement_to_verify;
+    field("Requirement to verify", gap ? gap.quote : "Unknown · no classified requirement",
+      gap && (gap.category + (gap.term_link ? " · term overlap only" : " · no verified fact linked")));
+    const today = new Date().toISOString().slice(0, 10);
+    const dates = (job.discovery_observations || []).map(row => {
+      const date = row.reported_posted_date;
+      const reported = date && ["reported", "partial"].includes(row.posted_date_status);
+      return row.source + " · " + (reported ? date + (row.posted_date_status === "partial" ? " (partial)" : "") +
+        (date > today ? " (future date)" : "") : row.posted_date_status === "conflicting" ? "conflicting dates" : "unknown");
+    });
+    field("Source-reported posting date", dates.join(" / ") || "Unknown");
+    const check = field("Active check", activeCheckText(job));
+    const status = job.sponsorship_status === "historical_only" ? "Posting policy unknown" : sponsorshipLabel(job.sponsorship_status)[0];
+    field("Posting sponsorship", status, summary.posting_quotes?.length
+      ? summary.posting_quotes.map(quote => "“" + quote + "”").join(" ") : "No recognized wording available");
+    const history = job.imported_sponsorship_history;
+    const filings = [];
+    function filing(row, basis) {
+      const period = row.first_year === row.last_year ? "FY " + row.first_year : "FY " + row.first_year + "–" + row.last_year;
+      return [row.employer, row.source, period, basis].join(" · ");
+    }
+    for (const row of history?.filings || []) filings.push(filing(row, history.match === "candidate_association"
+      ? "candidate-linked entity (unverified)" : "exact employer-name match"));
+    for (const row of summary.csv_filings || []) filings.push(filing(row, "user-supplied record, exact employer-name match"));
+    field("Historical filing entity", filings.join(" / ") || "Unknown · No linked records",
+      filings.length ? "Historical filings do not establish sponsorship for this role." : "");
+    return {container, check};
+  }
+
   function filteredJobs() {
     const needle = state.search.trim().toLocaleLowerCase();
     const filters = state.boardFilters;
@@ -262,6 +314,7 @@
     for (const job of jobs.slice(state.jobsPage * 10, (state.jobsPage + 1) * 10)) {
       const item = button("", "job-item" + (state.selectedId === job.id ? " selected" : ""), () => selectJob(job.id));
       item.setAttribute("aria-label", "View " + job.title + " at " + job.company +
+        (job.delivery ? ", " + deliveryLabel(job.delivery) : "") +
         (job.fit_score !== null && !job.description?.trim() ? "; keyword score incomplete, description missing" : ""));
       item.setAttribute("aria-pressed", String(state.selectedId === job.id));
       const top = node("div", "job-item-top");
@@ -286,10 +339,14 @@
         job.packet_stale ? "Draft outdated" : (job.review_decision ? "Reviewed" : "Draft ready"),
         job.review_decision && !job.packet_stale ? "teal" : "amber"
       ));
-      if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
+      if (job.delivery) lower.append(chip(deliveryLabel(job.delivery), job.delivery.state === "confirmed" ? "teal" : "amber"));
+      else if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
       if (job.archive) lower.append(chip("Archived", ""));
       if (job.fit_score !== null) lower.append(node("span", "score", "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
-      item.append(top, lower);
+      const summary = decisionSummary(job, true).container;
+      summary.id = "board-decision-" + job.id;
+      item.setAttribute("aria-describedby", summary.id);
+      item.append(top, lower, summary);
       list.append(item);
     }
   }
@@ -301,6 +358,14 @@
   }
 
   async function selectJob(id) {
+    const compact = window.matchMedia?.("(max-width: 1050px)").matches;
+    const board = byId("jobs-screen");
+    if (compact && state.selectedId === id && board.classList.contains("compact-list")) {
+      board.classList.toggle("compact-list", false);
+      board.classList.toggle("compact-detail", true);
+      byId("detail-panel").focus?.();
+      return;
+    }
     if (state.selectedId !== id) {
       const editor = byId("detail-panel").querySelector?.("#job-description-editor");
       const description = editor?.querySelector?.("textarea");
@@ -318,13 +383,15 @@
     }
     if (state.selectedId !== id) { state.detailTab = "overview"; state.studioOpen = false; }
     state.selectedId = id;
+    board.classList.toggle("compact-list", false);
+    board.classList.toggle("compact-detail", true);
     state.packet = null;
     renderJobs();
     renderDetail();
     if (state.screen === "jobs" && window.matchMedia?.("(max-width: 1050px)").matches) {
       const detail = byId("detail-panel");
       detail.setAttribute("tabindex", "-1");
-      detail.scrollIntoView?.({behavior: "smooth", block: "start"});
+      detail.scrollIntoView?.({block: "start"});
       detail.focus?.({preventScroll: true});
     }
     const initialWorkspaceRevision = state.workspace?.revision ?? null;
@@ -395,8 +462,9 @@
         });
         const result = await api("/api/jobs/" + job.id + "/lever-submit", "POST", data);
         status.textContent = result.status === "confirmed" ? "Employer confirmation received. Application recorded." : result.detail;
-        if (result.status === "confirmed") await refresh(true);
-      } catch (error) { status.textContent = error.message; send.disabled = false; }
+        notice(status.textContent);
+      } catch (error) { notice(error.message, true); }
+      await refresh(state.selectedId);
     });
     return form;
   }
@@ -405,6 +473,83 @@
     const box = node("section", "detail-section");
     box.append(node("h4", "", heading));
     return box;
+  }
+
+  function deliveryLabel(delivery) {
+    return {needs_user_action: "Needs user action", failed_before_sending: "Failed before sending",
+      awaiting_confirmation: "Awaiting confirmation", confirmed: "Delivery confirmed",
+      verified_not_received: "Employer verified non-receipt", duplicate: "Dispatch on another saved posting"}[delivery.state];
+  }
+
+  function deliveryPanel(jobId, delivery) {
+    const panel = section("Application delivery");
+    panel.append(node("strong", "", deliveryLabel(delivery)));
+    if (delivery.state === "duplicate") {
+      panel.append(button("View original dispatch in tracker", "button", async () => {
+        showScreen("tracker"); await loadCRM();
+        if (state.screen === "tracker") await selectCRMJob(delivery.owner_id);
+      }));
+      return panel;
+    }
+    if (delivery.updated_at) panel.append(node("p", "muted", "Recorded " + delivery.updated_at + " UTC"));
+    if (delivery.dispatched && !delivery.has_pdf) {
+      panel.append(node("p", "muted", "The historical dispatch retained a PDF fingerprint. The file and approved answers are unavailable."));
+    }
+    const base = "/api/jobs/" + jobId + "/delivery/";
+    function download(label, artifact) {
+      return button(label, "button", async () => {
+        try {
+          const response = await fetch(base + artifact, {headers: {"X-Session-Token": token}, cache: "no-store", credentials: "same-origin"});
+          if (!response.ok) throw new Error("Unable to download this private delivery artifact.");
+          const url = URL.createObjectURL(await response.blob());
+          const link = node("a"); link.href = url; link.download = jobId + "-" + artifact;
+          document.body.append(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (error) { notice(error.message, true); }
+      });
+    }
+    const downloads = node("div", "button-row");
+    downloads.append(download("Download private delivery record", "record.json"));
+    if (delivery.has_pdf) downloads.append(download("Download dispatched résumé PDF", "resume.pdf"));
+    panel.append(downloads);
+    if (!["awaiting_confirmation", "verified_not_received"].includes(delivery.state)) return panel;
+
+    const form = node("form", "form-stack");
+    form.append(node("p", "", "Check the employer portal, confirmation email, or recruiting team. Record only an outcome you verified. An empty inbox alone leaves delivery unresolved."));
+    const label = node("label", "field", "Verified employer outcome");
+    const choice = node("select");
+    for (const [value, text] of [["confirmed", "Received with confirmation reference"],
+      ["without_reference", "Received, employer supplied no reference"], ["verified_not_received", "Employer verified it was not received"]]) {
+      const option = node("option", "", text); option.value = value; choice.append(option);
+    }
+    label.append(choice);
+    const description = node("span", "", "Employer confirmation reference");
+    const evidenceLabel = node("label", "field"), input = node("input");
+    input.required = true; input.minLength = 4; input.maxLength = 200;
+    evidenceLabel.append(description, input);
+    const consent = node("label", "check-label"), check = node("input"); check.type = "checkbox"; check.required = true;
+    consent.append(check, document.createTextNode("I verified this outcome with the employer for this posting."));
+    choice.addEventListener("change", () => {
+      description.textContent = choice.value === "confirmed" ? "Employer confirmation reference" : "How the employer verified this outcome";
+      input.maxLength = choice.value === "confirmed" ? 200 : 500; input.value = ""; check.checked = false;
+    });
+    const save = node("button", "button", "Record verified outcome locally"); save.type = "submit";
+    form.append(label, evidenceLabel, consent, save); panel.append(form);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (save.disabled || !check.checked) return;
+      const payload = {attest_verified: true, state: choice.value === "verified_not_received" ? choice.value : "confirmed"};
+      if (choice.value === "confirmed") payload.receipt = input.value;
+      else { payload.note = input.value; payload.verified_without_reference = choice.value === "without_reference"; }
+      save.disabled = true;
+      try {
+        await api(base + "reconcile", "POST", payload);
+        notice("Verified delivery outcome recorded locally.");
+        await refresh(state.selectedId);
+      } catch (error) { notice(error.message, true); }
+      finally { save.disabled = false; }
+    });
+    return panel;
   }
 
   function documentRevisionStudio(job) {
@@ -882,6 +1027,7 @@
 
 
   function renderDetailPreservingEditor() {
+    const answers = byId("detail-panel").querySelector?.(".role-application-answers");
     const revisionEditor = byId("detail-panel").querySelector?.(".document-revision-studio");
     const keepRevision = revisionEditor?.dataset.jobId === state.selectedId;
     const editor = byId("detail-panel").querySelector?.("#job-description-editor");
@@ -898,6 +1044,9 @@
     const keepInline = inline?.open && inline.dataset.jobId === state.selectedId && currentJob &&
       inline.dataset.descriptionRevision === String(currentJob.description_revision ?? 0);
     renderDetail();
+    if (answers?.dataset.jobId === state.selectedId && answers.open) {
+      byId("detail-panel").querySelector?.(".role-application-answers")?.replaceWith(answers);
+    }
     if (keepGap) byId("detail-panel").querySelector?.("#resume-gap")?.replaceWith(gap);
     if (keepRevision) byId("detail-panel").querySelector?.(".document-revision-studio")?.replaceWith(revisionEditor);
     if (keepInline) byId("detail-panel").querySelector?.("#inline-tailoring")?.replaceWith(inline);
@@ -941,7 +1090,15 @@
     studioToggle.setAttribute("aria-controls", "job-pane-application");
     headerActions.append(node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"), studioToggle);
     header.append(heading, headerActions);
-    detail.append(header);
+    const returnToList = button("← Back to opportunities", "compact-back", () => {
+      byId("jobs-screen").classList.toggle("compact-detail", false);
+      byId("jobs-screen").classList.toggle("compact-list", true);
+      state.studioOpen = false;
+      syncStudio();
+      const current = byId("job-list").querySelector?.(".selected") || byId("job-list").querySelector?.("button");
+      current?.focus();
+    });
+    detail.append(returnToList, header);
     const scopeWarning = node("p", "warning", "This selected opportunity is outside your current filters. Its details are kept open to preserve your work. Select a matching opportunity or clear the filters.");
     scopeWarning.id = "selection-scope-warning";
     scopeWarning.setAttribute("role", "status");
@@ -954,6 +1111,7 @@
         job.remote_evidence?.status === "ambiguous" ? "Remote marked; arrangement unclear" :
         job.remote ? "Saved as remote" : "Not confirmed remote"],
       ["TRACKING", job.application_stage],
+      ...(job.delivery ? [["DELIVERY", deliveryLabel(job.delivery)]] : []),
       ["SOURCE", job.source || "Manual"],
     ];
     for (const pair of facts) {
@@ -967,6 +1125,7 @@
     const panes = {}, tabs = {};
     const sections = [["overview", "Overview"], ["fit", "Fit"], ["sponsorship", "Sponsorship"], ["application", "Application"]];
     function syncStudio() {
+      info.hidden = state.detailTab !== "overview";
       byId("jobs-screen").classList.toggle("studio-open", state.studioOpen);
       studioToggle.textContent = state.studioOpen ? "Exit application studio" : "Open application studio";
       studioToggle.setAttribute("aria-pressed", String(state.studioOpen));
@@ -1001,19 +1160,9 @@
     activateTab(state.detailTab);
     const evidenceSummary = node("section", "evidence-summary");
     evidenceSummary.setAttribute("aria-label", "Opportunity evidence at a glance");
-    evidenceSummary.append(node("h4", "", "Evidence at a glance"));
-    const evidenceGrid = node("div", "evidence-summary-grid");
-    const posting = node("div", "evidence-tile");
-    const postingStatus = job.sponsorship_status === "historical_only" ? "Not stated in posting" : sponsorshipLabel(job.sponsorship_status)[0];
-    posting.append(node("small", "", "JOB SPONSORSHIP"), node("strong", "", postingStatus),
-      node("p", "", "Based on saved posting text. Confirm current policy with the employer."));
-    const history = node("div", "evidence-tile");
-    const imported = job.imported_sponsorship_history;
-    const sources = imported?.sources || [];
-    history.append(node("small", "", "EMPLOYER FILING HISTORY"),
-      node("strong", "", sources.length ? "Historical records found" : "No linked records"),
-      node("p", "", sources.length ? "Source: " + sources.join(", ") + ". Name matches and historical filings do not establish sponsorship for this role." : "This does not establish that the employer has no filings."));
-    evidenceGrid.append(posting, history); evidenceSummary.append(evidenceGrid,
+    evidenceSummary.append(node("h4", "", "Decision summary"));
+    const decision = decisionSummary(job, false);
+    evidenceSummary.append(decision.container,
       button("Review sponsorship evidence", "plain-button", () => activateTab("sponsorship", true)));
     panes.overview.append(evidenceSummary);
     if (job.remote_evidence?.detail) panes.overview.append(node("p", "muted", job.remote_evidence.detail));
@@ -1046,7 +1195,8 @@
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
     actions.append(button(job.application_stage === "submitted" ? "View application" : "Prepare application", "button button-primary", () => activateTab("application", true)));
-    if (job.application_stage !== "submitted") {
+    if (job.delivery) panes.application.append(deliveryPanel(job.id, job.delivery));
+    if (job.application_stage !== "submitted" && !job.lever_dispatch_requested && job.delivery?.state !== "duplicate" && !job.archive) {
       const target = /^https:\/\/jobs(?:\.eu)?\.lever\.co\/[a-z0-9_-]+\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:\/apply)?\/?(?:[?#].*)?$/i.test(job.url)
         ? new URL(job.url) : null;
       const assistant = section("Apply on the employer’s site");
@@ -1054,9 +1204,7 @@
       assistant.append(safeLink(target ? "Open Lever application form" : "Open posting to apply", target?.href || job.url),
         node("p", "muted", "For a Lever application, open the Career Agent companion in Chrome or Edge to fill contact details. Attach your reviewed resume on the employer’s page, then choose Review this application in the companion."),
         node("p", "muted", "For an employer account, use the browser’s save-password prompt during sign-up. Choose Open password vault in the companion to manage saved logins."));
-      if (job.lever_dispatch_requested) {
-        assistant.prepend(node("p", "", "Career Agent requested submission. Employer confirmation is pending. Check the employer portal or your email before applying again."));
-      } else if (target && state.settings.application_submission_enabled) {
+      if (target && state.settings.application_submission_enabled) {
         assistant.prepend(liveApplication(job, target.origin + target.pathname));
       }
       panes.application.append(assistant);
@@ -1124,6 +1272,7 @@
       if (interaction.pending) { availabilityStatus.textContent = "Checking the public posting…"; return; }
       const currentJob = state.jobs.find((value) => value.id === job.id) || job;
       const observation = postingObservation(currentJob);
+      decision.check.textContent = activeCheckText(currentJob);
       availabilityStatus.replaceChildren(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""),
         node("p", "", observation.detail));
       if (interaction.failure) availabilityStatus.append(node("p", "", "Check failed: " + interaction.failure + ". Previous observation remains unchanged."));
@@ -1429,6 +1578,7 @@
       if (state.screen === "tracker") await selectCRMJob(job.id);
     }));
     drafts.append(workflowActions);
+    drafts.append(applicationAnswers(job.id));
     drafts.append(documentRevisionStudio(job), inlineTailoring(job));
     const missingProfile = state.settings.profile_configured === false;
     const missingFacts = state.settings.facts_configured === false;
@@ -1780,7 +1930,8 @@
       decisionButtons.append(approve, reject);
       card.append(decisionButtons);
     }
-    if (!stale && review && review.decision === "approved_for_manual_submission" && job.application_stage !== "submitted") {
+    if (!stale && review && review.decision === "approved_for_manual_submission" && job.application_stage !== "submitted" &&
+        !job.lever_dispatch_requested && job.delivery?.state !== "duplicate") {
       const submitted = node("div", "detail-section");
       submitted.append(node("h4", "", "Already applied on employer site?"));
       submitted.append(node("p", "", "Only record submission after you have submitted it yourself and received confirmation."));
@@ -1799,7 +1950,9 @@
       submitted.append(button("Record confirmed submission", "button", () => markSubmitted(packet.packet_sha256, receipt.value, consentBox.checked)));
       card.append(submitted);
     }
-    if (job.application_stage === "submitted") card.append(node("p", "", "Submission recorded from your attestation. Nothing was sent by this app."));
+    if (job.application_stage === "submitted") card.append(node("p", "", job.delivery?.dispatched
+      ? "Submission recorded. See Application delivery for the receipt."
+      : "Submission recorded from your attestation. See Application delivery for the receipt."));
     container.append(card);
   }
 
@@ -2216,7 +2369,7 @@
     root.append(due);
     const suggestions = node("div", "crm-due-list");
     suggestions.append(node("h3", "", "Applications to review"), node("p", "muted",
-      "Attested applications with no pending follow-up and at least 14 days since the last recorded active stage. This does not check messages or employer status; review before deciding whether to follow up. No task or message is created."));
+      "Confirmed applications with no pending follow-up and at least 14 days since the last recorded active stage. Check the employer’s latest response before deciding whether to follow up."));
     const review = summary.review_suggestions || [];
     if (!review.length) suggestions.append(node("p", "muted", "No applications currently meet these criteria."));
     for (const item of review) {
@@ -2234,7 +2387,7 @@
     const outcomes = summary.outcomes;
     if (!outcomes) return;
     const milestones = node("div", "crm-stage-counts");
-    for (const [key, label] of [["submitted", "Attested submissions"], ["interviewed", "Interview recorded"],
+    for (const [key, label] of [["submitted", "Confirmed submissions"], ["interviewed", "Interview recorded"],
       ["offered", "Offer recorded"], ["accepted", "Accepted offer"]]) {
       const metric = node("div", "crm-count");
       metric.append(node("strong", "", outcomes[key]), node("small", "", label));
@@ -2243,9 +2396,9 @@
     outcomePanel.append(milestones);
     if (outcomes.submitted) {
       outcomePanel.append(node("p", "muted", "Interview rate: " + outcomes.interview_rate + "% · Offer rate: " +
-        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " attested submissions."));
+        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " confirmed submissions."));
     } else {
-      outcomePanel.append(node("p", "muted", "Rates appear after a manual submission is attested. Drafts and approvals are excluded."));
+      outcomePanel.append(node("p", "muted", "Rates appear after a submission is confirmed. Drafts and approvals are excluded."));
     }
     outcomePanel.append(node("p", "muted", "All-time candidate-recorded milestones, counted once per opportunity. Later outcomes retain earlier milestones; skipped stages are not inferred. These records are not independently verified or predictions."));
   }
@@ -2300,7 +2453,8 @@
       const chips = node("div", "job-item-bottom");
       chips.append(chip(job.stage, "teal"));
       if (job.priority && job.priority !== "none") chips.append(chip(job.priority + " priority", ""));
-      if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
+      if (job.delivery) chips.append(chip(deliveryLabel(job.delivery), job.delivery.state === "confirmed" ? "teal" : "amber"));
+      else if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
       item.append(chips);
       (boardView ? columns.get(job.id) : list).append(item);
     }
@@ -2346,7 +2500,8 @@
     identity.append(node("span", "eyebrow", "APPLICATION TRACKER"), node("h3", "", item.title), node("p", "", item.company));
     heading.append(identity, chip(data.stage, "teal"));
     panel.append(heading);
-    panel.append(node("p", "muted", data.application_submitted
+    if (data.delivery) panel.append(deliveryPanel(item.id, data.delivery));
+    if (!data.delivery || (data.application_submitted && !data.delivery.dispatched)) panel.append(node("p", "muted", data.application_submitted
       ? "Submission recorded from your independent attestation. Pipeline updates do not change that receipt."
       : "This application has not been recorded as submitted. Advancing the hiring pipeline requires a separate manual application submission."));
 

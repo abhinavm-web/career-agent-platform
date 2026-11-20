@@ -68,7 +68,7 @@ class DashboardTests(unittest.TestCase):
         from career_agent.h1b import DOL_URL, H1BResearch
         from test_h1b import lca_csv
         from test_uscis import hub_csv, URL
-        exact = Job.from_mapping({'company': 'Legal Corp', 'title': 'Engineer',
+        exact = Job.from_mapping({'company': 'LEGAL CORP', 'title': 'Engineer',
             'job_url': 'https://example.invalid/exact', 'description': 'No visa sponsorship.'})
         brand = Job.from_mapping({'company': 'Fictional Brand', 'title': 'Engineer',
             'job_url': 'https://example.invalid/brand', 'description': ''})
@@ -79,20 +79,31 @@ class DashboardTests(unittest.TestCase):
         with Store(self.db) as store:
             store.add_jobs([exact, brand, suggested, uscis_job])
             research = H1BResearch(store)
-            research.import_csv(io.StringIO(lca_csv([{'EMPLOYER_NAME': 'Legal Corp', 'CASE_STATUS': 'Denied'}])), DOL_URL, '2025-06-01')
+            research.import_csv(io.StringIO(lca_csv([{'EMPLOYER_NAME': 'Legal Corp', 'CASE_STATUS': 'Denied'},
+                {'EMPLOYER_NAME': 'Legal Corp', 'DECISION_DATE': '2022-06-01'}])), DOL_URL, '2025-06-01')
             research.uscis.import_bytes(hub_csv(), URL, 2025, '2025-03-31')
             association = {'acknowledged': True, 'expected_revision': 0, 'employer': 'Legal Corp', 'source_note': 'Private fictional research'}
             research.link_employer(brand, association)
             research.link_company(suggested, association)
+            for page in ([exact], [exact, brand, suggested, uscis_job]):
+                statements = []
+                store.connection.set_trace_callback(statements.append)
+                research.board_history(page)
+                store.connection.set_trace_callback(None)
+                self.assertEqual(len(statements), 3)  # Job associations, DOL and USCIS, once per page.
         response = self.call('GET', '/api/jobs?limit=100')
         self.assertEqual(response.status_code, 200, response.text)
         jobs = {row['id']: row for row in response.json()['jobs']}
         self.assertEqual(jobs[exact.id]['sponsorship_status'], 'explicit_exclusion')
         self.assertEqual(jobs[exact.id]['imported_sponsorship_history'],
-                         {'employer': 'Legal Corp', 'sources': ['DOL LCA'], 'match': 'exact_name'})
+                         {'employer': 'LEGAL CORP', 'sources': ['DOL LCA'], 'match': 'exact_name',
+                          'filings': [{'employer': 'Legal Corp', 'source': 'DOL LCA',
+                                       'first_year': 2022, 'last_year': 2025}]})
+        self.assertEqual(jobs[exact.id]['decision_summary']['posting_quotes'], ['No visa sponsorship.'])
         self.assertEqual(jobs[brand.id]['imported_sponsorship_history']['match'], 'candidate_association')
         self.assertEqual(jobs[brand.id]['imported_sponsorship_history']['employer'], 'Legal Corp')
         self.assertEqual(jobs[uscis_job.id]['imported_sponsorship_history']['sources'], ['USCIS decisions'])
+        self.assertEqual(jobs[uscis_job.id]['imported_sponsorship_history']['filings'][0]['first_year'], 2025)
         self.assertIsNone(jobs[suggested.id]['imported_sponsorship_history'])
         self.assertNotIn('Private fictional research', json.dumps(response.json()))
         with Store(self.db) as store:
@@ -100,6 +111,58 @@ class DashboardTests(unittest.TestCase):
                                                    'employer': '', 'source_note': 'Removed association'})
         jobs = {row['id']: row for row in self.call('GET', '/api/jobs?limit=100').json()['jobs']}
         self.assertIsNone(jobs[brand.id]['imported_sponsorship_history'])
+
+    def test_board_decision_uses_verified_evidence_and_prioritizes_required_excerpts(self):
+        job = replace(self.job, url='https://example.invalid/decision',
+                      description='Preferred skills:\n- SQL\nRequirements:\n- Python and AWS\n- Rust')
+        bank = fake_fact_bank()
+        bank['facts'].insert(0, dict(bank['facts'][0], id='sql-fact', statement='Built fictional SQL models.',
+                                     keywords=[]))
+        self.facts_path.write_text(json.dumps(bank))
+        with Store(self.db) as store:
+            store.add_jobs([job])
+
+        def summary():
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            return next(row['decision_summary'] for row in jobs if row['id'] == job.id)
+
+        from career_agent.candidate import FactBank
+        with patch.object(FactBank, 'load', wraps=FactBank.load) as load, patch('career_agent.ai.complete') as model:
+            result = summary()
+            load.assert_called_once()
+            model.assert_not_called()
+        fact = result['verified_fact']
+        self.assertEqual((fact['id'], fact['matched_terms']), ('experience-01', ['Python', 'AWS']))
+        self.assertNotIn('source_note', fact)
+        self.assertEqual(result['requirement_to_verify'], {'quote': '- Rust', 'category': 'required', 'term_link': False})
+        from career_agent.workspace import CandidateWorkspace
+        imported = self.call('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']
+        with Store(self.db) as store:
+            workspace = CandidateWorkspace(store)
+            updated = workspace.verify(imported['revision'], 'experience-01', False, True)
+        self.assertEqual(summary()['verified_fact']['id'], 'sql-fact')
+        with Store(self.db) as store:
+            CandidateWorkspace(store).verify(updated['revision'], 'sql-fact', False, True)
+        self.assertIsNone(summary()['verified_fact'])
+
+    def test_board_csv_history_matches_record_entity_and_keeps_policy_unknown(self):
+        from career_agent.sponsor_evidence import FilingEvidence
+        records = tuple(FilingEvidence('EXAMPLE COMPANY', year, 'https://example.invalid/history', 'LCA')
+                        for year in [2024, 2021])
+        job = replace(self.job, url='https://example.invalid/unknown',
+                      description='Requirements:\n- Rust experience is not required.')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+        with patch('career_agent.dashboard.load_filing_evidence', return_value=records) as load:
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            load.assert_called_once()
+        row = next(item for item in jobs if item['id'] == job.id)
+        self.assertEqual(row['sponsorship_status'], 'historical_only')
+        summary = row['decision_summary']
+        self.assertIsNone(summary['requirement_to_verify'])
+        self.assertEqual(summary['posting_quotes'], [])
+        self.assertEqual(summary['csv_filings'], [{'employer': 'EXAMPLE COMPANY', 'source': 'LCA',
+                                                  'first_year': 2021, 'last_year': 2024}])
 
     def test_sponsorship_policy_notes_are_scoped_and_do_not_change_posting_assessment(self):
         from career_agent.h1b import H1BResearch
@@ -198,6 +261,83 @@ class DashboardTests(unittest.TestCase):
         if payload is None:
             return self.client.request(method, path, headers=values)
         return self.client.request(method, path, headers=values, json=payload)
+
+    def test_private_delivery_snapshot_and_reconciliation_without_replay(self):
+        from career_agent.delivery import record_dispatch
+        target = 'https://jobs.lever.co/example/01234567-1234-4234-8234-123456789abc/apply'
+        owner = Job('Example', 'Role', '', target[:-6])
+        alias = Job('Example', 'Role', '', target)
+        content = b'%PDF-1.7\x00\xff\r\nfixture'
+        fields = dict(name='Example Candidate', email='fixture@example.invalid', phone='555-0100',
+                      filename='Reviewed version.pdf', destination=target)
+        base = f'/api/jobs/{owner.id}/delivery/'
+        with Store(self.db) as store, store.connection:
+            store.add_jobs([owner, alias])
+            store.connection.execute('BEGIN IMMEDIATE')
+            record_dispatch(store, owner.id, fields, content, '2026-11-01T08:00:00+00:00')
+        def summaries():
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            tracked = self.call('GET', '/api/crm').json()['job_stages']
+            detail = self.call('GET', f'/api/jobs/{owner.id}/crm').json()
+            self.assertNotIn(fields['email'], json.dumps([jobs, tracked, detail]))
+            states = {j['id']: j['delivery'] for j in jobs}
+            self.assertEqual(states[owner.id], detail['delivery'])
+            self.assertEqual(states[owner.id], next(j['delivery'] for j in tracked if j['job_id'] == owner.id))
+            self.assertEqual(states[alias.id]['owner_id'], owner.id)
+            return states[owner.id]['state']
+        self.assertEqual(summaries(), 'awaiting_confirmation')
+        for filename in ('resume.pdf', 'record.json'):
+            self.assertEqual(self.call('GET', base + filename, token='invalid').status_code, 403)
+            self.assertEqual(self.call('GET', base.replace(owner.id, alias.id) + filename).status_code, 404)
+            response = self.call('GET', base + filename)
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            self.assertIn('attachment', response.headers['Content-Disposition'])
+        self.assertEqual(self.call('GET', base + 'resume.pdf').content, content)
+        positive = dict(state='confirmed', receipt='example-reference', attest_verified=True)
+        self.assertEqual(self.call('POST', base+'reconcile', {**positive, 'attest_verified': 1}).status_code, 422)
+        self.assertEqual(self.call('POST', base.replace(owner.id, alias.id)+'reconcile', positive).status_code, 409)
+        negative = dict(state='verified_not_received', attest_verified=True, note='Example employer checked the posting.')
+        self.assertEqual(self.call('POST', base+'reconcile', negative).status_code, 200)
+        self.assertEqual(summaries(), 'verified_not_received')
+        with Store(self.db) as store:
+            self.assertNotEqual(store.stage_of(owner.id), 'submitted')
+            for job in (owner, alias):
+                with self.assertRaisesRegex(ValueError, 'already requested'):
+                    record_dispatch(store, job.id, fields, content, 'later')
+        for _ in range(2):
+            self.assertEqual(self.call('POST', base+'reconcile', positive).status_code, 200)
+        self.assertEqual(self.call('POST', base+'reconcile', negative).status_code, 409)
+        self.assertEqual(summaries(), 'confirmed')
+        record = self.call('GET', base+'record.json').json()
+        self.assertEqual(record['receipt'], positive['receipt'])
+        self.assertEqual([item['state'] for item in record['verifications']], ['verified_not_received', 'confirmed'])
+        self.assertEqual(record['destination'], target)
+        self.assertEqual(record['filename'], fields['filename'])
+        self.assertEqual(record['answers'], {k: fields[k] for k in ('name','email','phone')})
+        self.assertEqual(record['approved_at'], '2026-11-01T08:00:00+00:00')
+        self.assertTrue(record['requested_at'] and record['confirmed_at'])
+        self.assertEqual(self.call('GET', base+'resume.pdf').content, content)
+
+    def test_historical_dispatch_and_verified_receipt_without_reference(self):
+        base = f'/api/jobs/{self.job.id}/delivery/'
+        with Store(self.db) as store, store.connection:
+            store.connection.execute('INSERT INTO lever_dispatches(job_id,destination,resume_sha256) VALUES(?,?,?)',
+                                     (self.job.id, self.job.url, 'a'*64))
+        record = self.call('GET', base+'record.json').json()
+        self.assertEqual(record['source'], 'historical_dispatch')
+        self.assertEqual(record['state'], 'awaiting_confirmation')
+        self.assertIsNone(record['answers'])
+        self.assertEqual(self.call('GET', base+'resume.pdf').status_code, 404)
+        payload = dict(state='confirmed', attest_verified=True, verified_without_reference=True)
+        self.assertEqual(self.call('POST', base+'reconcile', payload).status_code, 422)
+        payload['note'] = 'Fictional recruiter confirmed receipt by phone.'
+        self.assertEqual(self.call('POST', base+'reconcile', payload).status_code, 200)
+        record = self.call('GET', base+'record.json').json()
+        self.assertEqual(record['state'], 'confirmed')
+        self.assertEqual(record['source'], 'candidate_verification')
+        self.assertIsNone(record['receipt'])
+        self.assertEqual(record['note'], payload['note'])
+        self.assertEqual(self.call('GET', base+'resume.pdf').status_code, 404)
 
     def test_setup_status_distinguishes_name_targets_and_skills(self):
         legacy = self.call('GET', '/api/settings').json()

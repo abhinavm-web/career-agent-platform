@@ -32,11 +32,14 @@ from .application import MAX_TAILORED_FACTS, _reject_symlink_components, load_pa
 from .candidate import FactBank, SECTIONS
 from .capture_matching import linkedin_capture_matches, linkedin_current_id_conflicts
 from . import ai
+from . import answer_bank
 from .ai_history import AIHistory, DailyRequestLimit, run_recorded
 from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM, StageConflict
+from .delivery import DeliveryConflict, delivery_for_job, delivery_index, evidence, job_delivery, reconcile
 from .discovery import DiscoveryUnavailable, discover_isolated, validate_sites
+from .fit_evidence import board_evidence, source_terms
 from .models import CandidateProfile, Job, canonical_url
 from .h1b import H1BResearch, validate_lca_source
 from .uscis import USCISRecords
@@ -44,7 +47,8 @@ from .posting_checks import PostingChecks, check_posting, target as posting_targ
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
 from .scoring import constraint_evidence, contains_phrase, remote_evidence, score_job, title_level_evidence
-from .sponsor_evidence import load_filing_evidence, sponsorship_report
+from .sponsor_evidence import employer_key, load_filing_evidence
+from .sponsorship import h1b_policy, posting_assessment
 from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
 
@@ -224,13 +228,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return False
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
-                 records: tuple, workspace_revision: int, posting_checks: PostingChecks,
-                 discovery_observations: list[dict], constraints: dict, imported_history=None) -> dict:
+                 facts: list, csv_filings: list, workspace_revision: int, posting_checks: PostingChecks,
+                 discovery_observations: list[dict], constraints: dict, delivery, imported_history=None) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
         fit = score_job(job, profile) if profile is not None else None
-        sponsorship = sponsorship_report(job, records)
+        policy = h1b_policy(job.description)
+        sponsorship = posting_assessment(policy, bool(csv_filings))
         return {
             "id": job.id,
             "archive": store.archive_state(job.id),
@@ -248,14 +253,16 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "description_revision": store.description_revision(job.id),
             "description_correction": store.description_latest(job.id),
             "application_stage": store.stage_of(job.id),
-            "lever_dispatch_requested": bool(store.connection.execute(
-                "SELECT 1 FROM lever_dispatches WHERE job_id=?", (job.id,)).fetchone()),
+            "delivery": delivery,
+            "lever_dispatch_requested": bool(delivery and delivery['dispatched']),
             "fit_score": fit.score if fit is not None else None,
             "fit_reasons": list(fit.reasons) if fit is not None else [],
             "constraint_evidence": constraint_evidence(job, constraints),
             "title_level_evidence": title_level_evidence(job, constraints),
-            "sponsorship_status": sponsorship["status"],
-            "sponsorship_reason": sponsorship["reason"],
+            "decision_summary": {**board_evidence(job, facts), "posting_quotes": policy["quotes"],
+                                 "csv_filings": csv_filings},
+            "sponsorship_status": sponsorship.status,
+            "sponsorship_reason": sponsorship.reason,
             "imported_sponsorship_history": imported_history,
             "packet_available": packet is not None,
             "packet_stale": stale,
@@ -290,6 +297,43 @@ def create_app(config: DashboardConfig) -> FastAPI:
     @app.get('/assets/profile-review.js')
     def profile_review_script():
         return Response(assets('profile-review.js'), media_type='text/javascript')
+
+    @app.get('/assets/workspace-guide.js')
+    def workspace_guide_asset():
+        return Response(assets('workspace-guide.js'), media_type='text/javascript')
+
+    @app.get('/assets/application-answers.js')
+    def application_answers_script():
+        return Response(assets('application-answers.js'), media_type='text/javascript')
+
+    @app.exception_handler(answer_bank.AnswerConflict)
+    async def answer_conflict(request: Request, error: answer_bank.AnswerConflict):
+        return JSONResponse({'detail': str(error)}, status_code=409)
+
+    @app.get('/api/workspace/application-answers')
+    def profile_application_answers():
+        with Store(config.db_path) as store:
+            return answer_bank.profile_answers(store.connection)
+
+    @app.put('/api/workspace/application-answers')
+    async def save_profile_application_answer(request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            return answer_bank.save_profile(store.connection, data)
+
+    @app.get('/api/jobs/{job_id}/application-answers')
+    def role_application_answers(job_id: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            store.connection.execute('BEGIN')
+            return answer_bank.role_answers(store, job_id)
+
+    @app.put('/api/jobs/{job_id}/application-answers')
+    async def save_role_application_answer(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            return answer_bank.save_role(store, job_id, data)
 
     @app.get('/api/automation')
     def automation_status():
@@ -543,7 +587,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         from .resume_import import extract_resume
         data = await request.json()
         if not isinstance(data, dict) or set(data) != {"filename", "content"}:
-            raise ValueError("Choose a résumé file to extract locally")
+            raise ValueError("Choose a rÃ©sumÃ© file to extract locally")
         text = await run_in_threadpool(extract_resume, data["filename"], data["content"])
         return {"text": text}
 
@@ -551,7 +595,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
     async def ai_resume_suggestions(request: Request):
         data = await request.json()
         if not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'resume_text', 'acknowledged'} or data['acknowledged'] is not True:
-            raise ValueError('Confirm sending the résumé text to the selected provider')
+            raise ValueError('Confirm sending the rÃ©sumÃ© text to the selected provider')
         fingerprint = route_consent_fingerprint(data)
         if not ai_lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail='An AI request is already running')
@@ -1138,7 +1182,22 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 profile = None
         else:
             profile = None
-        records = load_filing_evidence(config.filings_path)
+        facts = [fact for fact in workspace['facts'] if fact['verified_by_candidate']]
+        if not workspace['revision'] and config.facts_path:
+            try:
+                facts = [{**asdict(fact), 'id': fact.fact_id} for fact in FactBank.load(config.facts_path).facts]
+            except (OSError, ValueError):
+                facts = []
+        facts = [{**fact, 'keywords': list(dict.fromkeys(fact['keywords'] or source_terms(fact['statement'])))}
+                 for fact in facts]
+        periods = {}
+        for record in load_filing_evidence(config.filings_path):
+            years = periods.setdefault((record.employer, record.source_type), [])
+            years.append(record.fiscal_year)
+        csv_filings = {}
+        for (entity, source), years in periods.items():
+            csv_filings.setdefault(employer_key(entity), []).append({
+                'source': source, 'employer': entity, 'first_year': min(years), 'last_year': max(years)})
         with Store(config.db_path) as store:
             research = H1BResearch(store)
             posting_checks = research.posting_checks
@@ -1146,9 +1205,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
             jobs, next_before = store.job_page(limit=limit, before=before, include_archived=include_archived)
             observations = store.discovery_observations([job.id for job in jobs])
             imported_history = research.board_history(jobs)
+            deliveries = delivery_index(store.connection.execute(
+                'SELECT * FROM delivery_status WHERE delivery_state IS NOT NULL'))
             items = [
-                job_view(store, job, profile, records, workspace["revision"], posting_checks,
+                job_view(store, job, profile, facts, csv_filings.get(employer_key(job.company), []),
+                         workspace["revision"], posting_checks,
                          observations.get(job.id, []), workspace["profile"] if workspace["revision"] else {},
+                         job_delivery(deliveries, job.id, job.url),
                          imported_history.get(job.id))
                 for job in jobs
             ]
@@ -1161,9 +1224,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
             raise HTTPException(status_code=422, detail="Confirm sending this search to external job sources")
         query, location, results = data.get("query"), data.get("location"), data.get("results", 20)
         if not isinstance(query, str) or not 1 <= len(query.strip()) <= 200:
-            raise HTTPException(status_code=422, detail="Search query must be 1–200 characters")
+            raise HTTPException(status_code=422, detail="Search query must be 1â€“200 characters")
         if not isinstance(location, str) or not 1 <= len(location.strip()) <= 240:
-            raise HTTPException(status_code=422, detail="Location must be 1–240 characters")
+            raise HTTPException(status_code=422, detail="Location must be 1â€“240 characters")
         if type(results) is not int or not 1 <= results <= 100:
             raise HTTPException(status_code=422, detail="Results per source must be an integer from 1 to 100")
         fetch_details = data.get('fetch_details', False)
@@ -1460,7 +1523,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
             if (not isinstance(selection, list) or not 1 <= len(selection) <= MAX_TAILORED_FACTS
                     or not all(isinstance(item, str) and item in verified for item in selection)
                     or len(set(selection)) != len(selection)):
-                raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
+                raise ValueError(f'Select 1â€“{MAX_TAILORED_FACTS} distinct verified career facts')
         if section_order is not None and (not isinstance(section_order, list) or len(section_order) != len(SECTIONS)
                 or not all(isinstance(item, str) and item in SECTIONS for item in section_order)
                 or len(set(section_order)) != len(SECTIONS) or selection is None):
@@ -1488,7 +1551,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         if type(data['workspace_revision']) is not int or data['workspace_revision'] < 0:
             raise ValueError('Invalid profile revision')
         if not isinstance(data['fact_ids'], list):
-            raise ValueError(f'Select 1–{MAX_TAILORED_FACTS} distinct verified career facts')
+            raise ValueError(f'Select 1â€“{MAX_TAILORED_FACTS} distinct verified career facts')
         if 'section_order' in data and not isinstance(data['section_order'], list):
             raise ValueError('Choose each resume section exactly once')
         if 'job_description_revision' in data and (type(data['job_description_revision']) is not int or data['job_description_revision'] < 0):
@@ -1624,6 +1687,33 @@ def create_app(config: DashboardConfig) -> FastAPI:
         from .lever_submit import submit
         return await run_in_threadpool(submit, config.db_path, _id(job_id), await request.json())
 
+    @app.get("/api/jobs/{job_id}/delivery/{artifact}")
+    def delivery_download(job_id: str, artifact: str):
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+            if artifact == 'record.json':
+                record = evidence(store, job_id)
+                if record:
+                    return Response(json.dumps(record, ensure_ascii=False, indent=2), media_type='application/json',
+                                    headers={'Content-Disposition': f'attachment; filename="delivery-{job_id}.json"'})
+            elif artifact == 'resume.pdf':
+                row = store.connection.execute('SELECT pdf FROM delivery_records WHERE job_id=?', (job_id,)).fetchone()
+                if row and row['pdf'] is not None:
+                    return Response(row['pdf'], media_type='application/pdf',
+                                    headers={'Content-Disposition': f'attachment; filename="dispatch-{job_id}.pdf"'})
+        raise HTTPException(status_code=404, detail='This delivery artifact is unavailable.')
+
+    @app.post("/api/jobs/{job_id}/delivery/reconcile")
+    async def reconcile_delivery(job_id: str, request: Request):
+        data = await request.json()
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            try:
+                reconcile(store, job_id, data)
+            except DeliveryConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from error
+            return {'delivery': delivery_for_job(store, job)}
+
     @app.post("/api/jobs/{job_id}/submitted")
     async def mark_submitted(job_id: str, request: Request):
         data = await request.json()
@@ -1653,6 +1743,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 raise HTTPException(status_code=412, detail="Human approval of the current packet is required first")
             if store.stage_of(job_id) == "submitted":
                 raise HTTPException(status_code=409, detail="Job is already recorded as submitted")
+            delivery = delivery_for_job(store, store.get_job(job_id))
+            if delivery and (delivery['dispatched'] or delivery['state'] == 'duplicate'):
+                raise HTTPException(status_code=409, detail="Reconcile the existing dispatch in Application delivery.")
             store.connection.execute('''INSERT INTO applications(job_id,stage,receipt)
                 VALUES(?,'submitted',?) ON CONFLICT(job_id) DO UPDATE SET
                 stage='submitted',receipt=excluded.receipt,updated_at=CURRENT_TIMESTAMP''',
