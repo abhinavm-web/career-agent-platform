@@ -1,5 +1,6 @@
 """Fictional end-to-end coverage for the redesigned workspace."""
 import os
+import re
 import socket
 import tempfile
 import threading
@@ -37,7 +38,7 @@ class WorkspaceRedesignTests(unittest.TestCase):
                         for viewport in ({'width': 1440, 'height': 900}, {'width': 390, 'height': 844}, {'width': 320, 'height': 720}):
                             page = browser.new_page(viewport=viewport)
                             page.goto(f'http://127.0.0.1:{port}')
-                            expect(page.get_by_role('heading', name='Your next move, in focus.')).to_be_visible()
+                            expect(page.get_by_role('heading', name='Search overview')).to_be_visible()
                             expect(page.locator('#home-recommendations')).to_contain_text('Fictional Analyst')
                             page.get_by_role('button', name='Explore opportunities').click()
                             expect(page.get_by_role('button', name='View Fictional Analyst at Fictional Co')).to_be_visible()
@@ -62,7 +63,10 @@ class WorkspaceRedesignTests(unittest.TestCase):
                             expect(page.get_by_text('Your application preview')).to_be_visible()
                             self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), viewport['width'])
                             page.get_by_role('button', name='Exit application studio').click()
-                            expect(page.locator('#job-list')).to_be_visible()
+                            if viewport['width'] > 1050:
+                                expect(page.locator('#job-list')).to_be_visible()
+                            else:
+                                expect(page.locator('.compact-back')).to_be_visible()
                             page.get_by_role('tab', name='Fit').click()
                             expect(page.get_by_role('button', name='Compare requirements')).to_be_visible()
                             page.get_by_role('tab', name='Sponsorship').click()
@@ -72,18 +76,23 @@ class WorkspaceRedesignTests(unittest.TestCase):
                             expect(page.get_by_role('button', name='Track application progress')).to_be_visible()
                             page.get_by_role('tab', name='Application').press('Home')
                             expect(page.get_by_role('tab', name='Overview')).to_be_focused()
-                            page.get_by_role('button', name='Application tracker', exact=True).click()
+                            def navigate(label):
+                                if page.locator('#menu-toggle').is_visible():
+                                    page.locator('#menu-toggle').click()
+                                page.get_by_role('button', name=label, exact=True).click()
+
+                            navigate('Application tracker')
                             page.get_by_label('Layout').select_option('board')
                             column = page.get_by_role('region', name='Discovered opportunities')
                             expect(column).to_contain_text('Fictional Analyst')
-                            column.get_by_role('button').click()
+                            column.get_by_role('button', name=re.compile('Fictional Analyst')).click()
                             expect(page.locator('#crm-detail')).to_contain_text('Fictional Analyst')
                             self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), viewport['width'])
                             page.get_by_label('Layout').select_option('list')
-                            page.get_by_role('button', name='Career profile', exact=True).click()
+                            navigate('Career profile')
                             page.get_by_role('button', name='Import a résumé').click()
                             expect(page.locator('#resume-file')).to_be_focused()
-                            page.get_by_role('button', name='Settings & data').click()
+                            navigate('Settings & data')
                             expect(page.get_by_role('heading', name='Backup & privacy')).to_be_visible()
                             self.assertEqual(page.evaluate('getComputedStyle(document.body).backgroundColor'), 'rgb(246, 245, 243)')
                             self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), viewport['width'])

@@ -198,7 +198,7 @@
     }
     const fact = summary.verified_fact;
     field("Verified evidence", fact?.statement || "No verified fact linked",
-      fact && [fact.section, fact.id, fact.source_note || "Source unknown"].join(" · "));
+      fact && [fact.section, fact.id].join(" · "));
     field("Match reason", fact ? "Shared posting terms: " + fact.matched_terms.join(", ")
       : job.fit_reasons?.[0] || "Unknown");
     const gap = summary.requirement_to_verify;
@@ -1950,7 +1950,9 @@
       submitted.append(button("Record confirmed submission", "button", () => markSubmitted(packet.packet_sha256, receipt.value, consentBox.checked)));
       card.append(submitted);
     }
-    if (job.application_stage === "submitted") card.append(node("p", "", "Submission recorded. See Application delivery for the receipt."));
+    if (job.application_stage === "submitted") card.append(node("p", "", job.delivery?.dispatched
+      ? "Submission recorded. See Application delivery for the receipt."
+      : "Submission recorded from your attestation. See Application delivery for the receipt."));
     container.append(card);
   }
 
@@ -2499,7 +2501,7 @@
     heading.append(identity, chip(data.stage, "teal"));
     panel.append(heading);
     if (data.delivery) panel.append(deliveryPanel(item.id, data.delivery));
-    else panel.append(node("p", "muted", data.application_submitted
+    if (!data.delivery || (data.application_submitted && !data.delivery.dispatched)) panel.append(node("p", "muted", data.application_submitted
       ? "Submission recorded from your independent attestation. Pipeline updates do not change that receipt."
       : "This application has not been recorded as submitted. Advancing the hiring pipeline requires a separate manual application submission."));
 

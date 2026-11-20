@@ -132,8 +132,8 @@ class DashboardTests(unittest.TestCase):
             load.assert_called_once()
             model.assert_not_called()
         fact = result['verified_fact']
-        self.assertEqual((fact['id'], fact['source_note'], fact['matched_terms']),
-                         ('experience-01', bank['facts'][1]['source_note'], ['Python', 'AWS']))
+        self.assertEqual((fact['id'], fact['matched_terms']), ('experience-01', ['Python', 'AWS']))
+        self.assertNotIn('source_note', fact)
         self.assertEqual(result['requirement_to_verify'], {'quote': '- Rust', 'category': 'required', 'term_link': False})
         from career_agent.workspace import CandidateWorkspace
         imported = self.call('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']

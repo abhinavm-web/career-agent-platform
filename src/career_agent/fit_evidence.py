@@ -149,7 +149,7 @@ def board_evidence(job, facts):
     if matches:
         _, _, fact_id, terms = max(matches, key=lambda match: match[:2])
         fact = next(item for item in linked if item['id'] == fact_id)
-        evidence = {key: fact[key] for key in ('id', 'statement', 'section', 'source_note')}
+        evidence = {key: fact[key] for key in ('id', 'statement', 'section')}
         evidence['matched_terms'] = terms
     # A term match is only a lead, even for a required qualification.
     gap = max((row for row in rows if row['category'] in ('required', 'preferred', 'unspecified')

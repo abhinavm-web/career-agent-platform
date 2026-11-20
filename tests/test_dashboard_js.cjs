@@ -865,7 +865,8 @@ test("imported employer history is separate from posting policy", async () => {
   assert.match(h.get("detail-panel").textContent, /Decision summary/);
   assert.match(h.get("detail-panel").textContent, /Posting excludes sponsorship/);
   for (const view of [h.get("job-list"), h.get("detail-panel")]) {
-    for (const value of ["Built a Python tool.", "py-01", "Reviewed résumé, project 2", "Shared posting terms: Python",
+    assert.doesNotMatch(view.textContent, /Reviewed résumé, project 2/);
+    for (const value of ["Built a Python tool.", "py-01", "Shared posting terms: Python",
       "Rust experience", "No visa sponsorship for this role.", "2024-05-12 (partial)",
       "Active check Check is stale · 2024-06-01", "Legal Corp · DOL LCA · FY 2021–2023",
       "candidate-linked entity (unverified)"]) assert.ok(view.textContent.includes(value), value);
