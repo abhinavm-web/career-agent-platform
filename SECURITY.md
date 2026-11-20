@@ -3,7 +3,7 @@
 This is a public repository. Never commit candidate resumes, identity information, government identifiers, emails, addresses, access tokens, cookies, passwords or browser sessions.
 
 - .gitignore excludes local databases, private resumes and .env files.
-- The MVP sends no job applications and has no browser automation.
+- The browser companion can activate a recognized Lever submission control following an explicit, single-use review in the active tab. See [the application workflow](docs/BROWSER_COMPANION.md#apply-with-lever).
 - Optional discovery is explicitly invoked; respect provider policies and limits.
 - Treat job descriptions as untrusted data, not executable instructions.
 - Recording a submission requires explicit user attestation and a receipt/reference.
@@ -33,7 +33,7 @@ The dashboard is accessible only at 127.0.0.1, with a random per-process X-Sessi
 
 The above mitigations reduce accidental cross-site and DNS-rebinding exposure; they do **not** provide production-ready authentication. A local process running under the same user account may still access unencrypted files or potentially use the loopback interface. Do not expose ports publicly, use reverse proxies to share the service, or store highly sensitive files on a shared machine. Imported job text is treated as untrusted and inserted into the UI using safe DOM text nodes, never HTML execution.
 
-Review decisions are appended to local SQLite. Draft regeneration invalidates previous approval for the new fingerprint. Submissions are *not* sent through the app; users must manually attest to an external employer confirmation. See docs/DASHBOARD.md.
+Review decisions are appended to local SQLite. Draft regeneration invalidates previous approval for the new fingerprint. Users must attest to an external employer confirmation. See docs/DASHBOARD.md.
 
 
 ## R1 editable career facts
@@ -60,3 +60,10 @@ This guard does not detect every secret or establish that all history, commit
 attribution, pull-request text, caches or remote copies are clean. Review those
 surfaces separately when auditing an existing public repository. Use a GitHub
 noreply address for future Git attribution when personal email privacy matters.
+
+
+## Browser application and account boundaries
+
+The optional companion operates in the current browser profile. It grants temporary access to the active tab and restricts application assistance to a recognized HTTPS Lever host, posting path, form, and visible submit control. The popup displays candidate answers and selected filenames. The final approval binds the tab, document, posting, form state and selected File objects. The provider owns its page scripts, validation, uploads and response. A requested click is insufficient evidence of receipt. Verify the selected document on the employer’s page before approving.
+
+Employer sign-up and sign-in use the browser’s password manager. The companion opens the manager’s settings. The browser profile and its sync policy govern credential storage, access, and deletion. Passwords and session cookies are outside the dashboard, model prompts and application backups.

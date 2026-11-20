@@ -8,7 +8,7 @@ Working name only. Final product branding awaits trademark clearance.
 
 - Imports CSV job listings and deduplicates them by stable normalized URLs.
 - Optionally discovers US jobs via JobSpy through an explicit CLI command or the dashboard search form.
-- Offers an optional [browser companion](docs/BROWSER_COMPANION.md) to capture a selected job page for review before saving locally.
+- Offers an optional [browser companion](docs/BROWSER_COMPANION.md) to capture postings, fill contact details and submit a reviewed Lever application with one-time approval. Employer account credentials use the browser’s password manager.
 - Runs [saved JobSpy searches automatically and persists LangGraph draft/review workflows](docs/AUTOMATION.md), with restart recovery, run history and pause/resume controls.
 - Scores title, verified profile skills, and location against job descriptions, with an explanation and candidate skills not mentioned in the posting; this is not a qualification-gap assessment.
 - Flags apparent sponsorship exclusions, sponsorship claims and source-backed historical employer records separately. A past LCA is **not** an H-1B sponsorship offer.
@@ -60,7 +60,7 @@ and submit it. You can also add an opportunity manually.
 4. Open a role and use **Overview**, **Fit**, **Sponsorship**, and **Application**
    to review evidence and prepare a draft. Create and review a draft from verified facts. Approve the current version before
    exporting. Apply yourself on the employer site, then record your actual
-   submission in the tracker. The app does not submit applications.
+   submission in the tracker. On supported Lever forms, the browser companion can activate submission after your final review and approval.
 
 For PDF export, install the optional renderer and its browser:
 

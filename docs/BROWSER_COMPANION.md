@@ -1,8 +1,7 @@
-# Browser job capture
+# Browser companion
 
 The optional Chromium companion copies the current page's title, URL and either text you
-explicitly select or a structured job description you explicitly request. It does not browse in the background, contact a server, fill
-forms or submit applications. The clipboard is accessible to other local apps;
+explicitly select or a structured job description you explicitly request. Capture runs when you click a capture control. The clipboard is accessible to other local apps;
 page URLs and selected text may contain private information. Review and remove
 anything sensitive before saving.
 
@@ -29,3 +28,14 @@ The extension requests `activeTab`, `scripting`, and `clipboardWrite`; access to
 the active page is temporary and only used on an explicit button click. It does
 not request broad website permissions or persist captured text in extension
 storage. See [Chrome's activeTab documentation](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab).
+
+
+## Apply with Lever
+
+Open the saved opportunity’s Application tab and choose **Open application form** for a supported Lever URL. For listings from other sources, follow the employer’s application link. On a Lever application page, the companion can fill empty name and email fields. Choose your reviewed résumé on the employer’s page and answer its questions. Choose **Review this application** to inspect the role, destination, form answers and selected filenames in the popup. **Approve and submit this application** activates the employer’s visible submit control once for that review. Complete any verification on the employer’s page. Use the existing tracker to record submission when you have the employer’s confirmation.
+
+Supported forms are hosted at jobs.lever.co and jobs.eu.lever.co and use the recognized application form and button. Review is bound to the tab, document, form, role, answers and file selection for five minutes. Closing the popup requires a new review. When the employer’s response is unclear, check for a confirmation before taking further action. Uploaded files and answers are subject to the employer’s own page behavior, including autosave and file upload.
+
+## Employer account vault
+
+Create an account on the employer’s site when required. Use the browser’s suggested password or enter one there and accept the browser’s save prompt. **Open password vault** takes you to the current browser profile’s password manager to add, update or remove a login. Chrome and Edge handle credentials, autofill, device authentication and optional sync. Check the site and account shown when choosing a saved login on shared recruiting domains. Career Agent’s extension permissions provide no access to the password manager’s entries. Keep employer account creation, MFA and recovery in the employer’s own flow.

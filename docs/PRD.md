@@ -42,7 +42,7 @@ The core promise is **better career decisions and more qualified conversations w
 | Safe, legal integrations | Prefer approved APIs and official career pages; comply with provider terms, rate limits, and applicable law. No CAPTCHA or access-control bypasses. |
 | Incremental delivery | Ship narrowly scoped, testable vertical slices; avoid speculative frameworks and claims that roadmap work is already live. |
 
-**Automation permission rule:** Discovery and analysis may become opt-in automated background tasks. External application submission and recruiter outreach remain human-authorized on a per-action basis. Current code does **not** submit or send anything. Any future supervised submission capability requires separate product, security, and compliance approval; this PRD alone is not permission to implement it.
+**Automation permission rule:** Discovery and analysis may become opt-in automated background tasks. External application submission and recruiter outreach remain human-authorized on a per-action basis. The optional browser companion supports a candidate-approved submission on a recognized Lever form. Any future supervised submission capability requires separate product, security, and compliance approval; this PRD alone is not permission to implement it.
 
 ## 3. Users, jobs to be done, and initial market
 
@@ -203,7 +203,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - Review flow distinguishes **drafted → needs changes → approved for manual submission → externally submitted/attested**. "Approved" must never be displayed as "submitted".
 - Provide side-by-side review of documents and any draft responses to standard forms.
 - Treat work-authorization, citizenship, disability, demographic disclosures, compensation expectations and legal declarations as sensitive questions to be answered explicitly by the applicant, not guessed by an agent.
-- Current release uses **manual external submission** only. If future ATS assistance is approved, require a per-application authorization, final preview, compliant integration path, and verifiable receipt. CAPTCHA, terms, or required human authentication must never be bypassed.
+- The dashboard tracks candidate-confirmed submissions. The optional browser companion supports a final preview and explicit approval on Lever-hosted forms. If future ATS assistance is approved, require a per-application authorization, final preview, compliant integration path, and verifiable receipt. CAPTCHA, terms, or required human authentication must never be bypassed.
 - Disallow overwriting a submitted packet; retain its reviewed, submitted version. A regenerated packet needs a fresh approval before any use.
 
 **Acceptance criteria**
@@ -212,7 +212,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - A job becomes "submitted" only on a separately supported, verified receipt event or a clear manual attestation that the user already submitted externally.
 - Post-submission application materials and decision history are preserved.
 
-**Today:** Local drafts, version-bound review approvals, append-only review events, and manual receipt attestations exist; no external ATS submission exists.
+**Today:** Local drafts, version-bound review approvals, append-only review events, and manual receipt attestations exist. The browser companion supports candidate-approved Lever submissions.
 
 ### F07 — Application CRM, pipeline, and next actions (P0/P1)
 

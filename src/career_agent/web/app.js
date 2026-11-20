@@ -1007,6 +1007,16 @@
     const actions = node("div", "button-row");
     actions.append(safeLink("View original posting", job.url));
     actions.append(button(job.application_stage === "submitted" ? "View application" : "Prepare application", "button button-primary", () => activateTab("application", true)));
+    if (job.application_stage !== "submitted") {
+      const target = /^https:\/\/jobs(?:\.eu)?\.lever\.co\/[a-z0-9_-]+\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:\/apply)?\/?(?:[?#].*)?$/i.test(job.url)
+        ? new URL(job.url) : null;
+      const assistant = section("Apply on the employer’s site");
+      if (target) target.pathname = target.pathname.replace(/(?:\/apply)?\/?$/, "/apply");
+      assistant.append(safeLink(target ? "Open Lever application form" : "Open posting to apply", target?.href || job.url),
+        node("p", "muted", "For a Lever application, open the Career Agent companion in Chrome or Edge to fill contact details. Attach your reviewed resume on the employer’s page, then choose Review this application in the companion."),
+        node("p", "muted", "For an employer account, use the browser’s save-password prompt during sign-up. Choose Open password vault in the companion to manage saved logins."));
+      panes.application.append(assistant);
+    }
     const openJobAI = () => {
       if (byId("ai-job").value !== job.id) {
         byId("ai-results").replaceChildren();

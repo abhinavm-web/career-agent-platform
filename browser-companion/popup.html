@@ -1,3 +1,15 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Career Agent job capture</title><link rel="stylesheet" href="popup.css"></head>
-<body><main><h1>Capture a job</h1><p>Select the job description on the page, or copy a single structured job description if the page provides one. Page content may be incomplete or describe a different job. Review it in Career Agent before saving.</p><button id="capture" type="button">Copy selected job</button> <button id="capture-structured" type="button">Copy structured description</button><p id="status" role="status"></p><p>The clipboard contains the page URL and copied text, which can include private information. Nothing is sent automatically.</p><script src="popup.js"></script></main></body></html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Career Agent companion</title><link rel="stylesheet" href="popup.css"></head>
+<body><main><h1>Career Agent</h1>
+<section><h2>Apply with Lever</h2>
+<p>Complete the employer’s form and attach your reviewed résumé. Preview the application here before sending it.</p>
+<details><summary>Fill contact details</summary>
+<form id="fill-contact"><label>Full name<input name="fullName" autocomplete="name" maxlength="200" required></label>
+<label>Email<input type="email" name="email" autocomplete="email" maxlength="254" required></label>
+<button type="submit">Fill empty contact fields</button></form></details>
+<button id="review-application" type="button">Review this application</button>
+<div id="application-preview"></div><button id="send-application" type="button" hidden>Approve and submit this application</button>
+<p id="application-status" role="status"></p></section>
+<section><h2>Account credentials</h2><p>When you create an employer account, choose Save in your browser’s password prompt. Your browser profile controls storage and sync.</p>
+<button type="button" id="open-vault">Open password vault</button></section>
+<h2>Capture a job</h2><p>Select the job description on the page, or copy a single structured job description if the page provides one. Page content may be incomplete or describe a different job. Review it in Career Agent before saving.</p><button id="capture" type="button">Copy selected job</button> <button id="capture-structured" type="button">Copy structured description</button><p id="status" role="status"></p><p>The clipboard contains the page URL and copied text, which can include private information. Nothing is sent automatically.</p><script src="popup.js"></script><script src="application.js"></script></main></body></html>
