@@ -821,6 +821,13 @@
             comparison.append(posting, resume);
             item.append(comparison, node("strong", "", "Assessment"), node("p", "", row.difference));
             if (row.next_step) item.append(node("strong", "", "Next step"), node("p", "", row.next_step));
+            if (row.first_assessment) {
+              const prior = node("details"); prior.open = true;
+              prior.append(node("summary", "", "AI assessments differ · compare the evidence"),
+                node("p", "", labels[row.first_assessment.status] + " · " + row.first_assessment.difference));
+              if (row.first_assessment.resume_quote) prior.append(node("blockquote", "", row.first_assessment.resume_quote));
+              item.append(prior);
+            }
             group.append(item);
           }
           results.append(group);

@@ -91,7 +91,8 @@ def audited_comparison(description, resume_text, complete):
         if 'resume_indices' not in audit:
             continue
         status = labels[audit['status']]
-        if row['status'] != status:
+        if status != row['status']:
+            row['first_assessment'] = {key: row[key] for key in ('status', 'difference', 'resume_quote')}
             row['next_step'] = {
                 'partial': 'Review the missing details above. Add a specific example only if you can substantiate it.',
                 'missing_evidence': 'Check for a project or credential that demonstrates this specific requirement.',

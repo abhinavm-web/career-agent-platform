@@ -42,6 +42,7 @@ class ResumeGapTests(unittest.TestCase):
 
         row, = audited_comparison('Requirements\n- Build reporting services at production scale.', self.resume, complete)
         self.assertEqual(row['status'], 'partial')
+        self.assertEqual(row['first_assessment']['status'], 'covered')
         self.assertIn('scale', row['difference'])
         self.assertEqual(row['resume_quote'], self.resume)
         self.assertNotIn('Retain', row['next_step'])
