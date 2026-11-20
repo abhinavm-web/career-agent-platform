@@ -212,7 +212,7 @@ Priority key: **P0** = necessary for a useful trustworthy candidate product; **P
 - A job becomes "submitted" only on a separately supported, verified receipt event or a clear manual attestation that the user already submitted externally.
 - Post-submission application materials and decision history are preserved.
 
-**Today:** Local drafts, version-bound review approvals, append-only review events, and manual receipt attestations exist; no external ATS submission exists.
+**Today:** Local drafts, version-bound review approvals, append-only review events, and manual receipt attestations exist. The browser companion supports candidate-approved Lever submissions.
 
 ### F07 — Application CRM, pipeline, and next actions (P0/P1)
 
