@@ -1,4 +1,4 @@
-"""Local-only dashboard with explicitly requested JobSpy discovery; no submissions.
+"""Local dashboard with explicitly requested discovery and supervised Lever submission.
 
 Threat model: a single trusted user at 127.0.0.1. This is NOT a hosted SaaS.
 A random per-process session token protects API reads and writes; host and Origin
@@ -62,6 +62,7 @@ class DashboardConfig:
     profile_path: Path | None = None
     facts_path: Path | None = None
     filings_path: Path | None = None
+    live_apply: bool = False
 
 
 def _id(value: str) -> str:
@@ -132,7 +133,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                     limit = (
                         10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
                         5 * 1024 * 1024 if request.url.path == "/api/workspace/import-portable" else
-                        3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" else
+                        3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" or re.fullmatch(r'/api/jobs/[a-f0-9]{16}/lever-submit', request.url.path) else
                         512 * 1024 if re.fullmatch(r'/api/jobs/[a-f0-9]{16}/(?:description|capture-preview)', request.url.path) else
                         WORKSPACE_BODY_LIMIT
                         if request.url.path == "/api/workspace" and request.method == "PUT"
@@ -247,6 +248,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "description_revision": store.description_revision(job.id),
             "description_correction": store.description_latest(job.id),
             "application_stage": store.stage_of(job.id),
+            "lever_dispatch_requested": bool(store.connection.execute(
+                "SELECT 1 FROM lever_dispatches WHERE job_id=?", (job.id,)).fetchone()),
             "fit_score": fit.score if fit is not None else None,
             "fit_reasons": list(fit.reasons) if fit is not None else [],
             "constraint_evidence": constraint_evidence(job, constraints),
@@ -1022,7 +1025,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                                                                 (config.facts_path and not legacy_facts_ok))),
             "filings_configured": config.filings_path is not None,
             "runtime": "local_single_user",
-            "application_submission_enabled": False,
+            "application_submission_enabled": config.live_apply,
         }
 
     @app.get("/api/workspace")
@@ -1613,6 +1616,13 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return Response(content, media_type='text/plain; charset=utf-8', headers={
             'Content-Disposition': f'attachment; filename="cover-note-{job_id}-{packet_sha256[:12]}.txt"',
         })
+
+    @app.post("/api/jobs/{job_id}/lever-submit")
+    async def submit_with_career_agent(job_id: str, request: Request):
+        if not config.live_apply:
+            raise HTTPException(status_code=403, detail='Desktop submission is disabled on this server.')
+        from .lever_submit import submit
+        return await run_in_threadpool(submit, config.db_path, _id(job_id), await request.json())
 
     @app.post("/api/jobs/{job_id}/submitted")
     async def mark_submitted(job_id: str, request: Request):
