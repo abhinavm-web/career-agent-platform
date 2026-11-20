@@ -74,6 +74,8 @@ class Job:
 
     @property
     def id(self) -> str:
+        if self.source == "external_tracker" and self.url.startswith("urn:career-agent:tracker:"):
+            return self.url.rsplit(":", 1)[1]
         return hashlib.sha256(canonical_url(self.url).encode("utf-8")).hexdigest()[:16]
 
     @classmethod

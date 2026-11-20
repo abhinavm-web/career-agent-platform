@@ -138,6 +138,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
                         10 * 1024 * 1024 if request.url.path in {"/api/h1b/import", "/api/h1b/uscis/import"} else
                         5 * 1024 * 1024 if request.url.path == "/api/workspace/import-portable" else
                         3 * 1024 * 1024 if request.url.path == "/api/workspace/resume-extract" or re.fullmatch(r'/api/jobs/[a-f0-9]{16}/lever-submit', request.url.path) else
+                        2 * 1024 * 1024 if request.url.path == "/api/crm/import" else
                         512 * 1024 if re.fullmatch(r'/api/jobs/[a-f0-9]{16}/(?:description|capture-preview)', request.url.path) else
                         WORKSPACE_BODY_LIMIT
                         if request.url.path == "/api/workspace" and request.method == "PUT"
@@ -1770,6 +1771,12 @@ def create_app(config: DashboardConfig) -> FastAPI:
                         media_type="application/json", headers={
                             "Content-Disposition": 'attachment; filename="career-tracker-history.json"',
                         })
+
+    @app.post("/api/crm/import")
+    def import_external_applications(body: dict):
+        from .tracker_import import import_tracker
+        with Store(config.db_path) as store:
+            return import_tracker(ApplicationCRM(store), body.get("csv"))
 
     @app.get("/api/crm")
     def crm_summary():

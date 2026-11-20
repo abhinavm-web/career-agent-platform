@@ -20,6 +20,8 @@ All private candidate files should be outside the public repository or under a g
 
 ### Daily application workflow
 
+In **Application tracker → Import outside applications**, choose the CSV exported from your spreadsheet. The tracker keeps the original application date, employer, role, channel, status and evidence, including approximate dates and unspecified roles. Choose **Application source → Outside applications** to see that history or **All sources** to see it alongside saved opportunities. Outside records support contacts, stage changes and follow-ups. Reimport recognizes the same company, role, date, channel and evidence, even if the status changed. Editing those identifying fields creates a separate entry.
+
 1. Open **Opportunities** and select a role. Read the linked career fact, requirement to verify, posting date, availability check and sponsorship evidence. **Fit** and **Sponsorship** show the underlying details.
 2. Open **Career profile → Application answer bank** to save frequently used responses. In the role's **Application → Application form answers**, enter the exact employer question and confirm the saved answer or write a role-specific response.
 3. Open **Tracker** after a delivery attempt. If the employer confirms receipt outside the app, record the reference or how you verified the outcome. The delivery record retains the available evidence.

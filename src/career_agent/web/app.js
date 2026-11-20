@@ -2387,7 +2387,7 @@
     const outcomes = summary.outcomes;
     if (!outcomes) return;
     const milestones = node("div", "crm-stage-counts");
-    for (const [key, label] of [["submitted", "Confirmed submissions"], ["interviewed", "Interview recorded"],
+    for (const [key, label] of [["submitted", "Recorded applications"], ["interviewed", "Interview recorded"],
       ["offered", "Offer recorded"], ["accepted", "Accepted offer"]]) {
       const metric = node("div", "crm-count");
       metric.append(node("strong", "", outcomes[key]), node("small", "", label));
@@ -2396,9 +2396,9 @@
     outcomePanel.append(milestones);
     if (outcomes.submitted) {
       outcomePanel.append(node("p", "muted", "Interview rate: " + outcomes.interview_rate + "% · Offer rate: " +
-        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " confirmed submissions."));
+        outcomes.offer_rate + "% · Denominator: " + outcomes.submitted + " recorded applications, including outside applications."));
     } else {
-      outcomePanel.append(node("p", "muted", "Rates appear after a submission is confirmed. Drafts and approvals are excluded."));
+      outcomePanel.append(node("p", "muted", "Record or import an application to see outcome rates. Drafts and approvals are excluded."));
     }
     outcomePanel.append(node("p", "muted", "All-time candidate-recorded milestones, counted once per opportunity. Later outcomes retain earlier milestones; skipped stages are not inferred. These records are not independently verified or predictions."));
   }
@@ -2412,9 +2412,10 @@
     const jobs = state.crmSummary?.job_stages || [];
     const search = byId("crm-search").value.trim().toLowerCase();
     const stage = byId("crm-stage-filter").value;
+    const outsideOnly = byId("crm-source-filter").value === "external";
     const priority = byId("crm-priority-filter").value;
     const visible = jobs.filter((job) =>
-      (!stage || job.stage === stage) && (!priority || (job.priority || "none") === priority) &&
+      (!outsideOnly || job.external_date) && (!stage || job.stage === stage) && (!priority || (job.priority || "none") === priority) &&
       (!search || [job.title, job.company, job.location].join(" ").toLowerCase().includes(search))
     );
     byId("crm-result-count").textContent = visible.length + " of " + jobs.length + " opportunities";
@@ -2425,8 +2426,8 @@
     if (!visible.length) { list.append(node("p", "loading", "No opportunities match these filters.")); return; }
     const stages = [
       ["Discovered", ["discovered"]], ["Saved", ["saved", "shortlisted"]],
-      ["Applied", ["applied"]], ["Interviewing", ["screening", "assessment", "interview"]],
-      ["Offers", ["offer", "accepted"]], ["Closed", ["archived", "rejected", "withdrawn"]],
+      ["Applied", ["applied", "under_review"]], ["Interviewing", ["screening", "assessment", "interview"]],
+      ["Offers", ["offer", "accepted"]], ["Closed", ["archived", "rejected", "withdrawn", "closed"]],
       ["Other", []]
     ];
     const columns = new Map();
@@ -2453,7 +2454,8 @@
       const chips = node("div", "job-item-bottom");
       chips.append(chip(job.stage, "teal"));
       if (job.priority && job.priority !== "none") chips.append(chip(job.priority + " priority", ""));
-      if (job.delivery) chips.append(chip(deliveryLabel(job.delivery), job.delivery.state === "confirmed" ? "teal" : "amber"));
+      if (job.external_date) chips.append(chip("Applied externally · " + job.external_date, ""));
+      else if (job.delivery) chips.append(chip(deliveryLabel(job.delivery), job.delivery.state === "confirmed" ? "teal" : "amber"));
       else if (job.application_stage === "submitted") chips.append(chip("Manually submitted", ""));
       item.append(chips);
       (boardView ? columns.get(job.id) : list).append(item);
@@ -2500,8 +2502,16 @@
     identity.append(node("span", "eyebrow", "APPLICATION TRACKER"), node("h3", "", item.title), node("p", "", item.company));
     heading.append(identity, chip(data.stage, "teal"));
     panel.append(heading);
-    if (data.delivery) panel.append(deliveryPanel(item.id, data.delivery));
-    if (!data.delivery || (data.application_submitted && !data.delivery.dispatched)) panel.append(node("p", "muted", data.application_submitted
+    if (data.external_application) {
+      const record = data.external_application;
+      const source = crmSection("Outside application");
+      const fields = [["Company", record.company], ["Role", record.role], ["Date applied", record.applied_date],
+        ["Channel", record.channel], ["Spreadsheet status", record.status], ["Evidence", record.evidence]];
+      for (const [label, value] of fields) source.append(node("p", "", label + ": " + (value || "Unspecified")));
+      panel.append(source);
+    }
+    if (data.delivery && (!data.external_application || data.delivery.dispatched)) panel.append(deliveryPanel(item.id, data.delivery));
+    if (!data.external_application && (!data.delivery || (data.application_submitted && !data.delivery.dispatched))) panel.append(node("p", "muted", data.application_submitted
       ? "Submission recorded from your independent attestation. Pipeline updates do not change that receipt."
       : "This application has not been recorded as submitted. Advancing the hiring pipeline requires a separate manual application submission."));
 
@@ -3058,11 +3068,26 @@
     }
   });
   byId("crm-search").addEventListener("input", renderCRMJobs);
+  byId("crm-source-filter").addEventListener("change", renderCRMJobs);
+  byId("crm-import").addEventListener("click", async () => {
+    const file = byId("crm-import-file").files[0];
+    const result = byId("crm-import-result");
+    if (!file || file.size > 1000000) { result.textContent = "Choose a CSV of up to 1 MB."; return; }
+    byId("crm-import").disabled = true;
+    try {
+      const counts = await api("/api/crm/import", "POST", {csv: await file.text()});
+      result.textContent = counts.rows + " rows processed · " + counts.created + " added · " + counts.linked +
+        " linked · " + counts.updated + " updated · " + counts.unchanged + " unchanged";
+      byId("crm-source-filter").value = "external";
+      await loadCRM();
+    } catch (error) { result.textContent = error.message; }
+    finally { byId("crm-import").disabled = false; }
+  });
   byId("crm-stage-filter").addEventListener("change", renderCRMJobs);
   byId("crm-layout").addEventListener("change", renderCRMJobs);
   byId("crm-priority-filter").addEventListener("change", renderCRMJobs);
   byId("crm-clear-filters").addEventListener("click", () => {
-    for (const id of ["crm-search", "crm-stage-filter", "crm-priority-filter"]) byId(id).value = "";
+    for (const id of ["crm-search", "crm-stage-filter", "crm-priority-filter", "crm-source-filter"]) byId(id).value = "";
     renderCRMJobs();
   });
   byId("import-career-data").addEventListener("click", importConfiguredProfile);

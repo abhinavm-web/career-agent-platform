@@ -270,14 +270,23 @@
         <p id="crm-export-description" class="muted">Downloads all tracker records as JSON, regardless of filters, including private contact details, notes and submission references. The file is unencrypted. Career facts and application documents are excluded.</p>
         <p class="muted">Track employer conversations, interview stages, recruiter contacts and reminders. CRM updates are manual and do not send emails or applications. Private notes are stored in local, unencrypted SQLite.</p>
         <div id="crm-summary" class="crm-summary" aria-label="Pipeline overview"></div>
+        <details class="panel profile-editor" id="external-import">
+          <summary>Import outside applications</summary>
+          <p class="muted">Choose your tracker CSV with Date applied, Company, Role, Channel, Status and Evidence (email subject + date). Applications can be tracked without a posting URL. Reimporting the same rows keeps their history.</p>
+          <label class="field">Tracker CSV<input id="crm-import-file" type="file" accept=".csv,text/csv"></label>
+          <button id="crm-import" class="button" type="button">Import applications</button>
+          <p id="crm-import-result" class="muted" role="status"></p>
+        </details>
         <section id="crm-outcomes" class="panel crm-due-list" aria-label="Recorded application outcomes"></section>
         <div class="board">
           <div class="list-panel panel">
             <div class="list-count"><span>Select an opportunity</span><span>Local records only</span></div>
             <div class="crm-form">
               <label class="field">Search opportunities<input id="crm-search" type="search" placeholder="Title, company or location"></label>
+              <label class="field">Application source<select id="crm-source-filter"><option value="">All sources</option><option value="external">Outside applications</option></select></label>
               <label class="field">Pipeline stage<select id="crm-stage-filter">
                 <option value="">All stages</option>
+                <option value="under_review">Under review</option><option value="closed">Position closed</option>
                 <option>discovered</option><option>saved</option><option>shortlisted</option><option>archived</option>
                 <option>applied</option><option>screening</option><option>assessment</option><option>interview</option>
                 <option>offer</option><option>accepted</option><option>rejected</option><option>withdrawn</option>

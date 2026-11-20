@@ -59,6 +59,11 @@ class Store:
                 evidence_json TEXT NOT NULL, archived_at TEXT NOT NULL,
                 restored_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS external_applications(
+                source_key TEXT PRIMARY KEY, job_id TEXT NOT NULL UNIQUE REFERENCES jobs(job_id),
+                company TEXT NOT NULL, role TEXT NOT NULL, applied_date TEXT NOT NULL,
+                channel TEXT NOT NULL, status TEXT NOT NULL, evidence TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS applications(
                 job_id TEXT PRIMARY KEY REFERENCES jobs(job_id),
                 stage TEXT NOT NULL CHECK(stage IN ('ready_for_review','submitted')),
@@ -301,7 +306,7 @@ class Store:
         scan_limited = False
         results_truncated = False
         rows = self.connection.execute('''SELECT job_id,company,title,location,url,source FROM jobs
-            WHERE job_id<>? AND NOT EXISTS (SELECT 1 FROM job_archives a
+            WHERE job_id<>? AND url NOT LIKE 'urn:career-agent:tracker:%' AND NOT EXISTS (SELECT 1 FROM job_archives a
                 WHERE a.job_id=jobs.job_id AND a.restored_at IS NULL)
             ORDER BY rowid DESC LIMIT 10001''', (job.id,))
         for index, row in enumerate(rows):
@@ -323,7 +328,7 @@ class Store:
 
     def list_jobs(self, limit: int = 100, *, include_archived: bool = False) -> list[Job]:
         rows = self.connection.execute(
-            """SELECT * FROM jobs WHERE (? OR NOT EXISTS (SELECT 1 FROM job_archives a
+            """SELECT * FROM jobs WHERE url NOT LIKE 'urn:career-agent:tracker:%' AND (? OR NOT EXISTS (SELECT 1 FROM job_archives a
                 WHERE a.job_id=jobs.job_id AND a.restored_at IS NULL)) ORDER BY rowid DESC LIMIT ?""",
             (include_archived, limit)
         ).fetchall()
@@ -344,7 +349,7 @@ class Store:
         if before is not None and (type(before) is not int or before < 1):
             raise ValueError('Invalid opportunity cursor')
         rows = self.connection.execute(
-            """SELECT rowid AS page_rowid, * FROM jobs WHERE (? IS NULL OR rowid < ?)
+            """SELECT rowid AS page_rowid, * FROM jobs WHERE url NOT LIKE 'urn:career-agent:tracker:%' AND (? IS NULL OR rowid < ?)
             AND (? OR NOT EXISTS (SELECT 1 FROM job_archives a
                 WHERE a.job_id=jobs.job_id AND a.restored_at IS NULL))
             ORDER BY rowid DESC LIMIT ?""", (before, before, include_archived, limit + 1)
