@@ -20,17 +20,19 @@ PRE_APPLICATION = {
     "archived": ("saved", "shortlisted"),
 }
 POST_APPLICATION = {
-    "applied": ("screening", "assessment", "interview", "offer", "rejected", "withdrawn"),
-    "screening": ("assessment", "interview", "offer", "rejected", "withdrawn"),
-    "assessment": ("interview", "offer", "rejected", "withdrawn"),
-    "interview": ("assessment", "offer", "rejected", "withdrawn"),
-    "offer": ("accepted", "rejected", "withdrawn"),
+    "under_review": ("screening", "assessment", "interview", "offer", "rejected", "withdrawn", "closed"),
+    "closed": (),
+    "applied": ("under_review", "screening", "assessment", "interview", "offer", "rejected", "withdrawn", "closed"),
+    "screening": ("assessment", "interview", "offer", "rejected", "withdrawn", "closed"),
+    "assessment": ("interview", "offer", "rejected", "withdrawn", "closed"),
+    "interview": ("assessment", "offer", "rejected", "withdrawn", "closed"),
+    "offer": ("accepted", "rejected", "withdrawn", "closed"),
     "accepted": (),
     "rejected": (),
     "withdrawn": (),
 }
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-TERMINAL_STAGES = {'accepted', 'rejected', 'withdrawn'}
+TERMINAL_STAGES = {'accepted', 'rejected', 'withdrawn', 'closed'}
 
 
 class StageConflict(ValueError):
@@ -156,13 +158,17 @@ class ApplicationCRM:
                 AND NOT EXISTS (SELECT 1 FROM job_archives a WHERE a.job_id=e.job_id)
                 AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id=e.job_id AND a.stage='submitted')""")
 
+    def _applied(self, job_id: str) -> bool:
+        return self.store.stage_of(job_id) == "submitted" or bool(self.conn.execute(
+            "SELECT 1 FROM external_applications WHERE job_id=?", (job_id,)).fetchone())
+
     def _stage(self, job_id: str) -> str:
         self.store.get_job(job_id)
         row = self.conn.execute(
             "SELECT stage FROM crm_stage_events WHERE job_id=? ORDER BY event_id DESC LIMIT 1",
             (job_id,),
         ).fetchone()
-        submitted = self.store.stage_of(job_id) == "submitted"
+        submitted = self._applied(job_id)
         if submitted:
             return row["stage"] if row and row["stage"] in POST_APPLICATION else "applied"
         if self.store.archive_state(job_id):
@@ -211,12 +217,12 @@ class ApplicationCRM:
         return [dict(row) for row in rows]
 
     def correction_option(self, job_id: str) -> dict | None:
-        if self.store.stage_of(job_id) != 'submitted':
+        if not self._applied(job_id):
             return None
         latest = self.conn.execute('SELECT event_id,stage FROM crm_stage_events WHERE job_id=? ORDER BY event_id DESC LIMIT 1', (job_id,)).fetchone()
         if not latest or latest['stage'] not in TERMINAL_STAGES:
             return None
-        prior = self.conn.execute("SELECT stage FROM crm_stage_events WHERE job_id=? AND event_id<? AND stage IN ('applied','screening','assessment','interview','offer') ORDER BY event_id DESC LIMIT 1", (job_id, latest['event_id'])).fetchone()
+        prior = self.conn.execute("SELECT stage FROM crm_stage_events WHERE job_id=? AND event_id<? AND stage IN ('applied','under_review','screening','assessment','interview','offer') ORDER BY event_id DESC LIMIT 1", (job_id, latest['event_id'])).fetchone()
         return {'event_id': latest['event_id'], 'from_stage': latest['stage'], 'restore_stage': prior['stage'] if prior else 'applied'}
 
     def correct_terminal(self, job_id: str, expected_event_id: Any, reason: Any, acknowledged: Any) -> dict:
@@ -430,12 +436,15 @@ class ApplicationCRM:
         self._validate_followup_offset(followup_offset)
         job = self.store.get_job(job_id)
         count = self.conn.execute('SELECT COUNT(*) FROM crm_followups WHERE job_id=?', (job_id,)).fetchone()[0]
+        external = self.conn.execute("SELECT applied_date,company,role,channel,status,evidence FROM external_applications WHERE job_id=?",
+                                     (job_id,)).fetchone()
         return {
             "job_id": job_id,
             "job": {"id": job.id, "title": job.title, "company": job.company},
             "stage": self._stage(job_id),
             "allowed_transitions": list(self.allowed(job_id)),
-            "application_submitted": self.store.stage_of(job_id) == "submitted",
+            "application_submitted": self._applied(job_id),
+            "external_application": dict(external) if external else None,
             "delivery": delivery_for_job(self.store, job),
             "stage_events": self.stage_history(job_id),
             "correction_option": self.correction_option(job_id),
@@ -459,6 +468,7 @@ class ApplicationCRM:
         queries = {
             "jobs": "SELECT job_id,company,title,location,url,description,source,remote FROM jobs ORDER BY job_id",
             "applications": "SELECT job_id,stage,receipt,updated_at FROM applications ORDER BY job_id",
+            "external_applications": "SELECT job_id,company,role,applied_date,channel,status,evidence FROM external_applications ORDER BY job_id",
             "reviews": "SELECT review_id,job_id,packet_sha256,decision,decided_at FROM packet_reviews ORDER BY review_id",
             "stage_events": "SELECT event_id,job_id,stage,note,actor,created_at FROM crm_stage_events ORDER BY event_id",
             "stage_corrections": "SELECT corrected_event_id,correction_event_id FROM crm_stage_corrections ORDER BY correction_event_id",
@@ -481,9 +491,10 @@ class ApplicationCRM:
     def outcomes(self) -> dict:
         """Count distinct attested applications with explicitly recorded milestones."""
         rows = self.conn.execute(
-            "SELECT a.job_id,e.stage FROM applications a "
+            "SELECT a.job_id,e.stage FROM (SELECT job_id FROM applications WHERE stage='submitted' "
+            "UNION SELECT job_id FROM external_applications) a "
             "LEFT JOIN crm_stage_events e ON e.job_id=a.job_id "
-            "WHERE a.stage='submitted' AND (e.event_id IS NULL OR NOT EXISTS "
+            "WHERE (e.event_id IS NULL OR NOT EXISTS "
             "(SELECT 1 FROM crm_stage_corrections c WHERE c.corrected_event_id=e.event_id))"
         ).fetchall()
         submitted = {row["job_id"] for row in rows}
@@ -502,7 +513,7 @@ class ApplicationCRM:
         jobs = self.conn.execute(
             "SELECT j.job_id,j.title,j.company,j.location,j.url, "
             "ds.destination,ds.has_pdf,ds.delivery_state,ds.delivery_updated_at, "
-            "COALESCE(a.stage,'discovered') AS application_stage, "
+            "COALESCE(a.stage,'discovered') AS application_stage, x.applied_date, x.status AS external_status, "
             "(SELECT stage FROM crm_stage_events WHERE job_id=j.job_id "
             "ORDER BY event_id DESC LIMIT 1) AS crm_stage, "
             "(SELECT created_at FROM crm_stage_events WHERE job_id=j.job_id "
@@ -513,7 +524,9 @@ class ApplicationCRM:
             "ORDER BY event_id DESC LIMIT 1),'none') AS priority "
             " , EXISTS(SELECT 1 FROM job_archives ar WHERE ar.job_id=j.job_id AND ar.restored_at IS NULL) AS archived "
             "FROM jobs j JOIN delivery_status ds ON ds.job_id=j.job_id "
-            "LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY j.rowid DESC"
+            "LEFT JOIN external_applications x ON x.job_id=j.job_id "
+            "LEFT JOIN applications a ON a.job_id=j.job_id ORDER BY x.applied_date IS NULL, "
+            "replace(x.applied_date,'≤ ','') DESC,j.rowid DESC"
         ).fetchall()
         counts: dict[str, int] = {}
         job_stages = []
@@ -521,7 +534,7 @@ class ApplicationCRM:
         today_utc = datetime.now(timezone.utc).date()
         deliveries = delivery_index(jobs)
         for job in jobs:
-            submitted = job["application_stage"] == "submitted"
+            submitted = job["application_stage"] == "submitted" or job["applied_date"] is not None
             valid_stages = POST_APPLICATION if submitted else PRE_APPLICATION
             stage = job["crm_stage"] if job["crm_stage"] in valid_stages else ("applied" if submitted else "discovered")
             if not submitted and job["archived"]:
@@ -530,6 +543,7 @@ class ApplicationCRM:
                 "job_id": job["job_id"], "stage": stage, "title": job["title"],
                 "company": job["company"], "location": job["location"],
                 "application_stage": job["application_stage"],
+                "external_date": job["applied_date"], "external_status": job["external_status"],
                 "delivery": job_delivery(deliveries, job["job_id"], job["url"]),
                 "priority": job["priority"],
             })

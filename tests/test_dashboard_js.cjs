@@ -1052,7 +1052,7 @@ test("outcome metrics explain empty and recorded submission denominators", async
   const content = recorded.get("crm-outcomes").textContent;
   assert.match(content, /Interview rate: 50%/);
   assert.match(content, /Offer rate: 25%/);
-  assert.match(content, /Denominator: 4 confirmed submissions/);
+  assert.match(content, /Denominator: 4 recorded applications/);
   assert.match(content, /skipped stages are not inferred/);
 });
 
