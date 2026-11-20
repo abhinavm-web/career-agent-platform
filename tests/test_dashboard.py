@@ -68,7 +68,7 @@ class DashboardTests(unittest.TestCase):
         from career_agent.h1b import DOL_URL, H1BResearch
         from test_h1b import lca_csv
         from test_uscis import hub_csv, URL
-        exact = Job.from_mapping({'company': 'Legal Corp', 'title': 'Engineer',
+        exact = Job.from_mapping({'company': 'LEGAL CORP', 'title': 'Engineer',
             'job_url': 'https://example.invalid/exact', 'description': 'No visa sponsorship.'})
         brand = Job.from_mapping({'company': 'Fictional Brand', 'title': 'Engineer',
             'job_url': 'https://example.invalid/brand', 'description': ''})
@@ -79,20 +79,31 @@ class DashboardTests(unittest.TestCase):
         with Store(self.db) as store:
             store.add_jobs([exact, brand, suggested, uscis_job])
             research = H1BResearch(store)
-            research.import_csv(io.StringIO(lca_csv([{'EMPLOYER_NAME': 'Legal Corp', 'CASE_STATUS': 'Denied'}])), DOL_URL, '2025-06-01')
+            research.import_csv(io.StringIO(lca_csv([{'EMPLOYER_NAME': 'Legal Corp', 'CASE_STATUS': 'Denied'},
+                {'EMPLOYER_NAME': 'Legal Corp', 'DECISION_DATE': '2022-06-01'}])), DOL_URL, '2025-06-01')
             research.uscis.import_bytes(hub_csv(), URL, 2025, '2025-03-31')
             association = {'acknowledged': True, 'expected_revision': 0, 'employer': 'Legal Corp', 'source_note': 'Private fictional research'}
             research.link_employer(brand, association)
             research.link_company(suggested, association)
+            for page in ([exact], [exact, brand, suggested, uscis_job]):
+                statements = []
+                store.connection.set_trace_callback(statements.append)
+                research.board_history(page)
+                store.connection.set_trace_callback(None)
+                self.assertEqual(len(statements), 3)  # Job associations, DOL and USCIS, once per page.
         response = self.call('GET', '/api/jobs?limit=100')
         self.assertEqual(response.status_code, 200, response.text)
         jobs = {row['id']: row for row in response.json()['jobs']}
         self.assertEqual(jobs[exact.id]['sponsorship_status'], 'explicit_exclusion')
         self.assertEqual(jobs[exact.id]['imported_sponsorship_history'],
-                         {'employer': 'Legal Corp', 'sources': ['DOL LCA'], 'match': 'exact_name'})
+                         {'employer': 'LEGAL CORP', 'sources': ['DOL LCA'], 'match': 'exact_name',
+                          'filings': [{'employer': 'Legal Corp', 'source': 'DOL LCA',
+                                       'first_year': 2022, 'last_year': 2025}]})
+        self.assertEqual(jobs[exact.id]['decision_summary']['posting_quotes'], ['No visa sponsorship.'])
         self.assertEqual(jobs[brand.id]['imported_sponsorship_history']['match'], 'candidate_association')
         self.assertEqual(jobs[brand.id]['imported_sponsorship_history']['employer'], 'Legal Corp')
         self.assertEqual(jobs[uscis_job.id]['imported_sponsorship_history']['sources'], ['USCIS decisions'])
+        self.assertEqual(jobs[uscis_job.id]['imported_sponsorship_history']['filings'][0]['first_year'], 2025)
         self.assertIsNone(jobs[suggested.id]['imported_sponsorship_history'])
         self.assertNotIn('Private fictional research', json.dumps(response.json()))
         with Store(self.db) as store:
@@ -100,6 +111,58 @@ class DashboardTests(unittest.TestCase):
                                                    'employer': '', 'source_note': 'Removed association'})
         jobs = {row['id']: row for row in self.call('GET', '/api/jobs?limit=100').json()['jobs']}
         self.assertIsNone(jobs[brand.id]['imported_sponsorship_history'])
+
+    def test_board_decision_uses_verified_evidence_and_prioritizes_required_excerpts(self):
+        job = replace(self.job, url='https://example.invalid/decision',
+                      description='Preferred skills:\n- SQL\nRequirements:\n- Python and AWS\n- Rust')
+        bank = fake_fact_bank()
+        bank['facts'].insert(0, dict(bank['facts'][0], id='sql-fact', statement='Built fictional SQL models.',
+                                     keywords=[]))
+        self.facts_path.write_text(json.dumps(bank))
+        with Store(self.db) as store:
+            store.add_jobs([job])
+
+        def summary():
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            return next(row['decision_summary'] for row in jobs if row['id'] == job.id)
+
+        from career_agent.candidate import FactBank
+        with patch.object(FactBank, 'load', wraps=FactBank.load) as load, patch('career_agent.ai.complete') as model:
+            result = summary()
+            load.assert_called_once()
+            model.assert_not_called()
+        fact = result['verified_fact']
+        self.assertEqual((fact['id'], fact['source_note'], fact['matched_terms']),
+                         ('experience-01', bank['facts'][1]['source_note'], ['Python', 'AWS']))
+        self.assertEqual(result['requirement_to_verify'], {'quote': '- Rust', 'category': 'required', 'term_link': False})
+        from career_agent.workspace import CandidateWorkspace
+        imported = self.call('POST', '/api/workspace/import', {'acknowledged': True}).json()['workspace']
+        with Store(self.db) as store:
+            workspace = CandidateWorkspace(store)
+            updated = workspace.verify(imported['revision'], 'experience-01', False, True)
+        self.assertEqual(summary()['verified_fact']['id'], 'sql-fact')
+        with Store(self.db) as store:
+            CandidateWorkspace(store).verify(updated['revision'], 'sql-fact', False, True)
+        self.assertIsNone(summary()['verified_fact'])
+
+    def test_board_csv_history_matches_record_entity_and_keeps_policy_unknown(self):
+        from career_agent.sponsor_evidence import FilingEvidence
+        records = tuple(FilingEvidence('EXAMPLE COMPANY', year, 'https://example.invalid/history', 'LCA')
+                        for year in [2024, 2021])
+        job = replace(self.job, url='https://example.invalid/unknown',
+                      description='Requirements:\n- Rust experience is not required.')
+        with Store(self.db) as store:
+            store.add_jobs([job])
+        with patch('career_agent.dashboard.load_filing_evidence', return_value=records) as load:
+            jobs = self.call('GET', '/api/jobs').json()['jobs']
+            load.assert_called_once()
+        row = next(item for item in jobs if item['id'] == job.id)
+        self.assertEqual(row['sponsorship_status'], 'historical_only')
+        summary = row['decision_summary']
+        self.assertIsNone(summary['requirement_to_verify'])
+        self.assertEqual(summary['posting_quotes'], [])
+        self.assertEqual(summary['csv_filings'], [{'employer': 'EXAMPLE COMPANY', 'source': 'LCA',
+                                                  'first_year': 2021, 'last_year': 2024}])
 
     def test_sponsorship_policy_notes_are_scoped_and_do_not_change_posting_assessment(self):
         from career_agent.h1b import H1BResearch

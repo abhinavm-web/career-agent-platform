@@ -488,6 +488,11 @@ input[type="checkbox"],input[type="radio"] {accent-color:#4a45a8;}
 .evidence-tile strong {display:block;margin-top:5px;font-size:13px;}
 .evidence-tile p {margin:6px 0 0;color:#5f6679;font-size:12px;line-height:1.45;}
 .evidence-summary .plain-button {margin:13px 0 0;padding:0;}
+.board-decision-compact {display:grid;gap:5px;margin-top:12px;font-size:12px;line-height:1.4;overflow-wrap:anywhere;}
+.board-decision-field small {font-weight:600;}
+.board-decision-field strong {font-weight:400;}
+.board-decision-field p {margin:0;color:#555e72;}
+.board-decision-field strong,.board-decision-field p {display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 footer {color:#656c7d;}
 @media(max-width:1080px) {.rail {width:205px;}.workspace {padding:0 22px;}}
 @media(max-width:780px) {

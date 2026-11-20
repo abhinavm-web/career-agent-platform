@@ -37,6 +37,7 @@ from .automation import Automation, DiscoveryStopped, DiscoveryTimedOut
 from .workflows import Workflows, inputs as workflow_inputs, signature as workflow_signature
 from .crm import ApplicationCRM, StageConflict
 from .discovery import DiscoveryUnavailable, discover_isolated, validate_sites
+from .fit_evidence import board_evidence, source_terms
 from .models import CandidateProfile, Job, canonical_url
 from .h1b import H1BResearch, validate_lca_source
 from .uscis import USCISRecords
@@ -44,7 +45,8 @@ from .posting_checks import PostingChecks, check_posting, target as posting_targ
 from .resume_pdf import PDFUnavailable, resume_pdf
 from .resume_docx import DOCXUnavailable, resume_docx
 from .scoring import constraint_evidence, contains_phrase, remote_evidence, score_job, title_level_evidence
-from .sponsor_evidence import load_filing_evidence, sponsorship_report
+from .sponsor_evidence import employer_key, load_filing_evidence
+from .sponsorship import h1b_policy, posting_assessment
 from .storage import Store, DescriptionConflict
 from .workspace import CandidateWorkspace, StaleRevision
 
@@ -224,13 +226,14 @@ def create_app(config: DashboardConfig) -> FastAPI:
         return False
 
     def job_view(store: Store, job: Job, profile: CandidateProfile | None,
-                 records: tuple, workspace_revision: int, posting_checks: PostingChecks,
+                 facts: list, csv_filings: list, workspace_revision: int, posting_checks: PostingChecks,
                  discovery_observations: list[dict], constraints: dict, imported_history=None) -> dict:
         packet = current_packet(job.id)
         stale = packet_stale(packet, workspace_revision) if packet else False
         review = store.latest_review(job.id, packet["packet_sha256"]) if packet and not stale else None
         fit = score_job(job, profile) if profile is not None else None
-        sponsorship = sponsorship_report(job, records)
+        policy = h1b_policy(job.description)
+        sponsorship = posting_assessment(policy, bool(csv_filings))
         return {
             "id": job.id,
             "archive": store.archive_state(job.id),
@@ -254,8 +257,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
             "fit_reasons": list(fit.reasons) if fit is not None else [],
             "constraint_evidence": constraint_evidence(job, constraints),
             "title_level_evidence": title_level_evidence(job, constraints),
-            "sponsorship_status": sponsorship["status"],
-            "sponsorship_reason": sponsorship["reason"],
+            "decision_summary": {**board_evidence(job, facts), "posting_quotes": policy["quotes"],
+                                 "csv_filings": csv_filings},
+            "sponsorship_status": sponsorship.status,
+            "sponsorship_reason": sponsorship.reason,
             "imported_sponsorship_history": imported_history,
             "packet_available": packet is not None,
             "packet_stale": stale,
@@ -1138,7 +1143,22 @@ def create_app(config: DashboardConfig) -> FastAPI:
                 profile = None
         else:
             profile = None
-        records = load_filing_evidence(config.filings_path)
+        facts = [fact for fact in workspace['facts'] if fact['verified_by_candidate']]
+        if not workspace['revision'] and config.facts_path:
+            try:
+                facts = [{**asdict(fact), 'id': fact.fact_id} for fact in FactBank.load(config.facts_path).facts]
+            except (OSError, ValueError):
+                facts = []
+        facts = [{**fact, 'keywords': list(dict.fromkeys(fact['keywords'] or source_terms(fact['statement'])))}
+                 for fact in facts]
+        periods = {}
+        for record in load_filing_evidence(config.filings_path):
+            years = periods.setdefault((record.employer, record.source_type), [])
+            years.append(record.fiscal_year)
+        csv_filings = {}
+        for (entity, source), years in periods.items():
+            csv_filings.setdefault(employer_key(entity), []).append({
+                'source': source, 'employer': entity, 'first_year': min(years), 'last_year': max(years)})
         with Store(config.db_path) as store:
             research = H1BResearch(store)
             posting_checks = research.posting_checks
@@ -1147,7 +1167,8 @@ def create_app(config: DashboardConfig) -> FastAPI:
             observations = store.discovery_observations([job.id for job in jobs])
             imported_history = research.board_history(jobs)
             items = [
-                job_view(store, job, profile, records, workspace["revision"], posting_checks,
+                job_view(store, job, profile, facts, csv_filings.get(employer_key(job.company), []),
+                         workspace["revision"], posting_checks,
                          observations.get(job.id, []), workspace["profile"] if workspace["revision"] else {},
                          imported_history.get(job.id))
                 for job in jobs

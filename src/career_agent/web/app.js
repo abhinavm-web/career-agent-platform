@@ -178,6 +178,55 @@
         (row.candidate_differs === true || (row.candidate_differs === undefined && !job.description?.trim())));
   }
 
+  function activeCheckText(job) {
+    return postingObservation(job).label + (job.live_check?.checked_at ? " · " + job.live_check.checked_at : "");
+  }
+
+  function decisionSummary(job, compact) {
+    const summary = job.decision_summary || {};
+    const container = node("div", compact ? "board-decision-compact" : "evidence-summary-grid");
+    function field(label, value, note) {
+      const row = node("div", compact ? "board-decision-field" : "evidence-tile");
+      const content = node("strong", "", value);
+      row.append(node("small", "", label + " "), content);
+      if (note) row.append(node("p", "", note));
+      container.append(row);
+      return content;
+    }
+    const fact = summary.verified_fact;
+    field("Verified evidence", fact?.statement || "No verified fact linked",
+      fact && [fact.section, fact.id, fact.source_note || "Source unknown"].join(" · "));
+    field("Match reason", fact ? "Shared posting terms: " + fact.matched_terms.join(", ")
+      : job.fit_reasons?.[0] || "Unknown");
+    const gap = summary.requirement_to_verify;
+    field("Requirement to verify", gap ? gap.quote : "Unknown · no classified requirement",
+      gap && (gap.category + (gap.term_link ? " · term overlap only" : " · no verified fact linked")));
+    const today = new Date().toISOString().slice(0, 10);
+    const dates = (job.discovery_observations || []).map(row => {
+      const date = row.reported_posted_date;
+      const reported = date && ["reported", "partial"].includes(row.posted_date_status);
+      return row.source + " · " + (reported ? date + (row.posted_date_status === "partial" ? " (partial)" : "") +
+        (date > today ? " (future date)" : "") : row.posted_date_status === "conflicting" ? "conflicting dates" : "unknown");
+    });
+    field("Source-reported posting date", dates.join(" / ") || "Unknown");
+    const check = field("Active check", activeCheckText(job));
+    const status = job.sponsorship_status === "historical_only" ? "Posting policy unknown" : sponsorshipLabel(job.sponsorship_status)[0];
+    field("Posting sponsorship", status, summary.posting_quotes?.length
+      ? summary.posting_quotes.map(quote => "“" + quote + "”").join(" ") : "No recognized wording available");
+    const history = job.imported_sponsorship_history;
+    const filings = [];
+    function filing(row, basis) {
+      const period = row.first_year === row.last_year ? "FY " + row.first_year : "FY " + row.first_year + "–" + row.last_year;
+      return [row.employer, row.source, period, basis].join(" · ");
+    }
+    for (const row of history?.filings || []) filings.push(filing(row, history.match === "candidate_association"
+      ? "candidate-linked entity (unverified)" : "exact employer-name match"));
+    for (const row of summary.csv_filings || []) filings.push(filing(row, "user-supplied record, exact employer-name match"));
+    field("Historical filing entity", filings.join(" / ") || "Unknown · No linked records",
+      filings.length ? "Historical filings do not establish sponsorship for this role." : "");
+    return {container, check};
+  }
+
   function filteredJobs() {
     const needle = state.search.trim().toLocaleLowerCase();
     const filters = state.boardFilters;
@@ -289,7 +338,10 @@
       if (job.application_stage === "submitted") lower.append(chip("Submitted", "teal"));
       if (job.archive) lower.append(chip("Archived", ""));
       if (job.fit_score !== null) lower.append(node("span", "score", "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + String(job.fit_score) + "/100"));
-      item.append(top, lower);
+      const summary = decisionSummary(job, true).container;
+      summary.id = "board-decision-" + job.id;
+      item.setAttribute("aria-describedby", summary.id);
+      item.append(top, lower, summary);
       list.append(item);
     }
   }
@@ -1001,19 +1053,9 @@
     activateTab(state.detailTab);
     const evidenceSummary = node("section", "evidence-summary");
     evidenceSummary.setAttribute("aria-label", "Opportunity evidence at a glance");
-    evidenceSummary.append(node("h4", "", "Evidence at a glance"));
-    const evidenceGrid = node("div", "evidence-summary-grid");
-    const posting = node("div", "evidence-tile");
-    const postingStatus = job.sponsorship_status === "historical_only" ? "Not stated in posting" : sponsorshipLabel(job.sponsorship_status)[0];
-    posting.append(node("small", "", "JOB SPONSORSHIP"), node("strong", "", postingStatus),
-      node("p", "", "Based on saved posting text. Confirm current policy with the employer."));
-    const history = node("div", "evidence-tile");
-    const imported = job.imported_sponsorship_history;
-    const sources = imported?.sources || [];
-    history.append(node("small", "", "EMPLOYER FILING HISTORY"),
-      node("strong", "", sources.length ? "Historical records found" : "No linked records"),
-      node("p", "", sources.length ? "Source: " + sources.join(", ") + ". Name matches and historical filings do not establish sponsorship for this role." : "This does not establish that the employer has no filings."));
-    evidenceGrid.append(posting, history); evidenceSummary.append(evidenceGrid,
+    evidenceSummary.append(node("h4", "", "Decision summary"));
+    const decision = decisionSummary(job, false);
+    evidenceSummary.append(decision.container,
       button("Review sponsorship evidence", "plain-button", () => activateTab("sponsorship", true)));
     panes.overview.append(evidenceSummary);
     if (job.remote_evidence?.detail) panes.overview.append(node("p", "muted", job.remote_evidence.detail));
@@ -1124,6 +1166,7 @@
       if (interaction.pending) { availabilityStatus.textContent = "Checking the public posting…"; return; }
       const currentJob = state.jobs.find((value) => value.id === job.id) || job;
       const observation = postingObservation(currentJob);
+      decision.check.textContent = activeCheckText(currentJob);
       availabilityStatus.replaceChildren(chip(observation.label, observation.kind === "listed" ? "teal" : observation.kind === "expired" ? "red" : ""),
         node("p", "", observation.detail));
       if (interaction.failure) availabilityStatus.append(node("p", "", "Check failed: " + interaction.failure + ". Previous observation remains unchanged."));
