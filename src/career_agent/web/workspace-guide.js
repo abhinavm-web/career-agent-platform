@@ -37,7 +37,7 @@
     [/backup|export|download/i, "Review the scope and destination of the file. Exports can contain your private career or application information."],
     [/discovery|jobspy|job sources/i, "Choose sources and search terms to find roles. Results can be incomplete or refer to postings that have changed."]
   ];
-  const controls = "button, a[href], input, select, textarea, label, summary, [role=tab], [data-help]";
+  const controls = "button, a[href], input, select, textarea, label, summary, [role=tab], [data-help], .chip, .detail-badge, .evidence-tile, .board-decision-field, .metric";
   let inspect = false, opener = null;
   const brief = text => (text || "").replace(/\s+/g, " ").trim();
   function nameOf(el) {
@@ -49,9 +49,13 @@
     const described = (el.getAttribute("aria-describedby") || "").split(/\s+/).map(id => get(id)?.textContent).filter(Boolean).join(" ");
     if (el.dataset.help || described) return el.dataset.help || described;
     if (el.id.startsWith("nav-")) return guideText[el.id.slice(4)];
+    if (el.classList.contains("section-info")) return describe(el.parentElement);
+    if (el.matches("input,select,textarea") && el.labels?.[0]?.dataset.help) return el.labels[0].dataset.help;
     const label = nameOf(el);
     const topic = topics.find(([pattern]) => pattern.test(label));
     if (topic) return topic[1];
+    if (el.matches("input[type=file]")) return "Choose the file for this action. Review the filename and destination before continuing.";
+    if (el.matches("a[target=_blank]")) return "Opens the linked source in a separate tab so you can check its details.";
     const scope = el.closest("form, .detail-section, .panel, details, .screen");
     const explanation = scope?.querySelector(":scope > .section-description, :scope > p.muted, :scope > p.section-description, :scope > .section-heading .section-description");
     if (explanation && brief(explanation.textContent)) return brief(explanation.textContent);
