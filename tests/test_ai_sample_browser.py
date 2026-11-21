@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,7 +39,7 @@ class AISampleBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-ai').click()
+                        open_tool(page, 'AI analysis')
                         expect(page.locator('#ai-sample-run')).to_be_enabled()
                         expect(page.locator('#ai-run')).to_be_disabled()
                         page.get_by_text('View fictional sample').click()

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -90,7 +91,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#discover-status')).to_contain_text('2 returned', timeout=20000)
                         expect(page.locator('#job-list')).to_contain_text('Data Analyst')
                         self.assertEqual(discover.call_count, 1)
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('H-1B sponsorship available.')
                         expect(page.locator('#h1b-opportunities-status')).to_contain_text('1 possible')
                         expect(page.locator('#h1b-opportunities-status')).to_contain_text('1 need clarification')
@@ -183,7 +184,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#count-submitted')).to_have_text('1')
                         page.locator('#nav-tracker').click()
                         expect(page.locator('#tracker-screen')).to_contain_text('Data Analyst')
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('Fictional Analytics LLC')
 
                         # An offline backup and restore must preserve the same
@@ -212,7 +213,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                         expect(page.locator('#detail-panel')).to_contain_text('Delivered a fictional AI program involving Python and AWS.')
                         page.locator('#nav-profile').click()
                         expect(page.locator('.career-fact').filter(has_text='Delivered a fictional AI program involving Python and AWS.').last).to_contain_text('Candidate verified')
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         expect(page.locator('#h1b-coverage')).to_contain_text('1 imported H-1B cases')
                         expect(page.locator('#h1b-opportunities-results')).to_contain_text('Fictional Analytics LLC')
                         page.locator('#nav-tracker').click()

@@ -672,3 +672,39 @@ body.inspect-controls .screen :is(label,button:not(.section-info),summary,a,.chi
 @media(max-width:520px) {
   :is(#application-answer-bank,.role-application-answers) .button {display:block;width:100%;margin:8px 0;}
 }
+
+/* Keep the daily workspace readable at the width of a job title. */
+.tool-menu summary {cursor:pointer;color:#d4d7e8;padding:12px 13px;font-size:13px;font-weight:600;}
+.tool-menu .nav-item {display:block;width:100%;text-align:left;}
+.tool-menu[open] {border-top:1px solid #454667;}
+#home-screen {max-width:860px;}
+.daily-switch {display:flex;gap:4px;padding:4px;background:#e8e6e1;border-radius:10px;width:fit-content;margin:0 0 20px;}
+.daily-switch button {padding:9px 14px;border:0;background:transparent;color:var(--text);border-radius:7px;font:inherit;font-weight:600;cursor:pointer;}
+.daily-switch button[aria-pressed=true] {background:#fff;box-shadow:0 1px 3px #241e321c;}
+.daily-list {border:1px solid var(--border);background:var(--panel);border-radius:12px;overflow:hidden;margin:10px 0;}
+.daily-list:empty {display:none;}
+.daily-list > p {padding:0 16px;}
+.daily-row {display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px;width:100%;text-align:left;}
+.daily-row + .daily-row {border-top:1px solid var(--border);}
+.daily-copy {min-width:0;overflow-wrap:anywhere;display:grid;gap:6px;}
+.daily-copy small,.daily-copy p,#daily-results {color:var(--muted);font-size:13px;line-height:1.45;}
+.daily-copy :is(h3,p) {margin:0;}
+.daily-copy h3 {font-size:17px;}
+.daily-evidence summary {cursor:pointer;font-size:13px;}
+.daily-evidence p {white-space:pre-line;margin-top:8px;}
+.daily-row > .button {flex-shrink:0;}
+.daily-record {background:none;border:0;color:var(--text);cursor:pointer;font:inherit;}
+.daily-record:hover,.daily-record:focus-visible {background:var(--control-surface);}
+.daily-search {max-width:440px;margin:12px 0;}
+@media(max-width:780px){.tool-menu {grid-column:1/-1;}.tool-menu .nav-item {max-width:100%;}}
+@media(max-width:560px){article.daily-row {flex-direction:column;gap:12px;}.daily-row {padding:14px;}.daily-switch {max-width:100%;}}
+
+#jobs-screen.daily-focus > :not(.board),
+#jobs-screen.daily-focus .board > .list-panel,
+#jobs-screen.daily-focus #detail-panel > :is(.compact-back,.info-grid,.detail-jump,#selection-scope-warning),
+#jobs-screen.daily-focus .detail-header-actions {display:none;}
+#jobs-screen.daily-focus .board {display:block;max-width:900px;}
+#jobs-screen.daily-focus #detail-panel {display:block;position:static;max-height:none;overflow:visible;}
+.daily-back {margin-bottom:14px;}
+.daily-extra {margin-block:18px;}
+.daily-extra > summary {cursor:pointer;font-weight:600;padding-block:8px;}

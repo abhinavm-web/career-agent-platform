@@ -98,6 +98,12 @@
 
   function showScreen(screen) {
     state.screen = screen;
+    const board = byId("jobs-screen");
+    if (screen === "jobs" && board.classList.contains("daily-focus")) {
+      board.classList.toggle("daily-focus", false);
+      renderDetailPreservingEditor();
+    }
+    if (byId("tool-menu").contains?.(byId("nav-" + screen))) byId("tool-menu").open = true;
     const screens = {home: "Home", settings: "Settings & data", jobs: "Opportunity board", activity: "Review history", profile: "Career profile", tracker: "Application tracker", h1b: "H-1B research", automation: "Saved searches", ai: "AI analysis"};
     for (const name of Object.keys(screens)) {
       byId(name + "-screen").hidden = screen !== name;
@@ -133,22 +139,31 @@
     byId("open-profile").hidden = ready;
     byId("setup-find-jobs").hidden = hasJobs;
     byId("setup-add-job").hidden = hasJobs;
-    byId("home-jobs-count").textContent = state.overview.total_jobs ?? 0;
-    byId("home-submitted-count").textContent = state.overview.submitted_recorded ?? 0;
-    byId("home-next-title").textContent = ready ? (hasJobs ? "Review your opportunities" : "Find your first opportunity") : "Build your career profile";
-    byId("home-next-description").textContent = ready ? (hasJobs ? "Compare saved roles and prepare your next application." : "Search job sources or add a role you found.") : "Add your goals and verify your experience to prepare application drafts.";
-    byId("home-next").textContent = ready ? (hasJobs ? "Review saved roles" : "Find opportunities") : "Open career profile";
-    byId("home-next").dataset.destination = ready ? "jobs" : "profile";
-    const recommendations = byId("home-recommendations");
-    recommendations.replaceChildren();
-    const roles = state.jobs.filter((job) => !job.archive && job.application_stage !== "submitted");
-    if (ready) roles.sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+    byId("home-next").hidden = ready;
+    const list = byId("home-recommendations");
+    list.replaceChildren();
+    const roles = state.jobs.filter(job => !job.archive && job.application_stage !== "submitted" &&
+      !job.delivery?.dispatched && job.delivery?.state !== "duplicate" && postingObservation(job).kind !== "expired");
+    roles.sort((a, b) => Number(Boolean(b.packet_available)) - Number(Boolean(a.packet_available)) ||
+      (b.fit_score ?? -1) - (a.fit_score ?? -1));
     for (const job of roles.slice(0, 3)) {
-      const item = button("", "home-followup", () => { showScreen("jobs"); selectJob(job.id); });
-      item.append(node("strong", "", job.title + " · " + job.company), node("small", "", ready && job.fit_score != null ? (!job.description?.trim() ? "Incomplete keyword score " : "Keyword score ") + job.fit_score + "/100 · review fit" : "Saved role · review details"));
-      recommendations.append(item);
+      const row = node("article", "daily-row");
+      const copy = node("div", "daily-copy");
+      copy.append(node("small", "", [job.company, job.location].filter(Boolean).join(" · ")), node("h3", "", job.title));
+      const reason = job.decision_summary?.verified_fact?.statement;
+      const detail = node("details", "daily-evidence");
+      detail.append(node("summary", "", "Role details"));
+      if (reason) detail.append(node("p", "", "Related experience: " + reason));
+      detail.append(node("p", "", sponsorshipLabel(job.sponsorship_status)[0]),
+        node("p", "", job.description || "The saved posting has no description."));
+      copy.append(detail);
+      const action = button(job.packet_available ? "Continue application" : "Prepare application", "button", () => {
+        showScreen("jobs");
+        selectJob(job.id, "application");
+      });
+      row.append(copy, action); list.append(row);
     }
-    if (!roles.length) recommendations.append(node("p", "muted", "No unsubmitted roles to review. Search job sources or add an opportunity to begin."));
+    if (!roles.length) list.append(node("p", "muted", "No roles to review yet. Explore opportunities to find or add one."));
   }
 
   function postingDeadline(value) {
@@ -357,10 +372,10 @@
     warning.hidden = !state.selectedId || jobs.some(job => job.id === state.selectedId);
   }
 
-  async function selectJob(id) {
+  async function selectJob(id, openTab) {
     const compact = window.matchMedia?.("(max-width: 1050px)").matches;
     const board = byId("jobs-screen");
-    if (compact && state.selectedId === id && board.classList.contains("compact-list")) {
+    if (!openTab && compact && state.selectedId === id && board.classList.contains("compact-list")) {
       board.classList.toggle("compact-list", false);
       board.classList.toggle("compact-detail", true);
       byId("detail-panel").focus?.();
@@ -382,13 +397,19 @@
       if (inline?.dataset.suggestions === "true" && !window.confirm("Switching jobs discards the displayed AI suggestions. Any wording already saved for review remains in your profile. Continue?")) return;
     }
     if (state.selectedId !== id) { state.detailTab = "overview"; state.studioOpen = false; }
+    if (openTab) {
+      state.detailTab = openTab;
+      state.studioOpen = false;
+      board.classList.toggle("daily-focus", true);
+      byId("section-name").textContent = "Your application";
+    }
     state.selectedId = id;
     board.classList.toggle("compact-list", false);
     board.classList.toggle("compact-detail", true);
     state.packet = null;
     renderJobs();
     renderDetail();
-    if (state.screen === "jobs" && window.matchMedia?.("(max-width: 1050px)").matches) {
+    if (state.screen === "jobs" && (openTab || window.matchMedia?.("(max-width: 1050px)").matches)) {
       const detail = byId("detail-panel");
       detail.setAttribute("tabindex", "-1");
       detail.scrollIntoView?.({block: "start"});
@@ -1098,6 +1119,14 @@
       const current = byId("job-list").querySelector?.(".selected") || byId("job-list").querySelector?.("button");
       current?.focus();
     });
+    const dailyFocus = byId("jobs-screen").classList.contains("daily-focus");
+    if (dailyFocus) {
+      const back = button("← My job search", "plain-button daily-back", () => byId("nav-home").click());
+      detail.append(back);
+      heading.querySelector("span").textContent = job.delivery ? deliveryLabel(job.delivery)
+        : job.application_stage === "submitted" ? "Submitted" : job.packet_available ? "Draft · Unsent" : "Unsent";
+
+    }
     detail.append(returnToList, header);
     const scopeWarning = node("p", "warning", "This selected opportunity is outside your current filters. Its details are kept open to preserve your work. Select a matching opportunity or clear the filters.");
     scopeWarning.id = "selection-scope-warning";
@@ -1207,7 +1236,11 @@
       if (target && state.settings.application_submission_enabled) {
         assistant.prepend(liveApplication(job, target.origin + target.pathname));
       }
-      panes.application.append(assistant);
+      if (dailyFocus) {
+        const options = node("details", "daily-extra");
+        options.append(node("summary", "", "Submission options"), assistant);
+        panes.application.append(options);
+      } else panes.application.append(assistant);
     }
     const openJobAI = () => {
       if (byId("ai-job").value !== job.id) {
@@ -1692,8 +1725,20 @@
       choose.append(load, choices, status); drafts.append(choose);
       }
     }
-    panes.application.append(drafts);
-    if (state.packet) renderPacket(detail, job, state.packet);
+    if (dailyFocus) {
+      const extra = node("details", "daily-extra");
+      extra.append(node("summary", "", "Job description and interview preparation"), context, preparation);
+      panes.application.append(extra);
+    }
+    if (job.delivery || job.application_stage === "submitted") panes.application.append(drafts);
+    else panes.application.prepend(drafts);
+    if (state.packet && dailyFocus && !job.delivery && job.application_stage !== "submitted") {
+      const edit = node("details", "daily-extra");
+      edit.append(node("summary", "", "Edit draft and screening answers"), drafts);
+      const review = node("div", "daily-review");
+      renderPacket(review, job, state.packet);
+      panes.application.prepend(edit); panes.application.prepend(review);
+    } else if (state.packet) renderPacket(detail, job, state.packet);
     else {
       const empty = node("section", "studio-placeholder");
       empty.append(node("h4", "", "Your application preview"), node("p", "", "Choose verified facts and create a draft. Your résumé and review controls will appear here."));
@@ -2859,12 +2904,55 @@
     }
   }
 
+  let homeSummary = null, homeError = "", homeRequest = 0, dailyLimit = 10;
+  function renderDailyApplications() {
+    const list = byId("daily-rows"), message = byId("daily-results");
+    list.replaceChildren();
+    byId("daily-more").hidden = true;
+    if (!homeSummary) { message.textContent = homeError || "Loading applications…"; return; }
+    const search = byId("daily-search").value.trim().toLowerCase();
+    const history = (homeSummary.job_stages || []).filter(job =>
+      job.external_date || job.application_stage === "submitted" || job.delivery?.dispatched);
+    const matches = history.filter(job => [job.title, job.company].join(" ").toLowerCase().includes(search));
+    message.textContent = search ? matches.length + " matches" : history.length + " recorded";
+    if (!matches.length) list.append(node("p", "muted", search ? "Try a different company or role." :
+      "Your submitted applications and pending deliveries appear here. You can import outside applications in the full tracker."));
+    for (const job of matches.slice(0, dailyLimit)) {
+      const item = button("", "daily-row daily-record", async () => {
+        showScreen("tracker"); await loadCRM();
+        if (state.screen === "tracker") await selectCRMJob(job.job_id);
+      });
+      const copy = node("span", "daily-copy");
+      copy.append(node("small", "", [job.company, job.external_date].filter(Boolean).join(" · ")), node("strong", "", job.title));
+      const label = job.delivery?.dispatched && job.delivery.state !== "confirmed" ? deliveryLabel(job.delivery)
+        : job.stage === "under_review" ? "Under review" : job.stage.charAt(0).toUpperCase() + job.stage.slice(1);
+      item.append(copy, node("span", "detail-badge", label));
+      list.append(item);
+    }
+    byId("daily-more").hidden = matches.length <= dailyLimit;
+  }
+
+  function showDailyHistory(history) {
+    byId("daily-roles").setAttribute("aria-pressed", String(!history));
+    byId("daily-history").setAttribute("aria-pressed", String(history));
+    byId("daily-shortlist").hidden = history;
+    byId("daily-applications").hidden = !history;
+    if (history) renderDailyApplications();
+  }
+  byId("daily-roles").addEventListener("click", () => showDailyHistory(false));
+  byId("daily-history").addEventListener("click", () => showDailyHistory(true));
+  byId("daily-search").addEventListener("input", () => { dailyLimit = 10; renderDailyApplications(); });
+  byId("daily-more").addEventListener("click", () => { dailyLimit += 10; renderDailyApplications(); });
+
   async function loadHome() {
+    const request = ++homeRequest;
     const list = byId("home-followups");
     list.replaceChildren(node("p", "muted", "Loading local follow-ups…"));
     try {
       const summary = await api("/api/crm");
-      if (state.screen !== "home") return;
+      if (state.screen !== "home" || request !== homeRequest) return;
+      homeSummary = summary; homeError = ""; renderDailyApplications();
+      byId("daily-reminders").hidden = !summary.open_followups?.length;
       list.replaceChildren();
       if (!summary.open_followups?.length) list.append(node("p", "muted", "No pending follow-ups. Add one from the application tracker when you need it."));
       for (const task of (summary.open_followups || []).slice(0, 3)) {
@@ -2877,7 +2965,11 @@
         list.append(item);
       }
       if (summary.open_followup_count > 3) list.append(node("p", "muted", "Open the application tracker to see all follow-ups."));
-    } catch (error) { if (state.screen === "home") list.replaceChildren(node("p", "muted", "Unable to load follow-ups: " + error.message)); }
+    } catch (error) {
+      if (state.screen !== "home" || request !== homeRequest) return;
+      homeSummary = null; homeError = "Unable to load applications. Use Refresh data to retry.";
+      renderDailyApplications(); byId("daily-reminders").hidden = true;
+    }
   }
   byId("nav-home").addEventListener("click", () => { showScreen("home"); loadHome(); });
   byId("nav-settings").addEventListener("click", () => showScreen("settings"));
@@ -2962,11 +3054,15 @@
     notice("Profile setup complete. Review your verified facts before preparing applications.");
   });
   byId("profile-wizard-exit").addEventListener("click", exitProfileWizard);
-  byId("home-next").addEventListener("click", () => byId("nav-" + (byId("home-next").dataset.destination || "profile")).click());
+  byId("home-next").addEventListener("click", () => byId("nav-profile").click());
   byId("open-discovery").addEventListener("click", () => { byId("discovery-panel").open = true; byId("discover-query").focus(); });
-  byId("home-jobs").addEventListener("click", () => byId("nav-jobs").click());
+  byId("home-jobs").addEventListener("click", () => {
+    byId("nav-jobs").click();
+    const board = byId("jobs-screen");
+    board.classList.toggle("compact-list", true);
+    board.classList.toggle("compact-detail", false);
+  });
   byId("home-tracker").addEventListener("click", () => byId("nav-tracker").click());
-  byId("home-h1b").addEventListener("click", () => byId("nav-h1b").click());
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
   byId("nav-h1b").addEventListener("click", () => showScreen("h1b"));
   byId("nav-automation").addEventListener("click", () => {showScreen("automation"); byId("automation-panel").open = true; byId("automation-refresh").click();});
@@ -3419,7 +3515,10 @@
     await saveCareerWorkspace(state.workspace.profile, facts, "Career fact");
   });
   byId("fact-reset").addEventListener("click", resetFactEditor);
-  byId("refresh").addEventListener("click", () => refresh());
+  byId("refresh").addEventListener("click", async () => {
+    await refresh();
+    if (state.screen === "home") await loadHome();
+  });
   byId("cleanup-expired").addEventListener("click", async (event) => {
     if (!window.confirm("Archive all saved opportunities whose exact posting was checked in the last 24 hours and already had an expired deadline at check time? This uses saved checks and makes no website requests. Unknown, blocked and stale results are kept.")) return;
     const control = event.currentTarget; control.disabled = true;

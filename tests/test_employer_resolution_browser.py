@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 
 from career_agent.h1b import DOL_URL, H1BResearch
@@ -40,7 +41,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         card = page.locator('#h1b-opportunities-results > section').filter(has_text='Engineer')
                         card.get_by_text('Associate an imported legal employer').click()
                         card.get_by_role('button', name='Search imported employer names').click()
@@ -87,7 +88,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         first = page.locator('#h1b-opportunities-results .panel').filter(has_text='First role')
                         expect(first).to_be_visible()
                         first.get_by_text('Associate an imported legal employer', exact=True).click()
@@ -130,7 +131,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                             second.get_by_role('button', name='Save association').click()
                         self.assertEqual(saved.value.status, 200)
                         expect(second).to_contain_text('Candidate-provided employer association, not independently verified')
-                        page.reload(); page.get_by_role('button', name='H-1B research', exact=True).click()
+                        page.reload(); open_tool(page, 'H-1B research')
                         second = page.locator('#h1b-opportunities-results .panel').filter(has_text='Second role')
                         expect(second).to_contain_text('Fictional Co LLC')
                         second.get_by_text('Associate an imported legal employer', exact=True).click()

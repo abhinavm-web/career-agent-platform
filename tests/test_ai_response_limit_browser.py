@@ -7,6 +7,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -51,7 +52,7 @@ class AIResponseLimitBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-ai').click()
+                        open_tool(page, 'AI analysis')
                         expect(page.locator('#ai-test-route')).to_be_enabled()
                         page.locator('#ai-test-route').click()
                         expect(page.locator('#ai-test-status')).to_contain_text('confirm the test request')
