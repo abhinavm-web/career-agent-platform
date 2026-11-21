@@ -20,9 +20,9 @@ All private candidate files should be outside the public repository or under a g
 
 ### Daily application workflow
 
-1. Open **Opportunities** and select a role. Read the linked career fact, requirement to verify, posting date, availability check and sponsorship evidence. **Fit** and **Sponsorship** show the underlying details.
+1. Open **Opportunities** and select a role. Each role has tabs: Overview, Fit, **Résumé**, **Sponsorship** (posting language plus historical employer records, policy notes and employer association) and Application. Read the linked career fact, requirement to verify, posting date, availability check and sponsorship evidence. **Fit** and **Sponsorship** show the underlying details.
 2. Open **Career profile → Application answer bank** to save frequently used responses. In the role's **Application → Application form answers**, enter the exact employer question and confirm the saved answer or write a role-specific response.
-3. Open **Tracker** after a delivery attempt. If the employer confirms receipt outside the app, record the reference or how you verified the outcome. The delivery record retains the available evidence.
+3. Choose **Add to tracker** on a role you decide to pursue. The tracker lists only roles you acted on (saved, applied, delivery recorded); roles you merely discovered stay on the board. Open **Tracker** after a delivery attempt. If the employer confirms receipt outside the app, record the reference or how you verified the outcome. The delivery record retains the available evidence.
 
 The circled information icon beside a heading explains that section. Choose **Control help**, then select a field, badge or action to read its explanation. Use **F1** for help on the focused control and **Escape** to close help. On smaller screens, **Menu** opens navigation and **Back to opportunities** returns to the role list.
 
@@ -55,11 +55,21 @@ Install discovery with `python -m pip install -e ".[web,jobspy]"`, restart the s
 
 Job sources may block requests, rate-limit or return partial results. Zero results do not prove that no jobs exist. Missing dependencies and provider exceptions show retryable errors without returning upstream exception details. The test suite uses mocked discovery, not live job-board requests; source-specific live validation remains outstanding. Respect each provider's terms and rate limits.
 
+## Résumé tab: original beside recommended
+
+Open a role's **Résumé** tab. The left column is your original résumé exactly as saved; the right column is the version recommended for this posting. Add the original once by uploading a PDF, Word or text file (read locally) or pasting text, then confirm saving it. It is stored **unencrypted** in the local SQLite database, is never sent anywhere by this screen, and stays unchanged until you replace it.
+
+The recommendation is deterministic and offline. It contains only candidate-verified facts: those already present in the original résumé (tag **In your résumé**) and those that share terms with the posting (tag **Added for this role**). Facts unrelated to the posting are left out and counted. Nothing is reworded.
+
+**Add experience** is a three-step wizard (choose an unaddressed requirement, describe what you did, confirm). Your exact words become a new verified fact only after you tick the confirmation and choose **Add to my résumé**; it is linked to the requirement it answers by provenance, not by keyword luck. You may optionally ask a configured model for a sharper question; the request sends the requirement excerpt, your draft answer and your verified fact statements only after explicit consent, and the reply cannot edit anything.
+
+**Find more matches with AI** asks a model to choose among your *verified* facts that fit the posting. The application restores each fact's verified wording, so this mode selects but never rewrites; matches are tagged **AI match · review**. **Create application draft** turns the recommended bullets into the existing reviewed packet, which still requires explicit review before export.
+
 ## Security and scope
 
 This preview is **single-user local software**, not a hosted application. The server binds to 127.0.0.1 only. A random per-process session token protects all /api routes; browser same-origin, Host and content-type checks reduce unwanted requests. API responses disable caching, framing and third-party scripts. These are defense-in-depth measures, **not** identity management or production authentication.
 
-Private profile, source notes and application drafts are stored in local plaintext files; employer confirmation references are stored in local SQLite. They are **not encrypted**. Use private filesystem permissions, avoid untrusted local users, and do not share the development server. A future cloud deployment requires actual authentication, user isolation, encrypted storage, CSRF auditing, retention/deletion, and a security review.
+Private profile, source notes, application drafts and your saved original résumé text are stored in local plaintext files or SQLite; employer confirmation references are stored in local SQLite. They are **not encrypted**. Use private filesystem permissions, avoid untrusted local users, and do not share the development server. A future cloud deployment requires actual authentication, user isolation, encrypted storage, CSRF auditing, retention/deletion, and a security review.
 
 New dashboard drafts and review decisions advance durable LangGraph runs. Legacy packets retain their existing direct-review path. Input hashes, packet fingerprints and candidate revisions prevent stale approval; resumable runs and status history appear in the automation panel.
 
@@ -69,7 +79,7 @@ New drafts include fingerprinted literal résumé blocks. The review screen show
 
 For durable workflows, review, export and manual-submission recording recheck configured profile, fact and filing inputs as well as workspace and posting revisions. Missing or changed inputs require a fresh draft. Legacy JSON and CSV files are external to SQLite and cannot be locked by the app against another program changing them; import the career profile into the workspace for transactional revision checks. Standalone legacy packets created without a workflow input snapshot cannot be checked against their original external inputs.
 
-New tailored packets provide a side-by-side comparison of the **verified fact bank at drafting time** with the selected facts in résumé order, including fact IDs and omitted markers. This is not the originally uploaded résumé, which the app does not retain as a baseline. The comparison snapshot contains all verified statements at drafting time and is stored in the private fingerprinted packet; private source notes are excluded. Omitted statements do not appear in the résumé, cover note, DOCX/PDF export, or tracker export. Existing packets are not changed and do not acquire a comparison snapshot.
+New tailored packets provide a side-by-side comparison of the **verified fact bank at drafting time** with the selected facts in résumé order, including fact IDs and omitted markers. This comparison is separate from the Résumé tab, which shows your saved original résumé (if you saved one) beside the recommendation. The comparison snapshot contains all verified statements at drafting time and is stored in the private fingerprinted packet; private source notes are excluded. Omitted statements do not appear in the résumé, cover note, DOCX/PDF export, or tracker export. Existing packets are not changed and do not acquire a comparison snapshot.
 
 Reviews and application statuses are distinct: approving a packet means **ready for manual submission**. A job moves to "submitted" only after the person checks an explicit external-submission box and enters an employer receipt. The UI never sends an application.
 

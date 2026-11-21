@@ -22,6 +22,7 @@ class FollowupPagesBrowserTests(unittest.TestCase):
             job = Job('Fictional Co', 'Engineer', 'Boston', 'https://example.invalid/role')
             with Store(db) as store:
                 store.add_jobs([job]); crm = ApplicationCRM(store)
+                crm.change_stage(job.id, 'saved')  # the tracker lists only roles the candidate acted on
                 tasks = [crm.add_followup(job.id, f'Task {i:03d}', '2027-12-01') for i in range(105)]
             app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]

@@ -298,13 +298,16 @@ footer {padding:40px 0 30px;color:#77849b;font-size:11px;}
 /* Master-detail: on wide screens the list and the detail each scroll inside the
    viewport, so choosing a role never leaves the other pane thousands of pixels away. */
 @media(min-width:1051px) {
-  #jobs-screen:not(.studio-open) .board:not(:has(> #detail-panel > .empty-detail)) > .list-panel,
+  #jobs-screen:not(.studio-open):not(.resume-open) .board:not(:has(> #detail-panel > .empty-detail)) > .list-panel,
   #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) > .list-panel {position:sticky;top:20px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;}
-  #jobs-screen:not(.studio-open) .board:not(:has(> #detail-panel > .empty-detail)) .job-list,
+  #jobs-screen:not(.studio-open):not(.resume-open) .board:not(:has(> #detail-panel > .empty-detail)) .job-list,
   #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) .job-list {flex:1 1 auto;min-height:0;overflow-y:auto;}
   #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) .list-panel .crm-form {grid-template-columns:1fr 1fr;}
   #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) .list-panel .crm-form > :is(label:first-child,p,button,span) {grid-column:1 / -1;}
-  #jobs-screen:not(.studio-open) .board:not(:has(> #detail-panel > .empty-detail)) > .list-panel > :not(.job-list),
+  /* The detail flows with the page; only the list navigator stays pinned. */
+  #jobs-screen:not(.studio-open):not(.resume-open) .board:not(:has(> #detail-panel > .empty-detail)) > #detail-panel,
+  #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) > #crm-detail {position:static;max-height:none;overflow:visible;}
+  #jobs-screen:not(.studio-open):not(.resume-open) .board:not(:has(> #detail-panel > .empty-detail)) > .list-panel > :not(.job-list),
   #tracker-screen .board:not(:has(#crm-jobs.crm-kanban)) > .list-panel > :not(.job-list) {flex-shrink:0;}
 }
 .detail-section p,.detail-section li {font-size:13px;line-height:1.6;}
@@ -685,3 +688,53 @@ body.inspect-controls .screen :is(label,button:not(.section-info),summary,a,.chi
 @media(max-width:520px) {
   :is(#application-answer-bank,.role-application-answers) .button {display:block;width:100%;margin:8px 0;}
 }
+
+/* Résumé tab: original beside recommended, one page scroll, no nested scroll boxes. */
+#jobs-screen.resume-open .board {display:grid;grid-template-columns:minmax(0,1fr);}
+#jobs-screen.resume-open .board > .list-panel {display:none;}
+#jobs-screen.resume-open #detail-panel {position:static;max-height:none;overflow:visible;}
+.rc-back {margin:6px 0 4px;}
+.rc-head p {margin:8px 0;}
+.rc-legend {display:flex;flex-wrap:wrap;gap:8px;}
+.rc-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:start;margin:12px 0 24px;}
+.rc-col {border:1px solid var(--border);border-radius:12px;padding:20px;background:var(--panel);min-width:0;}
+.rc-col h5 {margin:0 0 10px;font-size:16px;}
+.rc-col h6 {margin:20px 0 6px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.rc-text {white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 inherit;font-family:inherit;margin:12px 0;}
+.rc-bullets {list-style:none;margin:0;padding:0;display:grid;gap:8px;}
+.rc-bullet {display:grid;gap:4px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);overflow-wrap:anywhere;}
+.rc-bullet.rc-added {background:#eaf6ee;border-color:#b9dfc5;}
+.rc-statement {font-size:13px;line-height:1.55;}
+.rc-meta {color:var(--muted);font-size:11px;}
+.rc-tag {display:inline-block;justify-self:start;padding:2px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;font-weight:700;background:#f1f1f6;}
+.rc-added .rc-tag,.rc-tag-added {background:#d3eedb;border-color:#9fd2ae;color:#1f5a33;}
+.rc-tag-ai {background:#fff2d6;border-color:#e6c978;color:#6a4b00;}
+.rc-actions {display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 8px;}
+.rc-form {display:grid;gap:12px;}
+.rc-form textarea,.rc-step textarea {width:100%;box-sizing:border-box;font:inherit;}
+.rc-wizard {border:1px solid var(--border);border-radius:12px;padding:20px;background:var(--panel);margin-bottom:24px;}
+.rc-wizard h5 {margin:0 0 12px;font-size:16px;}
+.rc-steps {display:flex;flex-wrap:wrap;gap:6px 22px;list-style:none;padding:0;margin:0 0 16px;counter-reset:rc;color:var(--muted);font-size:13px;}
+.rc-steps li {counter-increment:rc;}
+.rc-steps li::before {content:counter(rc) ". ";}
+.rc-steps li.current {color:var(--text);font-weight:700;}
+.rc-step {display:grid;gap:12px;max-width:760px;}
+.rc-step h6 {margin:0;}
+.rc-gap-list {list-style:none;padding:0;margin:0;display:grid;gap:8px;}
+.rc-gap-list li {display:grid;gap:2px;}
+.rc-gap {text-align:left;width:100%;white-space:normal;line-height:1.5;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);cursor:pointer;font:inherit;color:var(--text);}
+.rc-gap:hover,.rc-gap:focus-visible {border-color:var(--teal);}
+.rc-quote {margin:0;padding:10px 14px;border-left:3px solid var(--border);background:#f6f6fa;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;}
+.rc-final {border-left-color:#9fd2ae;background:#eaf6ee;}
+.rc-question {font-weight:600;margin:0;}
+.rc-consent {display:grid;gap:10px;}
+@media(max-width:900px) {.rc-grid {grid-template-columns:minmax(0,1fr);}}
+
+/* H-1B research now renders inside each role's Sponsorship tab. */
+.h1b-role > .panel {border:0;padding:0;margin-top:20px;background:none;box-shadow:none;}
+.h1b-block {margin:18px 0;padding-top:14px;border-top:1px solid var(--border);}
+.h1b-block > h4 {margin:0 0 10px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+
+/* Sections that used to be collapsed now show their heading and content directly. */
+section.inline-tailoring,section.studio-job-context,section.tailoring-picker,section.role-application-answers {margin:22px 0;padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--panel);}
+section.inline-tailoring > h4,section.studio-job-context > h4,section.tailoring-picker > h4,section.role-application-answers > h4 {margin:0 0 10px;font-size:15px;}

@@ -70,9 +70,17 @@ class CRMStoreTests(unittest.TestCase):
     def test_board_archive_is_visible_in_tracker_and_restorable_from_tracker(self):
         with self.store.connection: self.store.archive_job(self.job.id, 'expired')
         self.assertEqual(self.crm.details(self.job.id)['stage'], 'archived')
-        self.assertEqual(self.crm.summary()['stages']['archived'], 1)
+        # Never acted on: the role stays on the board's Archived view, not in the tracker.
+        summary = self.crm.summary()
+        self.assertNotIn('archived', summary['stages'])
+        self.assertFalse(next(j for j in summary['job_stages'] if j['job_id'] == self.job.id)['tracked'])
         self.crm.change_stage(self.job.id, 'saved')
         self.assertIsNone(self.store.archive_state(self.job.id))
+        # Once the candidate saved it, archiving keeps it in the tracker's Closed group.
+        with self.store.connection: self.store.archive_job(self.job.id, 'expired')
+        summary = self.crm.summary()
+        self.assertTrue(next(j for j in summary['job_stages'] if j['job_id'] == self.job.id)['tracked'])
+        self.assertEqual(summary['stages']['archived'], 1)
 
     def test_followup_pages_include_all_open_and_job_history_without_overlap(self):
         tasks = [self.crm.add_followup(self.job.id, f'Task {i:03d}', '2026-12-01') for i in range(105)]
@@ -171,6 +179,9 @@ class CRMStoreTests(unittest.TestCase):
                              updated_at=self.store.connection.execute(
                                  'SELECT updated_at FROM applications WHERE job_id=?', (job.id,)
                              ).fetchone()[0]) if self.store.stage_of(job.id) == 'submitted' else None,
+            'tracked': self.store.stage_of(job.id) == 'submitted' or (self.store.connection.execute(
+                'SELECT stage FROM crm_stage_events WHERE job_id=? ORDER BY event_id DESC LIMIT 1', (job.id,)
+            ).fetchone() or ('discovered',))[0] in ('saved', 'shortlisted'),
         } for job in ordered_jobs]
         statements = []
         self.store.connection.set_trace_callback(statements.append)
@@ -179,9 +190,10 @@ class CRMStoreTests(unittest.TestCase):
         finally:
             self.store.connection.set_trace_callback(None)
         self.assertEqual(summary['job_stages'], expected)
+        tracked = [item for item in expected if item['tracked']]
         self.assertEqual(summary['stages'], {
-            stage: sum(item['stage'] == stage for item in expected)
-            for stage in {item['stage'] for item in expected}
+            stage: sum(item['stage'] == stage for item in tracked)
+            for stage in {item['stage'] for item in tracked}
         })
         self.assertLessEqual(len(statements), 3)
 

@@ -1,5 +1,6 @@
 """Regression: choosing a role from a long list must not create endless page scrolling."""
 import os
+import re
 import socket
 import tempfile
 import threading
@@ -22,6 +23,7 @@ class BoardScrollTests(unittest.TestCase):
                         'Requirements:\n- Python\n' + 'Fictional duties. ' * 40) for i in range(60)]
             with Store(db) as store:
                 store.add_jobs(jobs)
+                tracked_ids = [job.id for job in store.list_jobs(limit=-1)][:40]
             app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
@@ -44,29 +46,38 @@ class BoardScrollTests(unittest.TestCase):
                         expect(page.locator('#job-list .board-decision-secondary').first).not_to_be_in_viewport()
                         scroll = page.evaluate('''() => {
                             const list = document.querySelector('#job-list');
-                            const detail = document.querySelector('#detail-panel').getBoundingClientRect();
-                            return {page: document.documentElement.scrollHeight, viewport: innerHeight,
-                                    listScrolls: list.scrollHeight > list.clientHeight,
-                                    detailTop: detail.top, detailBottom: detail.bottom};
+                            return {viewport: innerHeight, listScrolls: list.scrollHeight > list.clientHeight,
+                                    listPanel: document.querySelector('#jobs-screen .list-panel').getBoundingClientRect().height,
+                                    detailOverflow: getComputedStyle(document.querySelector('#detail-panel')).overflowY};
                         }''')
-                        # The page may exceed the viewport by chrome (header), never by the list length.
-                        self.assertLessEqual(scroll['page'], scroll['viewport'] * 1.6)
+                        # The list is a bounded, pinned navigator; the detail flows with the single page scroll.
                         self.assertTrue(scroll['listScrolls'])
-                        # The detail pane is capped to the viewport and scrolls inside itself.
-                        panes = page.evaluate('''() => { const r = document.querySelector('#detail-panel').getBoundingClientRect();
-                            const l = document.querySelector('#jobs-screen .list-panel').getBoundingClientRect();
-                            return {detail: r.height, list: l.height, viewport: innerHeight}; }''')
-                        self.assertLessEqual(panes['detail'], panes['viewport'])
-                        self.assertLessEqual(panes['list'], panes['viewport'])
+                        self.assertLessEqual(scroll['listPanel'], scroll['viewport'])
+                        self.assertEqual(scroll['detailOverflow'], 'visible')
 
+                        # Only roles you acted on appear in the tracker, and its list is bounded too.
                         page.get_by_role('button', name='Application tracker').click()
+                        expect(page.locator('#crm-result-count')).to_have_text('0 of 0 tracked roles')
+                        page.get_by_role('button', name='Opportunity board').click()
+                        page.get_by_role('button', name='Add to tracker').click()
+                        expect(page.get_by_role('button', name='In tracker · saved')).to_be_visible()
+                        page.get_by_role('button', name='Application tracker').click()
+                        expect(page.locator('#crm-result-count')).to_have_text('1 of 1 tracked roles')
+                        page.evaluate('''async (ids) => { const t = document.getElementById('app').dataset.session;
+                            for (const id of ids) await fetch('/api/jobs/' + id + '/crm/stage', {method: 'POST', body: '{"stage":"saved","note":""}',
+                                headers: {'X-Session-Token': t, 'Content-Type': 'application/json'}}); }''', tracked_ids)
+                        page.get_by_role('button', name='Opportunity board').click()
+                        page.get_by_role('button', name='Application tracker').click()
+                        expect(page.locator('#crm-result-count')).to_have_text(re.compile(r'^4[01] of 4[01] tracked roles$'))
                         page.locator('#crm-jobs button').nth(30).click(force=True)
                         expect(page.locator('#crm-detail')).to_contain_text('Fictional Analyst')
-                        page.evaluate('window.scrollTo(0, 0)')
-                        tracker = page.evaluate('''() => ({page: document.documentElement.scrollHeight, viewport: innerHeight,
-                            detailTop: document.querySelector('#crm-detail').getBoundingClientRect().top})''')
-                        self.assertLessEqual(tracker['page'], tracker['viewport'] * 2.5)
-                        self.assertLess(tracker['detailTop'], tracker['viewport'])
+                        tracker = page.evaluate('''() => { const jobs = document.querySelector('#crm-jobs');
+                            return {listScrolls: jobs.scrollHeight > jobs.clientHeight, viewport: innerHeight,
+                                    panel: document.querySelector('#tracker-screen .list-panel').getBoundingClientRect().height,
+                                    detailOverflow: getComputedStyle(document.querySelector('#crm-detail')).overflowY}; }''')
+                        self.assertTrue(tracker['listScrolls'])
+                        self.assertLessEqual(tracker['panel'], tracker['viewport'])
+                        self.assertEqual(tracker['detailOverflow'], 'visible')
                     finally:
                         browser.close()
             finally:

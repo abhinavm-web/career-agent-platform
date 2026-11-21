@@ -8,6 +8,7 @@
   <title>Career Agent · Career Workspace</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script defer src="/assets/application-answers.js"></script>
+  <script defer src="/assets/resume-compare.js"></script>
   <script defer src="/assets/app.js"></script>
   <script defer src="/assets/profile-review.js"></script>
   <script defer src="/assets/h1b.js"></script>
@@ -30,7 +31,7 @@
         <span class="nav-group-label">YOUR SEARCH</span>
         <button class="nav-item" id="nav-jobs" type="button"><span class="nav-glyph" aria-hidden="true">◫</span> Opportunity board</button>
         <button class="nav-item" id="nav-tracker" type="button"><span class="nav-glyph" aria-hidden="true">▤</span> Application tracker</button>
-        <button class="nav-item" id="nav-h1b" type="button"><span class="nav-glyph" aria-hidden="true">◇</span> H-1B research</button>
+        <button class="nav-item" id="nav-h1b" type="button" hidden><span class="nav-glyph" aria-hidden="true">◇</span> H-1B research</button>
         <button class="nav-item" id="nav-profile" type="button"><span class="nav-glyph" aria-hidden="true">◈</span> Career profile</button>
         <span class="nav-group-label">TOOLS &amp; SETTINGS</span>
         <button class="nav-item" id="nav-settings" type="button"><span class="nav-glyph" aria-hidden="true">⚙</span> Settings &amp; data</button>
@@ -74,7 +75,7 @@
           <section class="home-feature panel"><span class="eyebrow">START HERE</span><h3 id="home-next-title">Review your career profile</h3><p id="home-next-description">Add your goals and verify your experience to prepare application drafts.</p><button id="home-next" type="button" class="button button-primary">Open career profile</button></section>
           <section class="home-card panel"><span class="eyebrow">OPPORTUNITIES</span><strong id="home-jobs-count">—</strong><p id="home-jobs-copy">Saved roles in your workspace</p><button id="home-jobs" type="button" class="button">Explore opportunities</button></section>
           <section class="home-card panel"><span class="eyebrow">APPLICATIONS</span><strong id="home-submitted-count">—</strong><p>Confirmed submissions</p><button id="home-tracker" type="button" class="button">Open application tracker</button></section>
-          <section class="home-card panel"><span class="eyebrow">SPONSORSHIP</span><h3>Research with context</h3><p>Review posting language and historical employer records side by side.</p><button id="home-h1b" type="button" class="button">Research employers</button></section>
+          <section class="home-card panel"><span class="eyebrow">SPONSORSHIP</span><h3>Research with context</h3><p>Open a role’s Sponsorship tab to see posting language and historical employer records side by side.</p><button id="home-h1b" type="button" class="button">Review roles</button></section>
         </div>
         <section class="home-followups panel"><div><span class="eyebrow">KEEP MOVING</span><h3>Upcoming follow-ups</h3></div><div id="home-followups" role="status">Open Home to load your local reminders.</div></section>
         <section class="home-followups panel"><div><span class="eyebrow">YOUR OPPORTUNITIES</span><h3>Roles to review</h3><p class="muted">A starting point from your saved roles, not a hiring prediction.</p></div><div id="home-recommendations"></div></section>
@@ -187,20 +188,8 @@
       </section>
 
       <section id="h1b-screen" class="screen" hidden>
-        <div class="section-heading"><h2>H-1B company and job research</h2></div>
-        <p class="muted">Explore sponsorship language in saved jobs and research optional public employer records. Historical filings and posting language do not establish your eligibility or guarantee sponsorship.</p>
-        <section class="panel profile-editor" aria-labelledby="h1b-opportunities-heading">
-          <h3 id="h1b-opportunities-heading">Sponsorship signals in your opportunities</h3>
-          <p class="muted">Uses saved job descriptions, even without imported filing data. Signals are approximate; confirm the specific visa, role and current availability with the employer.</p>
-          <form id="h1b-opportunities-form" class="crm-form">
-            <label>Role, employer or location<input id="h1b-opportunities-query" type="search" maxlength="200" placeholder="Search saved opportunities"></label>
-            <label>Posting signal<select id="h1b-opportunities-category"><option value="all">All signals</option><option value="potential">Possible sponsorship or transfer</option><option value="review">Needs clarification</option><option value="excluded">Posting indicates a restriction</option></select></label>
-            <div class="button-row"><button type="submit" class="button button-primary">Find opportunities</button><button type="button" id="h1b-find-jobs" class="button">Find more jobs with JobSpy</button></div>
-          </form>
-          <p id="h1b-opportunities-status" role="status" aria-live="polite"></p>
-          <div id="h1b-opportunities-results"></div>
-          <button id="h1b-opportunities-next" type="button" class="button" hidden>Next opportunities</button>
-        </section>
+        <div class="section-heading"><h2>Sponsorship data and employer research</h2></div>
+        <p class="muted">Per-role sponsorship evidence lives in each role’s Sponsorship tab. Here you can set preferences, search public employer records and import government data. Historical filings and posting language do not establish your eligibility or guarantee sponsorship.</p>
         <form id="h1b-settings" class="panel profile-editor">
           <h3>Search preferences</h3>
           <div class="form-grid">

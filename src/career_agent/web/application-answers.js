@@ -30,7 +30,7 @@ window.applicationAnswers = function ({api, node, button}) {
 
   return function panel(jobId) {
     const path = jobId ? "/api/jobs/" + jobId + "/application-answers" : "/api/workspace/application-answers";
-    const details = node("details", jobId ? "role-application-answers" : "panel profile-editor");
+    const details = node(jobId ? "section" : "details", jobId ? "role-application-answers" : "panel profile-editor");
     if (jobId) details.dataset.jobId = jobId;
     const body = node("fieldset");
     body.append(node("legend", "", jobId ? "Employer questions" : "Profile answers"));
@@ -165,9 +165,10 @@ window.applicationAnswers = function ({api, node, button}) {
     }
 
     const load = () => run(async () => render(await api(path)));
-    details.addEventListener("toggle", () => { if (details.open && !loaded) return load(); });
+    if (jobId) { details.open = true; load(); }  // role panel is always visible, so load immediately
+    else details.addEventListener("toggle", () => { if (details.open && !loaded) return load(); });
     body.append(content, button("Reload answers", "button", load));
-    details.append(node("summary", "", jobId ? "Application form answers" : "Application answer bank"),
+    details.append(node(jobId ? "h4" : "summary", "", jobId ? "Application form answers" : "Application answer bank"),
       node("p", "muted", jobId ? "Paste the question exactly as the employer asks it. Review each answer before copying it into the form."
         : "Save answers in your own words. Each employer question requires your confirmation before reuse."),
       body, status);

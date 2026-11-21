@@ -76,7 +76,6 @@ class WorkspaceGuideTests(unittest.TestCase):
                     expect(page.locator("#job-list .board-decision-compact").first).to_contain_text("Verified evidence")
                     page.get_by_role("tab", name="Application", exact=True).click()
                     form = page.locator(".role-application-answers")
-                    form.locator("summary").click()
                     form.get_by_label("Employer’s exact question").fill("What is your notice period?")
                     form.get_by_label("Question topic").select_option("availability")
                     expect(form.get_by_label("Saved profile answer for review")).to_have_value("Three weeks")

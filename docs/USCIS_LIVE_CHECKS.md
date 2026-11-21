@@ -1,6 +1,6 @@
 # USCIS records and live job observations
 
-The H-1B research tab separates three sources: DOL LCA history, USCIS employer decision aggregates, and dated public ATS posting checks. None determines individual immigration eligibility or guarantees an offer of sponsorship.
+The sponsorship data screen and each role's Sponsorship tab separate three sources: DOL LCA history, USCIS employer decision aggregates, and dated public ATS posting checks. None determines individual immigration eligibility or guarantees an offer of sponsorship.
 
 ## USCIS refresh and import
 

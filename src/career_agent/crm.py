@@ -526,14 +526,19 @@ class ApplicationCRM:
             stage = job["crm_stage"] if job["crm_stage"] in valid_stages else ("applied" if submitted else "discovered")
             if not submitted and job["archived"]:
                 stage = "archived"
+            delivery = job_delivery(deliveries, job["job_id"], job["url"])
+            # A role is tracked once the candidate acted on it (saved, applied, delivery
+            # recorded, ...). Merely discovered or board-archived roles stay on the board.
+            acted_stage = job["crm_stage"] if job["crm_stage"] in valid_stages else None
+            tracked = bool(submitted or delivery or acted_stage not in (None, "discovered"))
             job_stages.append({
                 "job_id": job["job_id"], "stage": stage, "title": job["title"],
                 "company": job["company"], "location": job["location"],
                 "application_stage": job["application_stage"],
-                "delivery": job_delivery(deliveries, job["job_id"], job["url"]),
-                "priority": job["priority"],
+                "delivery": delivery, "priority": job["priority"], "tracked": tracked,
             })
-            counts[stage] = counts.get(stage, 0) + 1
+            if tracked:
+                counts[stage] = counts.get(stage, 0) + 1
             if submitted and stage in ('applied', 'screening', 'assessment', 'interview') and not job['has_pending_followup']:
                 # SQLite CURRENT_TIMESTAMP is UTC. An organizer event preceding the
                 # submission must not be mistaken for a post-submission stage date.

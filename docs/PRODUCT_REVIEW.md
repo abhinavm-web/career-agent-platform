@@ -59,3 +59,20 @@ Three independent causes, all of which pushed the page taller than any screen sh
 - Is H-1B research a destination or a facet of each role?
 - Should the tracker show only roles the user has acted on?
 - Who is the first-run user, and is a guided setup preferable to the current open dashboard?
+
+## Status update: first overhaul slice
+
+Done on this branch (owner decisions: H-1B is a role tab, the tracker shows only acted roles, questions are asked step by step):
+
+- **Résumé tab per role** with the original résumé left and the recommended version right; additions are tagged and every bullet is a verified fact. A three-step wizard adds experience (confirm required) and can ask a model for a sharper question after explicit consent. See [Dashboard](DASHBOARD.md#résumé-tab-original-beside-recommended).
+- **H-1B moved into each role's Sponsorship tab.** The all-roles list (P0-1) is removed; employer search, preferences and imports remain under Settings & data.
+- **Tracker lists only roles you acted on**, with **Add to tracker** on each role. A role archived from the board that you never saved stays out of the tracker.
+- **Dropdowns removed** where they hid primary content on a role: saved description, AI résumé panel, AI wording, fact picker, résumé and cover-note preview, and application answers. Rare edit tools (correct description, browser capture) stay collapsed because their unsaved-work guard depends on it.
+- **Scrolling:** the list is a pinned navigator; the role detail flows with the page, so there are no nested scroll boxes on the Résumé tab.
+
+Not done, and why:
+
+- **AI cannot reword résumé bullets.** The existing wording endpoint deliberately restores each fact's verified text, so "Find more matches with AI" selects among verified facts only. True rewording needs a product and safety decision.
+- **Profile, Saved searches, AI analysis and Settings screens** still use top-level dropdown panels. The profile screen's 35 controls (P0-3) are the next candidate for a wizard.
+- **Home setup guidance, JobSpy and model-route setup checks (P0-2)** are unchanged.
+- **Overlap to resolve:** the Application tab still has the older "AI resume and cover letter", "Compare AI wording" and "Choose facts" panels, which now duplicate the Résumé tab. They remain because the reviewed export path depends on them.

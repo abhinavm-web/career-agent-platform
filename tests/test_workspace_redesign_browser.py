@@ -81,9 +81,13 @@ class WorkspaceRedesignTests(unittest.TestCase):
                                     page.locator('#menu-toggle').click()
                                 page.get_by_role('button', name=label, exact=True).click()
 
+                            page.evaluate('''async () => { const t = document.getElementById('app').dataset.session;
+                                const jobs = await (await fetch('/api/jobs', {headers: {'X-Session-Token': t}})).json();
+                                await fetch('/api/jobs/' + (jobs.jobs || jobs)[0].id + '/crm/stage', {method: 'POST', body: '{"stage":"saved","note":""}',
+                                    headers: {'X-Session-Token': t, 'Content-Type': 'application/json'}}); }''')
                             navigate('Application tracker')
                             page.get_by_label('Layout').select_option('board')
-                            column = page.get_by_role('region', name='Discovered opportunities')
+                            column = page.get_by_role('region', name='Saved opportunities')
                             expect(column).to_contain_text('Fictional Analyst')
                             column.get_by_role('button', name=re.compile('Fictional Analyst')).click()
                             expect(page.locator('#crm-detail')).to_contain_text('Fictional Analyst')

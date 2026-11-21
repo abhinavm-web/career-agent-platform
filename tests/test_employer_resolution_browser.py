@@ -14,6 +14,14 @@ from career_agent.storage import Store
 from test_h1b import lca_csv
 
 
+def open_sponsorship(page, title, company='Fictional Co'):
+    """Employer research now lives in each role's Sponsorship tab."""
+    page.get_by_role('button', name='Opportunity board', exact=True).click()
+    page.get_by_role('button', name=f'View {title} at {company}').click()
+    page.get_by_role('tab', name='Sponsorship').click()
+    return page.locator('#job-pane-sponsorship .h1b-role > section')
+
+
 @unittest.skipUnless(os.environ.get('CAREER_AGENT_TEST_BROWSER') == '1', 'Enable with installed Chromium')
 class EmployerResolutionBrowserTests(unittest.TestCase):
     def test_broader_name_search_requires_separate_association_confirmation(self):
@@ -40,9 +48,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-h1b').click()
-                        card = page.locator('#h1b-opportunities-results > section').filter(has_text='Engineer')
-                        card.get_by_text('Associate an imported legal employer').click()
+                        card = open_sponsorship(page, 'Engineer')
                         card.get_by_role('button', name='Search imported employer names').click()
                         expect(card).to_contain_text('Showing 0–0 of 0')
                         card.get_by_label('Ignore punctuation and spaces when finding possible names').check()
@@ -87,10 +93,8 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
-                        first = page.locator('#h1b-opportunities-results .panel').filter(has_text='First role')
+                        first = open_sponsorship(page, 'First role')
                         expect(first).to_be_visible()
-                        first.get_by_text('Associate an imported legal employer', exact=True).click()
                         first.get_by_role('button', name='Search imported employer names').click()
                         expect(first.get_by_role('button', name='Use Fictional Co LLC')).to_be_visible()
                         expect(first).to_contain_text('Showing 1–25 of 27')
@@ -112,15 +116,12 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                         first.get_by_label('I understand this association is not independently verified.').check()
                         first.get_by_role('button', name='Save association').click()
                         expect(first).to_contain_text('Candidate-provided employer association, not independently verified')
-                        first.get_by_text('Associate an imported legal employer', exact=True).click()
                         page.once('dialog', lambda dialog: dialog.accept())
                         first.get_by_role('button', name='Save as suggestion for this company name').click()
                         expect(first).to_contain_text('Previously saved suggestion')
-                        page.get_by_role('button', name='Find opportunities', exact=True).click()
-                        second = page.locator('#h1b-opportunities-results .panel').filter(has_text='Second role')
+                        second = open_sponsorship(page, 'Second role')
                         expect(second).to_contain_text('Historical DOL lookup for Fictional Co: No exact-name DOL LCA records')
                         expect(second).not_to_contain_text('Candidate-provided employer association')
-                        second.get_by_text('Associate an imported legal employer', exact=True).click()
                         second.get_by_role('button', name='Review saved suggestion').click()
                         expect(second.get_by_label('Imported legal employer name')).to_have_value('Fictional Co LLC')
                         expect(second.get_by_label('I understand this association is not independently verified.')).not_to_be_checked()
@@ -130,10 +131,8 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                             second.get_by_role('button', name='Save association').click()
                         self.assertEqual(saved.value.status, 200)
                         expect(second).to_contain_text('Candidate-provided employer association, not independently verified')
-                        page.reload(); page.get_by_role('button', name='H-1B research', exact=True).click()
-                        second = page.locator('#h1b-opportunities-results .panel').filter(has_text='Second role')
+                        page.reload(); second = open_sponsorship(page, 'Second role')
                         expect(second).to_contain_text('Fictional Co LLC')
-                        second.get_by_text('Associate an imported legal employer', exact=True).click()
                         page.once('dialog', lambda dialog: dialog.accept())
                         second.get_by_role('button', name='Remove saved suggestion').click()
                         expect(second).not_to_contain_text('Previously saved suggestion')

@@ -99,7 +99,7 @@ class ProfileReviewBrowserTests(unittest.TestCase):
                         page.locator('#nav-jobs').click(); page.locator('#job-list button').first.click()
                         page.get_by_role('tab', name='Application', exact=True).click()
                         page.get_by_role('button', name='Open application studio').click()
-                        studio = page.locator('.document-revision-studio'); studio.locator('summary').first.click()
+                        studio = page.locator('.document-revision-studio')
                         studio.get_by_role('button', name='Load models and saved revisions').click()
                         expect(studio.get_by_label('Revision model')).to_have_value('claude')
                         studio.get_by_label('I consent to sharing', exact=False).check()

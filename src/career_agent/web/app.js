@@ -56,6 +56,9 @@
   }
 
   const applicationAnswers = window.applicationAnswers({api, node, button});
+  const resumeCompare = window.resumeCompare({api, node, button, notice, onDraftCreated: async () => {
+    state.detailTab = "application"; await loadPacket(state.selectedId); renderDetail();
+  }});
   byId("application-answer-bank").append(applicationAnswers());
 
   function notice(message, error) {
@@ -556,9 +559,9 @@
   }
 
   function documentRevisionStudio(job) {
-    const panel = node("details", "inline-tailoring document-revision-studio");
+    const panel = node("section", "inline-tailoring document-revision-studio");
     panel.dataset.jobId = job.id;
-    panel.append(node("summary", "", "AI resume and cover letter"), node("p", "muted",
+    panel.append(node("h4", "", "AI resume and cover letter"), node("p", "muted",
       "Ask your chosen model to revise both documents for this opportunity. Revisions are saved separately from verified facts and application packets. Citations do not prove accuracy: review every claim before export."));
     const load = button("Load models and saved revisions", "button");
     const modelLabel = node("label", "field", "Revision model");
@@ -844,10 +847,11 @@
   }
 
   function inlineTailoring(job) {
-    const panel = node("details", "inline-tailoring");
+    const panel = node("section", "inline-tailoring");
     panel.id = "inline-tailoring"; panel.dataset.jobId = job.id;
+    panel.open = true;  // always visible; keeps the preserve-on-refresh guards in renderDetailPreservingEditor active
     panel.dataset.descriptionRevision = String(job.description_revision ?? 0);
-    panel.append(node("summary", "", "Compare AI wording with verified facts"), node("p", "muted",
+    panel.append(node("h4", "", "Compare AI wording with verified facts"), node("p", "muted",
       "With your consent, the saved posting and verified career facts are sent to the chosen provider. Cloud requests may incur charges; local servers may forward requests. Suggestions are unverified and never replace a fact or draft automatically."));
     const load = button("Load model routes", "button");
     const label = node("label", "block-label", "Model route");
@@ -1073,6 +1077,7 @@
     if (!job) {
       state.studioOpen = false;
       byId("jobs-screen").classList.toggle("studio-open", false);
+      byId("jobs-screen").classList.toggle("resume-open", false);
       const empty = node("div", "empty-detail");
       if (state.selectedId) {
         empty.append(node("h3", "", "Opportunity outside the loaded board"), node("p", "", "Your description editor is preserved below. Its saved revision will be checked before changes are accepted."));
@@ -1091,7 +1096,24 @@
       syncStudio();
     });
     studioToggle.setAttribute("aria-controls", "job-pane-application");
-    headerActions.append(node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"), studioToggle);
+    const trackToggle = button("Add to tracker", "button", async () => {
+      if (trackToggle.dataset.stage && trackToggle.dataset.stage !== "discovered") {
+        byId("nav-tracker").click(); selectCRMJob(job.id); return;
+      }
+      trackToggle.disabled = true;
+      try {
+        await api("/api/jobs/" + job.id + "/crm/stage", "POST", {stage: "saved", note: ""});
+        trackToggle.dataset.stage = "saved"; trackToggle.textContent = "In tracker · saved";
+      } catch (error) { notice(error.message, true); }
+      finally { trackToggle.disabled = false; }
+    });
+    trackToggle.hidden = true;
+    api("/api/jobs/" + job.id + "/crm").then((crm) => {
+      if (!trackToggle.isConnected) return;
+      trackToggle.dataset.stage = crm.stage; trackToggle.hidden = false;
+      trackToggle.textContent = crm.stage === "discovered" ? "Add to tracker" : "In tracker · " + crm.stage;
+    }).catch(() => {});
+    headerActions.append(node("div", "detail-badge", job.fit_score === null ? "Unscored" : "Keyword " + (!job.description?.trim() ? "Incomplete " : "") + job.fit_score + "/100"), trackToggle, studioToggle);
     header.append(heading, headerActions);
     const returnToList = button("← Back to opportunities", "compact-back", () => {
       byId("jobs-screen").classList.toggle("compact-detail", false);
@@ -1126,10 +1148,12 @@
     const tabList = node("div", "detail-jump");
     tabList.setAttribute("role", "tablist"); tabList.setAttribute("aria-label", "Job workspace");
     const panes = {}, tabs = {};
-    const sections = [["overview", "Overview"], ["fit", "Fit"], ["sponsorship", "Sponsorship"], ["application", "Application"]];
+    let sponsorshipLoader = null;
+    const sections = [["overview", "Overview"], ["fit", "Fit"], ["resume", "Résumé"], ["sponsorship", "Sponsorship"], ["application", "Application"]];
     function syncStudio() {
       info.hidden = state.detailTab !== "overview";
       byId("jobs-screen").classList.toggle("studio-open", state.studioOpen);
+      byId("jobs-screen").classList.toggle("resume-open", state.detailTab === "resume");
       studioToggle.textContent = state.studioOpen ? "Exit application studio" : "Open application studio";
       studioToggle.setAttribute("aria-pressed", String(state.studioOpen));
       studioToggle.hidden = state.detailTab !== "application";
@@ -1144,6 +1168,8 @@
         tabs[name].setAttribute("aria-selected", String(active));
         tabs[name].setAttribute("tabindex", active ? "0" : "-1");
       }
+      if (key === "resume") resumeView.refresh();
+      if (key === "sponsorship") sponsorshipLoader?.();
       if (focus) tabs[key].focus();
     }
     for (const [key, title] of sections) {
@@ -1159,6 +1185,8 @@
       });
       tabs[key] = tab; panes[key] = pane; tabList.append(tab);
     }
+    const resumeView = resumeCompare(job);
+    panes.resume.append(button("← Show opportunity list", "plain-button rc-back", () => activateTab("overview", true)), resumeView.element);
     detail.append(tabList, ...sections.map(([key]) => panes[key]));
     activateTab(state.detailTab);
     const evidenceSummary = node("section", "evidence-summary");
@@ -1344,11 +1372,17 @@
         (history.match === "candidate_association" ? "This job uses your unverified employer association. " : "This is an exact name match, not verified legal identity. ") +
         "Historical records do not establish current job sponsorship, hiring or individual eligibility. Open H-1B research to inspect sources and dates."));
     }
-    sponsor.append(button("Research H-1B records and jobs", "button", () => {
-      byId("h1b-query").value = job.company;
-      byId("nav-h1b").click();
-    }));
     panes.sponsorship.append(sponsor);
+    const employerResearch = node("div", "h1b-role");
+    let employerResearchLoaded = false;
+    panes.sponsorship.append(employerResearch);
+    sponsorshipLoader = async () => {
+      if (employerResearchLoaded) return; employerResearchLoaded = true;
+      employerResearch.append(node("p", "muted", "Loading employer records…"));
+      try { employerResearch.replaceChildren(await window.h1bRoleCard(job.id)); }
+      catch (error) { employerResearch.replaceChildren(node("p", "warning", error.message)); employerResearchLoaded = false; }
+    };
+    if (state.detailTab === "sponsorship") sponsorshipLoader();
 
     panes.fit.append(resumeGapPanel(job));
 
@@ -1564,9 +1598,9 @@
     }
     panes.overview.append(desc);
 
-    const context = node("details", "studio-job-context");
+    const context = node("section", "studio-job-context");
     context.open = true;
-    context.append(node("summary", "", "Saved job description"),
+    context.append(node("h4", "", "Saved job description"),
       node("p", "muted", "Source text is unverified and may be incomplete or outdated. Review the original posting."),
       node("p", "description", job.description || "No description saved. Review the original posting before preparing a draft."));
     panes.application.append(context);
@@ -1600,10 +1634,10 @@
       draftButton.disabled = missingProfile || missingFacts;
       drafts.append(draftButton);
       if (!missingProfile && !missingFacts) {
-      const choose = node("details", "tailoring-picker");
+      const choose = node("section", "tailoring-picker");
       choose.dataset.jobId = job.id;
       choose.dataset.dirty = "false";
-      choose.append(node("summary", "", "Choose facts for a tailored draft"));
+      choose.append(node("h4", "", "Choose facts for a tailored draft"));
       choose.append(node("p", "muted", "Select verified facts and arrange sections and facts. Statements are copied verbatim; changes create a new draft that needs a fresh review."));
       choose.append(node("p", "muted", "To change a statement, edit it in Career profile and verify the changed fact before including it."));
       choose.append(node("p", "muted", "Keyword mentions compare each fact's saved keywords with the job title and description. They are suggestions, not proof of fit or a reason to omit other facts."));
@@ -1711,8 +1745,8 @@
     const card = node("section", "review-card");
     card.append(node("h4", "", "Application packet"), node("p", "", "Review each statement before using it. Packet fingerprint: " + packet.packet_sha256.slice(0, 12) + "…"));
     if (stale) card.append(node("p", "stale-warning", "The career profile or job description changed since this packet was drafted. Regenerate and review before using it."));
-    const resume = node("details");
-    const resumeTitle = node("summary", "", "Resume draft");
+    const resume = node("section");
+    const resumeTitle = node("h4", "", "Resume draft");
     const resumeText = node("pre", "", packet.resume_markdown);
     resume.append(resumeTitle);
     const blocks = packet.resume_blocks;
@@ -1727,8 +1761,8 @@
       resume.append(preview, node("p", "muted", "Plain-text draft:"));
     }
     resume.append(resumeText);
-    const letter = node("details");
-    letter.append(node("summary", "", "Cover-note draft"), node("pre", "", packet.cover_note));
+    const letter = node("section");
+    letter.append(node("h4", "", "Cover-note draft"), node("pre", "", packet.cover_note));
     card.append(resume, letter);
     const versions = node("details", "resume-comparison");
     versions.append(node("summary", "", "Compare previous draft versions"), node("p", "muted",
@@ -2412,7 +2446,7 @@
     const boardView = byId("crm-layout").value === "board";
     list.classList.toggle("crm-kanban", boardView);
     byId("crm-layout-help").textContent = boardView ? "Scroll across stages and select a role to review its details. Change its stage in the details panel." : "";
-    const jobs = state.crmSummary?.job_stages || [];
+    const jobs = (state.crmSummary?.job_stages || []).filter((job) => job.tracked);
     const search = byId("crm-search").value.trim().toLowerCase();
     const stage = byId("crm-stage-filter").value;
     const priority = byId("crm-priority-filter").value;
@@ -2420,9 +2454,9 @@
       (!stage || job.stage === stage) && (!priority || (job.priority || "none") === priority) &&
       (!search || [job.title, job.company, job.location].join(" ").toLowerCase().includes(search))
     );
-    byId("crm-result-count").textContent = visible.length + " of " + jobs.length + " opportunities";
+    byId("crm-result-count").textContent = visible.length + " of " + jobs.length + " tracked roles";
     if (!jobs.length) {
-      list.append(node("p", "loading", "No jobs yet. Add a role on the Opportunity board."));
+      list.append(node("p", "loading", "Nothing tracked yet. Open a role on the Opportunity board and choose Add to tracker."));
       return;
     }
     if (!visible.length) { list.append(node("p", "loading", "No opportunities match these filters.")); return; }
@@ -2959,7 +2993,7 @@
   byId("open-discovery").addEventListener("click", () => { byId("discovery-panel").open = true; byId("discover-query").focus(); });
   byId("home-jobs").addEventListener("click", () => byId("nav-jobs").click());
   byId("home-tracker").addEventListener("click", () => byId("nav-tracker").click());
-  byId("home-h1b").addEventListener("click", () => byId("nav-h1b").click());
+  byId("home-h1b").addEventListener("click", () => byId("nav-jobs").click());
   byId("nav-jobs").addEventListener("click", () => showScreen("jobs"));
   byId("nav-h1b").addEventListener("click", () => showScreen("h1b"));
   byId("nav-automation").addEventListener("click", () => {showScreen("automation"); byId("automation-panel").open = true; byId("automation-refresh").click();});

@@ -54,10 +54,10 @@ and submit it. You can also add an opportunity manually.
    On **Opportunity board**, use **Find jobs with JobSpy** or add a job manually.
    **Saved searches** can run while the server is running after you opt in. Source
    results can be incomplete. Review constraints and the original posting.
-3. In **H-1B research**, download a supported DOL workbook or import a local DOL
+3. In **Settings & data → Open data administration**, download a supported DOL workbook or import a local DOL
    workbook/CSV or USCIS CSV, and associate an employer when needed. Historical filings
    are not a job-specific sponsorship commitment; unknowns require employer confirmation.
-4. Open a role and use **Overview**, **Fit**, **Sponsorship**, and **Application**
+4. Open a role and use **Overview**, **Fit**, **Résumé** (original beside recommended), **Sponsorship**, and **Application**
    to review evidence and prepare a draft. Create and review a draft from verified facts. Approve the current version before
    exporting. Apply yourself on the employer site, then record your actual
    submission in the tracker. On supported Lever forms, the browser companion can activate submission after your final review and approval.
@@ -152,9 +152,9 @@ Existing --profile and --facts files are never modified automatically. If both a
  
 ## Local application CRM (v0.5 preview)
 
-The **H-1B research** tab supports new/transfer preferences, a fiscal-year window, local DOL LCA CSV/XLSX imports, explicit downloads of supported DOL workbooks, company-record search and job-policy evidence. It also supports explicit [USCIS annual CSV refresh/import and live Greenhouse/Lever checks](docs/USCIS_LIVE_CHECKS.md). See [H-1B research](docs/H1B_RESEARCH.md). Company search uses the local index; filing history never establishes job availability or immigration eligibility.
+Each role's **Sponsorship** tab shows that role's evidence, and **Settings & data → Open data administration** supports new/transfer preferences, a fiscal-year window, local DOL LCA CSV/XLSX imports, explicit downloads of supported DOL workbooks, company-record search and job-policy evidence. It also supports explicit [USCIS annual CSV refresh/import and live Greenhouse/Lever checks](docs/USCIS_LIVE_CHECKS.md). See [H-1B research](docs/H1B_RESEARCH.md). Company search uses the local index; filing history never establishes job availability or immigration eligibility.
 
-Use the new **Application tracker** tab in the loopback dashboard to record interview stages, recruiter contacts, follow-up dates, and outcomes. Pre-application organizer stages never imply submission. The CRM does not send emails, reminders or applications.
+Use **Add to tracker** on a role, then the **Application tracker** tab in the loopback dashboard (it lists only roles you acted on) to record interview stages, recruiter contacts, follow-up dates, and outcomes. Pre-application organizer stages never imply submission. The CRM does not send emails, reminders or applications.
 
     .\.venv\Scripts\python.exe -m pip install -e ".[web]"
     .\.venv\Scripts\python.exe -m career_agent.cli serve

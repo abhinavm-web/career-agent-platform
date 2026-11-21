@@ -302,6 +302,10 @@ def create_app(config: DashboardConfig) -> FastAPI:
     def workspace_guide_asset():
         return Response(assets('workspace-guide.js'), media_type='text/javascript')
 
+    @app.get('/assets/resume-compare.js')
+    def resume_compare_script():
+        return Response(assets('resume-compare.js'), media_type='text/javascript')
+
     @app.get('/assets/application-answers.js')
     def application_answers_script():
         return Response(assets('application-answers.js'), media_type='text/javascript')
@@ -1400,6 +1404,63 @@ def create_app(config: DashboardConfig) -> FastAPI:
             facts = []
         return {'job_id': job.id, 'description_revision': job_revision,
                 'workspace_revision': workspace['revision'], **requirement_evidence(job.description, facts)}
+
+    def verified_fact_rows():
+        workspace = active_workspace()
+        if workspace['revision']:
+            return [fact for fact in workspace['facts'] if fact['verified_by_candidate']], workspace['revision']
+        if config.facts_path:
+            return [{'id': fact.fact_id, 'section': fact.section, 'statement': fact.statement,
+                     'keywords': list(fact.keywords)} for fact in FactBank.load(config.facts_path).facts], 0
+        return [], 0
+
+    @app.get('/api/workspace/resume-original')
+    def resume_original_get():
+        from .resume_compare import get_original
+        with Store(config.db_path) as store:
+            return {'resume': get_original(store.connection)}
+
+    @app.put('/api/workspace/resume-original')
+    async def resume_original_put(request: Request):
+        from .resume_compare import ResumeConflict, save_original
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'text', 'filename', 'expected_revision', 'acknowledged'} or data['acknowledged'] is not True:
+            raise ValueError('Provide the résumé text and confirm saving it in your local workspace')
+        with Store(config.db_path) as store:
+            try:
+                return {'resume': save_original(store.connection, data['text'], data['filename'], data['expected_revision'])}
+            except ResumeConflict as error:
+                raise HTTPException(status_code=409, detail=str(error)) from None
+
+    @app.get('/api/jobs/{job_id}/resume-compare')
+    def resume_compare_view(job_id: str):
+        from .resume_compare import compare, get_original
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            original = get_original(store.connection)
+            description_revision = store.description_revision(job.id)
+        facts, revision = verified_fact_rows()
+        return {'job_id': job.id, 'description_revision': description_revision, 'original': original,
+                'verified_fact_count': len(facts), **compare(original['text'], job, facts, revision)}
+
+    @app.post('/api/jobs/{job_id}/ai-experience-question')
+    async def ai_experience_question(job_id: str, request: Request):
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'requirement', 'draft_answer', 'acknowledged'}
+                or data['acknowledged'] is not True):
+            raise ValueError('Confirm sending this posting excerpt, your draft answer and verified facts to the selected provider')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                job = _get_job(store, job_id)
+            facts, _ = verified_fact_rows()
+            claims = {fact['id']: fact['statement'] for fact in facts}
+            return await run_in_threadpool(run_recorded, config.db_path, data['route'], 'career_chat', ai.experience_question,
+                job, data['requirement'], data['draft_answer'], claims, data['route'], True, expected_route_fingerprint=fingerprint)
+        finally:
+            ai_lock.release()
 
     @app.get('/api/jobs/{job_id}/interview-preparation')
     def interview_preparation(job_id: str):

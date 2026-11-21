@@ -14,6 +14,7 @@ const SOURCE = fs.readFileSync(
 const ID_A = "aaaaaaaaaaaaaaaa";
 const ID_B = "bbbbbbbbbbbbbbbb";
 const ANSWER_SOURCE = fs.readFileSync(path.join(__dirname, "../src/career_agent/web/application-answers.js"), "utf8");
+const RESUME_COMPARE_SOURCE = fs.readFileSync(path.join(__dirname, "../src/career_agent/web/resume-compare.js"), "utf8");
 
 class Element {
   constructor(tag) {
@@ -189,9 +190,10 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
       outcomes,
       stages: {[crmStage]: 1, discovered: crmStage === "discovered" ? 2 : 1},
       job_stages: [
-        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority,
+        {...fakeJob(ID_A, "Role Alpha"), job_id: ID_A, stage: crmStage, priority: crmPriority, tracked: true,
           delivery: jobsOverride?.find(job => job.id === ID_A)?.delivery},
-        {...fakeJob(ID_B, "Role Beta"), job_id: ID_B, stage: "discovered"}
+        {...fakeJob(ID_B, "Role Beta"), job_id: ID_B, stage: "discovered", tracked: true},
+        {...fakeJob("c".repeat(16), "Role Gamma"), job_id: "c".repeat(16), stage: "discovered", tracked: false}
       ],
       open_followups: crmTask && !crmTask.completed_at ? [{
         ...crmTask, job_id: ID_A, company: "Example Corp", overdue: false
@@ -323,6 +325,7 @@ function createHarness({olderTrackedJob = false, jobsOverride = null, jobsPage =
     console,
   };
   vm.runInNewContext(ANSWER_SOURCE, context);
+  vm.runInNewContext(RESUME_COMPARE_SOURCE, context);
   vm.runInNewContext(SOURCE, context, {filename: "app.js", timeout: 1500});
   return {get, waiting, downloads, discoveryRequests, chatRequests, getWorkspace: () => workspace, getCRM: () => ({stage: crmStage, contact: crmContact, task: crmTask})};
 }
@@ -360,7 +363,7 @@ test("role answers require exact wording and explicit reuse before copy, and rej
   const panel = context.window.applicationAnswers({api, node, button})(ID_A);
   panel.isConnected = panel.open = true;
   panel.closest = () => null;
-  await panel.handlers.toggle();
+  await new Promise(resolve => setTimeout(resolve, 0));  // the role panel loads as soon as it is created
   const find = (el, tag, text) => el.tagName === tag && el.textContent.startsWith(text)
     ? el : el.children.map(child => find(child, tag, text)).find(Boolean);
   const action = text => find(panel, "button", text);
@@ -1090,7 +1093,7 @@ test("tracker combines filters and saves priority and plain-text interview notes
   assert.match(harness.get("crm-jobs").textContent, /high priority/);
   harness.get("crm-priority-filter").value = "high";
   harness.get("crm-priority-filter").handlers.change();
-  assert.equal(harness.get("crm-result-count").textContent, "1 of 2 opportunities");
+  assert.equal(harness.get("crm-result-count").textContent, "1 of 2 tracked roles");
   harness.get("crm-search").value = "beta";
   harness.get("crm-search").handlers.input();
   assert.match(harness.get("crm-jobs").textContent, /No opportunities match/);
@@ -1099,9 +1102,9 @@ test("tracker combines filters and saves priority and plain-text interview notes
   assert.match(harness.get("crm-jobs").textContent, /Role Alpha/);
   harness.get("crm-stage-filter").value = "interview";
   harness.get("crm-stage-filter").handlers.change();
-  assert.equal(harness.get("crm-result-count").textContent, "0 of 2 opportunities");
+  assert.equal(harness.get("crm-result-count").textContent, "0 of 2 tracked roles");
   await harness.get("crm-clear-filters").click();
-  assert.equal(harness.get("crm-result-count").textContent, "2 of 2 opportunities");
+  assert.equal(harness.get("crm-result-count").textContent, "2 of 2 tracked roles");
   const noteForm = section("Interview notes").children.find((child) => child.tagName === "form");
   noteForm.children[0].children[0].value = "2026-11-10";
   noteForm.children[1].children[0].value = "Technical panel";

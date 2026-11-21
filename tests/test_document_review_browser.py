@@ -212,7 +212,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                         self.assertLess(tailored.index('experience-02'), tailored.index('experience-01'))
                         packet_text = page.locator('.review-card').get_by_text('Resume draft', exact=True)
                         packet_text.click()
-                        resume = page.locator('.review-card details').filter(has_text='Resume draft').locator('pre').inner_text()
+                        resume = page.locator('.review-card section').filter(has_text='Resume draft').locator('pre').inner_text()
                         self.assertLess(resume.index('## Education'), resume.index('## Relevant Experience'))
                         self.assertLess(resume.index('Led a fictional Python migration.'), resume.index('Delivered a fictional AI program'))
                         page.get_by_text('I have personally reviewed this draft and its claims.').click()

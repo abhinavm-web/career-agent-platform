@@ -6,8 +6,6 @@
   let nextOffset = null;
   let searchedQuery = "";
   let searchedMode = "literal";
-  let opportunitySequence = 0;
-  let opportunityNext = null;
   const observationTimers = new Map();
   function clearResults(id) {
     const container = get(id);
@@ -129,8 +127,8 @@
     const counts = node("ul");
     for (const row of company.counts) counts.append(node("li", "FY " + row.fiscal_year + " · " + row.case_status + ": " + row.cases));
     card.append(counts);
-    const details = node("details");
-    details.append(node("summary", "Latest stored records (up to 20; may predate the selected window)"));
+    const details = node("div", "h1b-block");
+    details.append(node("h4", "Latest stored records (up to 20; may predate the selected window)"));
     for (const row of company.records) {
       const entry = node("p", row.case_number + " · FY " + row.fiscal_year + " · " + row.case_status + " · " + row.city + ", " + row.state + " · " + row.job_title + " · captured " + row.captured_on + " · ");
       entry.append(link("Source", row.source_url));
@@ -138,8 +136,8 @@
     }
     card.append(details);
     if (company.uscis) {
-      const decisions = node("details");
-      decisions.append(node("summary", "USCIS historical decisions (separate from LCAs)"));
+      const decisions = node("div", "h1b-block");
+      decisions.append(node("h4", "USCIS historical decisions (separate from LCAs)"));
       decisions.append(node("p", company.uscis.warning));
       if (company.uscis.data_status === "no_data") decisions.append(node("p", "No USCIS snapshots have been imported; decision history is unknown. Use Data administration to load a source."));
       else if (company.uscis.data_status === "outside_window") decisions.append(node("p", "No USCIS snapshots are imported for the selected fiscal-year window starting " + company.uscis.min_year + "."));
@@ -185,8 +183,8 @@
     box.append(link("Checked source", result.source_url));
   }
   function policyNotes(job) {
-    const details = node("details");
-    details.append(node("summary", "Recruiter or employer policy notes"), node("p", "Record what you were told about this specific role. Notes are candidate-entered, unverified and may become outdated; they do not change the posting assessment or establish eligibility. Stored locally without encryption. Deletion removes the current database record, not copies in backups or database remnants."));
+    const details = node("div", "h1b-block");
+    details.append(node("h4", "Recruiter or employer policy notes"), node("p", "Record what you were told about this specific role. Notes are candidate-entered, unverified and may become outdated; they do not change the posting assessment or establish eligibility. Stored locally without encryption. Deletion removes the current database record, not copies in backups or database remnants."));
     const output = node("div"), status = node("p"); status.setAttribute("role", "status");
     const path = "/api/jobs/" + job.id + "/h1b/policy-notes";
     let sequence = 0, nextBefore = null, busy = false;
@@ -279,11 +277,11 @@
     const reusable = job.company_association;
     card.append(node("p", "Historical DOL lookup for " + job.history.employer + ": " + lcaSummary(job.history) + " Missing records do not mean no sponsorship. The assessment above uses the saved posting."));
     if (association?.employer) card.append(node("p", "Candidate-provided employer association, not independently verified · " + association.employer + " · " + association.source_note + " · " + association.changed_at + ". Confirm the actual legal entity before relying on these records."));
-    const historyDetails = node("details");
-    historyDetails.append(node("summary", "View imported employer records"), companyCard(job.history));
+    const historyDetails = node("div", "h1b-block");
+    historyDetails.append(node("h4", "View imported employer records"), companyCard(job.history));
     card.append(historyDetails);
-    const associationDetails = node("details");
-    associationDetails.append(node("summary", "Associate an imported legal employer"));
+    const associationDetails = node("div", "h1b-block");
+    associationDetails.append(node("h4", "Associate an imported legal employer"));
     associationDetails.append(node("p", "Use an exact legal employer name from imported DOL or USCIS records after checking the entity. Your association is a research note, not proof of identity or sponsorship."));
     const associationForm = node("form");
     associationForm.className = "crm-form";
@@ -450,25 +448,6 @@
     card.append(node("p", job.live_check_supported ? "Checks the original website or public hiring system. No profile or résumé is sent. Observations become stale after 24 hours. Verified expired deadlines automatically archive the role." : "This URL cannot be checked automatically. Open the original posting to confirm availability."), check, observation);
     return card;
   }
-  async function opportunities(offset = 0) {
-    const current = ++opportunitySequence;
-    const results = get("h1b-opportunities-results");
-    const message = get("h1b-opportunities-status");
-    const query = get("h1b-opportunities-query").value.trim();
-    const category = get("h1b-opportunities-category").value;
-    clearResults("h1b-opportunities-results");
-    get("h1b-opportunities-next").hidden = true;
-    message.textContent = "Searching saved opportunities…";
-    try {
-      const result = await api("/api/h1b/opportunities?q=" + encodeURIComponent(query) + "&category=" + encodeURIComponent(category) + "&offset=" + offset);
-      if (current !== opportunitySequence) return;
-      opportunityNext = result.next_offset;
-      get("h1b-opportunities-next").hidden = opportunityNext === null;
-      message.textContent = result.total + " matching opportunities · " + result.counts.potential + " possible · " + result.counts.review + " need clarification · " + result.counts.excluded + " indicate a restriction. Counts cover all signals for your search.";
-      if (!result.jobs.length) results.append(node("p", "No saved opportunities match. Try another search or find more jobs with JobSpy."));
-      for (const job of result.jobs) results.append(jobCard(job));
-    } catch (error) { if (current === opportunitySequence) message.textContent = error.message; }
-  }
   async function search(offset = 0) {
     const query = get("h1b-query").value.trim();
     const mode = get("h1b-broad-names").checked ? "punctuation" : "literal";
@@ -507,22 +486,8 @@
   }
   get("nav-h1b").addEventListener("click", async () => {
     observeImport();
-    try { await load(); await opportunities(); if (get("h1b-query").value.trim()) await search(); }
+    try { await load(); if (get("h1b-query").value.trim()) await search(); }
     catch (error) { status(error.message); }
-  });
-  get("h1b-opportunities-form").addEventListener("submit", (event) => { event.preventDefault(); opportunities(); });
-  for (const id of ["h1b-opportunities-query", "h1b-opportunities-category"]) get(id).addEventListener("input", () => {
-    opportunitySequence++;
-    opportunityNext = null;
-    clearResults("h1b-opportunities-results");
-    get("h1b-opportunities-next").hidden = true;
-    get("h1b-opportunities-status").textContent = "Find opportunities to apply the updated filters.";
-  });
-  get("h1b-opportunities-next").addEventListener("click", () => { if (opportunityNext !== null) opportunities(opportunityNext); });
-  get("h1b-find-jobs").addEventListener("click", () => {
-    get("nav-jobs").click();
-    get("discovery-panel").open = true;
-    get("discover-query").focus();
   });
   get("h1b-search").addEventListener("submit", (event) => { event.preventDefault(); search(); });
   function invalidateCompanySearch() {
@@ -549,7 +514,6 @@
     try {
       await api("/api/h1b", "PUT", {need: get("h1b-need").value, min_year: Number(get("h1b-min-year").value), include_unknown: get("h1b-unknown").checked});
       status("H-1B preferences saved. They guide research, not eligibility decisions.");
-      await opportunities();
       if (get("h1b-query").value.trim()) await search();
     } catch (error) { status(error.message); }
     finally { control.disabled = false; get("h1b-search-submit").disabled = false; }
@@ -694,4 +658,5 @@
   }
   get("uscis-form").addEventListener("submit", (event) => { event.preventDefault(); updateUSCIS("refresh"); });
   get("uscis-import").addEventListener("click", () => updateUSCIS("import"));
+  window.h1bRoleCard = async (jobId) => jobCard(await api("/api/jobs/" + jobId + "/h1b"));
 })();
