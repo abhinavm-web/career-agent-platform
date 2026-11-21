@@ -30,7 +30,7 @@ class BulkResumeBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-profile').click()
                         page.locator('#career-name').fill('Fictional Candidate')
                         page.get_by_role('button', name='Save preferences').click()

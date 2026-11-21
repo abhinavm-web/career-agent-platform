@@ -603,7 +603,7 @@ class WorkspaceDashboardTests(unittest.TestCase):
         self.assertEqual(self.api("GET", "/api/workspace").json()["workspace"]["revision"], 0)
 
     def test_ui_contains_profile_editor_and_safe_text_rendering(self):
-        html = self.client.get("/").text
+        html = self.client.get("/classic").text
         self.assertIn('id="profile-screen"', html)
         self.assertIn('id="career-profile-form"', html)
         self.assertIn('id="career-fact-form"', html)

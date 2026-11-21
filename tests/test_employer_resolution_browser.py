@@ -47,7 +47,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         card = open_sponsorship(page, 'Engineer')
                         card.get_by_role('button', name='Search imported employer names').click()
                         expect(card).to_contain_text('Showing 0–0 of 0')
@@ -92,7 +92,7 @@ class EmployerResolutionBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         first = open_sponsorship(page, 'First role')
                         expect(first).to_be_visible()
                         first.get_by_role('button', name='Search imported employer names').click()

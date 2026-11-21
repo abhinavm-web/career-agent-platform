@@ -150,6 +150,10 @@ Existing --profile and --facts files are never modified automatically. If both a
 **Privacy:** local SQLite is not encrypted, and history retains earlier private notes and statements. Do not expose the localhost server or use it on a shared computer. See [Career Workspace](docs/CAREER_WORKSPACE.md).
 
  
+## The simple app
+
+`career-agent serve` opens a deliberately small app at `http://127.0.0.1:8765/`: set up your résumé once (confirm each line is true), add a job, and see your original and recommended résumé side by side with a cover letter and Word downloads. The full workspace is at `/classic` (the **More tools** link). See [Dashboard](docs/DASHBOARD.md#the-simple-app-default).
+
 ## Local application CRM (v0.5 preview)
 
 Each role's **Sponsorship** tab shows that role's evidence, and **Settings & data → Open data administration** supports new/transfer preferences, a fiscal-year window, local DOL LCA CSV/XLSX imports, explicit downloads of supported DOL workbooks, company-record search and job-policy evidence. It also supports explicit [USCIS annual CSV refresh/import and live Greenhouse/Lever checks](docs/USCIS_LIVE_CHECKS.md). See [H-1B research](docs/H1B_RESEARCH.md). Company search uses the local index; filing history never establishes job availability or immigration eligibility.

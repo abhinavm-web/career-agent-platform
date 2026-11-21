@@ -1,6 +1,18 @@
 # Local web workspace
 
-## Quick start
+## The simple app (default)
+
+Open **http://127.0.0.1:8765/**. The page has three places: **Jobs**, **My résumé** and **More tools**.
+
+1. **My résumé** (first visit): upload a PDF, Word or text file, or paste the text; check your name; then answer **Yes, this is true** or **No, skip it** for each line, one at a time. Only lines you said yes to are ever used. Your original text is saved unchanged, unencrypted, in the local database.
+2. **Jobs**: choose **Add a job** and paste its title, company, link and description.
+3. **A job**: one page shows your original résumé and the recommended résumé as two paper pages side by side (lines added for this job are marked NEW), a cover letter, an optional box to add something true you did, and the buttons to download Word files, save as PDF (through your browser's print window) and open the job posting. Nothing is ever sent to an employer.
+
+The recommendation is offline and word-for-word: it reorders your true lines by the words they share with the job, and adds only a line you wrote and ticked as true. The template cover letter quotes your most relevant true lines. If an AI service is configured, **Write a better letter with AI** sends the job and your true lines only after you tick a consent box; the reply is rejected if it contains a placeholder or a number that is in neither your true lines nor the posting. The AI never changes your résumé.
+
+**More tools** opens the full workspace described below at `/classic`; its sidebar has **Back to simple view**.
+
+## Quick start (full workspace)
 
 Install the optional web dependencies and keep the server bound to loopback:
 
@@ -8,7 +20,7 @@ Install the optional web dependencies and keep the server bound to loopback:
     career-agent ingest examples/jobs.sample.csv
     career-agent serve --profile examples/profile.example.json --facts examples/candidate-facts.example.json
 
-Open **http://127.0.0.1:8765/** in a browser on the same computer.
+Open **http://127.0.0.1:8765/classic** in a browser on the same computer.
 
 The default SQLite database is .local/career_agent.sqlite3 and draft packets are stored in .local/packets. Both locations are ignored by Git. You may customize storage:
 

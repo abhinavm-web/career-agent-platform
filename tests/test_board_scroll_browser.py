@@ -37,7 +37,7 @@ class BoardScrollTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(viewport={'width': 1440, 'height': 900})
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.get_by_role('button', name='Opportunity board').click()
                         page.locator('#job-list .job-item').nth(4).click()
                         expect(page.get_by_role('tab', name='Overview')).to_have_attribute('aria-selected', 'true')

@@ -37,7 +37,7 @@ class AISampleBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=_CompletionText(json.dumps(output), 'resolved-model')) as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-ai').click()
                         expect(page.locator('#ai-sample-run')).to_be_enabled()
                         expect(page.locator('#ai-run')).to_be_disabled()

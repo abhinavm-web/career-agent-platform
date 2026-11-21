@@ -58,7 +58,7 @@ class ResumeCompareBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(viewport={'width': 1440, 'height': 900})
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.evaluate('''async () => { await fetch('/api/workspace/import', {method: 'POST', body: '{"acknowledged": true}',
                             headers: {'X-Session-Token': document.getElementById('app').dataset.session, 'Content-Type': 'application/json'}}); }''')
                         page.reload()

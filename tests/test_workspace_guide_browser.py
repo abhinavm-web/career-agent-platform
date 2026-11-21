@@ -41,7 +41,7 @@ class WorkspaceGuideTests(unittest.TestCase):
                 with sync_playwright() as pw:
                     browser = pw.chromium.launch()
                     page = browser.new_page(viewport={"width": 360, "height": 800}, has_touch=True)
-                    page.goto(f"http://127.0.0.1:{sock.getsockname()[1]}")
+                    page.goto(f"http://127.0.0.1:{sock.getsockname()[1]}/classic")
                     page.locator("#menu-toggle").tap()
                     page.locator("#nav-jobs").tap()
                     expect(page.locator("#menu-toggle")).to_have_attribute("aria-expanded", "false")

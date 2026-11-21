@@ -34,7 +34,7 @@ class SearchEditBrowserTests(unittest.TestCase):
                 with patch('career_agent.automation.fetch') as fetch, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-automation').click()
                         page.get_by_role('button', name='Create separate paused source searches').click()
                         expect(page.locator('#automation-status')).to_contain_text('Separate searches created paused')
@@ -71,7 +71,7 @@ class SearchEditBrowserTests(unittest.TestCase):
                 with patch('career_agent.automation.fetch') as fetch, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-automation').click()
                         card = page.locator('#automation-searches section').first
                         expect(card).to_contain_text('paused')

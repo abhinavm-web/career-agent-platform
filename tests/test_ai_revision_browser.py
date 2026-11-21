@@ -58,7 +58,7 @@ class AIRevisionBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value={'claude': ROUTE}), patch('career_agent.ai.complete', return_value=json.dumps(OUTPUT)) as complete, patch('career_agent.resume_validation.validate', side_effect=fictional_validation) as validate, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#job-list button').first.click()
                         page.get_by_role('tab', name='Application').click()

@@ -39,7 +39,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#nav-profile').click()
                         expect(page.locator('#profile-screen')).to_have_attribute('aria-busy', 'false')
@@ -100,7 +100,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#job-list button').first.click()
                         page.get_by_role('tab', name='Application').click()
@@ -160,7 +160,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#job-list button').first.click()
                         page.get_by_role('tab', name='Application').click()
@@ -255,7 +255,7 @@ class DocumentReviewBrowserTests(unittest.TestCase):
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#job-list button').first.click()
                         page.get_by_role('tab', name='Application').click()

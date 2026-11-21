@@ -28,7 +28,7 @@ class KeyboardBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.keyboard.press('Tab')
                         expect(page.get_by_role('link', name='Skip to workspace')).to_be_focused()
                         page.keyboard.press('Enter')

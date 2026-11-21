@@ -61,7 +61,7 @@ class CaptureBrowserTests(unittest.TestCase):
                         self.assertEqual(json.loads(captured)['selection'], 'Overview\nRequirements\n- Python experience\n- Rust is not required')
                         page.wait_for_timeout(100)
                         self.assertEqual(attempted, [])
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         page.get_by_role('tab', name='Overview').click()
@@ -147,7 +147,7 @@ class CaptureBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='+ Add opportunity').click()
                         page.get_by_text('Paste a browser capture', exact=True).click()

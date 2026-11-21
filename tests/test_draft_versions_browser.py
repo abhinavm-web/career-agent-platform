@@ -46,7 +46,7 @@ class DraftVersionsBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View AI Program Lead at Example Company').click()
                         expect(page.locator('#detail-panel')).to_contain_text('Application packet')

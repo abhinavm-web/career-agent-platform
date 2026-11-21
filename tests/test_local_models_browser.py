@@ -40,7 +40,7 @@ class LocalModelsBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=routes), patch('career_agent.ai._inventory_transport', side_effect=client), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-ai').click()
                         expect(page.locator('#ai-local-models')).to_be_enabled()
                         self.assertEqual(requests, [])

@@ -76,3 +76,9 @@ Not done, and why:
 - **Profile, Saved searches, AI analysis and Settings screens** still use top-level dropdown panels. The profile screen's 35 controls (P0-3) are the next candidate for a wizard.
 - **Home setup guidance, JobSpy and model-route setup checks (P0-2)** are unchanged.
 - **Overlap to resolve:** the Application tab still has the older "AI resume and cover letter", "Compare AI wording" and "Choose facts" panels, which now duplicate the Résumé tab. They remain because the reviewed export path depends on them.
+
+## Status update: the simple app
+
+After the first overhaul slice the owner asked for something a high-school graduate can use without help. The default page (`/`) is now a separate, small app with three places (Jobs, My résumé, More tools). The classic workspace, including the earlier Résumé tab, moved to `/classic` and remains available. Choices made with the owner: two paper pages side by side with new lines highlighted and Word or print-to-PDF output; works without AI and improves with it; the rest of the app hidden behind **More tools**, not deleted; a quick yes/no per résumé line to confirm it is true.
+
+Not in the simple app (deliberately, still in `/classic`): application tracking, sponsorship evidence, saved searches, AI requirement analysis, the profile editor, and the reviewed-packet export path. The simple app does not record that you applied.

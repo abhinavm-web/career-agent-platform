@@ -37,7 +37,7 @@ class RemoteConflictBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Remote details need review')
                         expect(page.locator('#job-list')).to_contain_text('90/100')

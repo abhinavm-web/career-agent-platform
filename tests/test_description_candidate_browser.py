@@ -38,7 +38,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list button').first).to_contain_text('AI Transformation Manager')
                         page.get_by_label('Sort opportunities', exact=True).select_option('recent')
@@ -79,7 +79,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.on('dialog', lambda dialog: dialog.accept())
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_text('Find jobs with JobSpy', exact=True).click()
                         page.locator('#discover-query').fill('Fictional engineer')
@@ -146,7 +146,7 @@ class DescriptionCandidateBrowserTests(unittest.TestCase):
                 with patch('career_agent.dashboard.discover_isolated', return_value=[observed]), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#filter').select_option('missing-description')
                         expect(page.locator('#visible-count')).to_have_text('2 opportunities')

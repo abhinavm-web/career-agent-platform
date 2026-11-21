@@ -40,7 +40,7 @@ class TailoringWarningsBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-ai').click(); expect(page.locator('#ai-tailor')).to_be_enabled()
                         page.locator('#ai-consent').check(); page.locator('#ai-tailor').click()
                         expect(page.locator('#ai-results')).to_contain_text('Review warning: New numeric or percentage text')

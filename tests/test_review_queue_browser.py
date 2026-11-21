@@ -39,7 +39,7 @@ class ReviewQueueBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.get_by_role('button', name='Application tracker', exact=True).click()
                         summary = page.locator('#crm-summary')
                         expect(summary).to_contain_text('Applications to review')

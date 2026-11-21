@@ -32,7 +32,7 @@ class OnboardingReadinessBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         detail = page.locator('#detail-panel')
@@ -94,7 +94,7 @@ class OnboardingReadinessBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#profile-prompt')).to_be_visible()
                         expect(page.locator('#setup-progress')).to_contain_text('Profile name saved')

@@ -271,8 +271,21 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     def homepage():
+        contents = assets("simple.html").replace("__SESSION_TOKEN__", html.escape(token, quote=True))
+        return HTMLResponse(contents)
+
+    @app.get("/classic", response_class=HTMLResponse)
+    def classic_homepage():
         contents = assets("index.html").replace("__SESSION_TOKEN__", html.escape(token, quote=True))
         return HTMLResponse(contents)
+
+    @app.get('/assets/simple.js')
+    def simple_script():
+        return Response(assets('simple.js'), media_type='text/javascript')
+
+    @app.get('/assets/simple.css')
+    def simple_style():
+        return Response(assets('simple.css'), media_type='text/css')
 
     @app.get("/assets/app.js")
     def script():
@@ -1459,6 +1472,151 @@ def create_app(config: DashboardConfig) -> FastAPI:
             claims = {fact['id']: fact['statement'] for fact in facts}
             return await run_in_threadpool(run_recorded, config.db_path, data['route'], 'career_chat', ai.experience_question,
                 job, data['requirement'], data['draft_answer'], claims, data['route'], True, expected_route_fingerprint=fingerprint)
+        finally:
+            ai_lock.release()
+
+    # ---- beginner path: one résumé, one page per job -------------------------------------------
+    def simple_profile_and_facts():
+        workspace = active_workspace()
+        facts = [fact for fact in workspace['facts'] if fact['verified_by_candidate']]
+        return workspace, facts
+
+    def ai_configured():
+        try:
+            return bool(ai.routes())
+        except (OSError, ValueError):
+            return False
+
+    @app.get('/api/simple/state')
+    def simple_state():
+        from .resume_compare import get_original
+        with Store(config.db_path) as store:
+            original = get_original(store.connection)
+        workspace, facts = simple_profile_and_facts()
+        return {'resume_saved': bool(original['text']) and bool(facts), 'name': workspace['profile']['name'],
+                'fact_count': len(facts), 'workspace_revision': workspace['revision'],
+                'resume_revision': original['revision'], 'ai_available': ai_configured()}
+
+    @app.post('/api/simple/parse')
+    async def simple_parse(request: Request):
+        from .simple_apply import parse_resume
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'text'} or not isinstance(data['text'], str) or not data['text'].strip():
+            raise ValueError('Paste or upload your résumé text')
+        if len(data['text']) > 20000:
+            raise ValueError('Résumé text must be at most 20,000 characters')
+        return parse_resume(data['text'])
+
+    @app.get('/api/simple/jobs')
+    def simple_jobs(q: str = ''):
+        with Store(config.db_path) as store:
+            jobs = store.list_jobs(limit=300)
+        needle = q.strip().casefold()
+        return {'jobs': [{'id': job.id, 'title': job.title, 'company': job.company, 'location': job.location}
+                         for job in jobs if not needle or needle in f'{job.title} {job.company} {job.location}'.casefold()][:100]}
+
+    @app.post('/api/simple/resume')
+    async def simple_save_resume(request: Request):
+        from .resume_compare import ResumeConflict, save_original
+        data = await request.json()
+        keys = {'name', 'contact', 'filename', 'text', 'confirmed', 'acknowledged', 'workspace_revision', 'resume_revision'}
+        if not isinstance(data, dict) or set(data) != keys:
+            raise ValueError('Provide your name, résumé text and the lines you confirmed')
+        with Store(config.db_path) as store:
+            try:
+                original = save_original(store.connection, data['text'], data['filename'], data['resume_revision'])
+                workspace = CandidateWorkspace(store).add_confirmed_resume(
+                    data['workspace_revision'], data['name'], data['contact'], data['confirmed'], data['acknowledged'])
+            except (ResumeConflict, StaleRevision) as error:
+                raise HTTPException(status_code=409, detail='Your résumé changed in another window. Reload and try again.') from None
+        return {'saved': True, 'fact_count': sum(1 for f in workspace['facts'] if f['verified_by_candidate']),
+                'resume_revision': original['revision']}
+
+    @app.post('/api/simple/add-line')
+    async def simple_add_line(request: Request):
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'text', 'job_id', 'workspace_revision', 'acknowledged'}
+                or data['acknowledged'] is not True):
+            raise ValueError('Type what you did and tick that it is true')
+        text = data['text'].strip() if isinstance(data['text'], str) else ''
+        if not 8 <= len(text) <= 1000:
+            raise ValueError('Write between 8 and 1,000 characters about what you did')
+        with Store(config.db_path) as store:
+            job = _get_job(store, data['job_id'])
+            workspace = CandidateWorkspace(store).latest()
+            try:
+                updated = CandidateWorkspace(store).add_confirmed_resume(
+                    data['workspace_revision'], workspace['profile']['name'], '', [{'text': text, 'section': 'experience'}], True,
+                    note=f'Added on job {job.id}')
+            except StaleRevision:
+                raise HTTPException(status_code=409, detail='Your résumé changed in another window. Reload and try again.') from None
+        return {'workspace_revision': updated['revision']}
+
+    def simple_documents(job_id):
+        from .resume_compare import get_original
+        from .simple_apply import build
+        with Store(config.db_path) as store:
+            job = _get_job(store, job_id)
+            original = get_original(store.connection)
+        workspace, facts = simple_profile_and_facts()
+        if not original['text'] or not facts:
+            raise HTTPException(status_code=412, detail='Add your résumé first')
+        return job, facts, build(original['text'], workspace['profile'], job, facts, workspace['revision'])
+
+    @app.get('/api/jobs/{job_id}/simple')
+    def simple_application(job_id: str):
+        job, _facts, documents = simple_documents(job_id)
+        return {'job': {'id': job.id, 'title': job.title, 'company': job.company, 'location': job.location, 'url': job.url,
+                        'has_description': bool(job.description.strip())}, **documents}
+
+    @app.get('/api/jobs/{job_id}/simple/resume.docx')
+    def simple_resume_docx(job_id: str):
+        from .simple_apply import resume_docx as render
+        _job, _facts, documents = simple_documents(job_id)
+        try:
+            content = render(documents['resume'])
+        except ImportError as error:
+            raise HTTPException(status_code=503, detail='Install the web extra to download Word documents') from error
+        return Response(content, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        headers={'Content-Disposition': 'attachment; filename="resume.docx"'})
+
+    @app.post('/api/jobs/{job_id}/simple/cover-letter.docx')
+    async def simple_letter_docx(job_id: str, request: Request):
+        from .simple_apply import letter_docx as render
+        data = await request.json()
+        rows = data.get('paragraphs') if isinstance(data, dict) and set(data) == {'paragraphs'} else None
+        if (not isinstance(rows, list) or not 1 <= len(rows) <= 30 or not all(
+                isinstance(r, dict) and set(r) == {'type', 'text'} and r['type'] in ('text', 'bullet')
+                and isinstance(r['text'], str) and r['text'].strip() and len(r['text']) <= 3000 for r in rows)):
+            raise ValueError('Provide the cover letter paragraphs')
+        with Store(config.db_path) as store:
+            _get_job(store, job_id)
+        try:
+            content = render(rows)
+        except ImportError as error:
+            raise HTTPException(status_code=503, detail='Install the web extra to download Word documents') from error
+        return Response(content, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        headers={'Content-Disposition': 'attachment; filename="cover-letter.docx"'})
+
+    @app.post('/api/jobs/{job_id}/simple/ai-cover-letter')
+    async def simple_ai_cover_letter(job_id: str, request: Request):
+        from .simple_apply import check_ai_letter
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'route', 'route_fingerprint', 'acknowledged'}
+                or data['acknowledged'] is not True):
+            raise ValueError('Confirm sending this job and your confirmed résumé lines to the selected AI service')
+        fingerprint = route_consent_fingerprint(data)
+        if not ai_lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail='An AI request is already running')
+        try:
+            with Store(config.db_path) as store:
+                job = _get_job(store, job_id)
+            workspace, facts = simple_profile_and_facts()
+            claims = {fact['id']: fact['statement'] for fact in facts}
+            result = await run_in_threadpool(run_recorded, config.db_path, data['route'], 'career_chat', ai.simple_cover_letter,
+                job, claims, workspace['profile']['name'], data['route'], True, expected_route_fingerprint=fingerprint)
+            paragraphs = check_ai_letter(result['letter'], claims, job)
+            return {'cover_letter': {'paragraphs': paragraphs, 'written_by': 'ai', 'model': result['model']}}
         finally:
             ai_lock.release()
 

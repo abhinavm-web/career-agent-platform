@@ -32,7 +32,7 @@ class InlineGuidedTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.get_by_role('button', name='Career profile', exact=True).click()
                         page.get_by_role('button', name='Start guided setup').click()
                         expect(page.locator('#profile-wizard-heading')).to_have_text('1 of 3 · Preferences')
@@ -111,7 +111,7 @@ class InlineGuidedTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value=json.dumps(output)) as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.get_by_role('button', name='Career profile', exact=True).click()
                         page.once('dialog', lambda dialog: dialog.accept())
                         page.get_by_role('button', name='Import configured files').click()

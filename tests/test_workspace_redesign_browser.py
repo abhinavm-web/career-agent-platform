@@ -37,7 +37,7 @@ class WorkspaceRedesignTests(unittest.TestCase):
                     try:
                         for viewport in ({'width': 1440, 'height': 900}, {'width': 390, 'height': 844}, {'width': 320, 'height': 720}):
                             page = browser.new_page(viewport=viewport)
-                            page.goto(f'http://127.0.0.1:{port}')
+                            page.goto(f'http://127.0.0.1:{port}/classic')
                             expect(page.get_by_role('heading', name='Search overview')).to_be_visible()
                             expect(page.locator('#home-recommendations')).to_contain_text('Fictional Analyst')
                             page.get_by_role('button', name='Explore opportunities').click()

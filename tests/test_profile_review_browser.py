@@ -54,7 +54,7 @@ class ProfileReviewBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(viewport={'width': 1440, 'height': 1000}); errors = []
                         page.on('pageerror', lambda error: errors.append(str(error)))
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-profile').click()
                         page.locator('#profile-review summary').first.click()
                         page.locator('#profile-review-load').click()

@@ -38,7 +38,7 @@ class FitHeadingsBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Engineer at Fictional Co').click()
                         evidence = page.locator('#fit-evidence')

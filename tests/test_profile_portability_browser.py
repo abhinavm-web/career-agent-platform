@@ -39,7 +39,7 @@ class ProfilePortabilityBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{servers[0][3]}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{servers[0][3]}/classic')
                         page.locator('#nav-profile').click()
                         expect(page.locator('#profile-screen')).to_have_attribute('aria-busy', 'false')
                         page.get_by_text('Export or import career profile').click()
@@ -49,7 +49,7 @@ class ProfilePortabilityBrowserTests(unittest.TestCase):
                         exported = json.loads(data)
                         self.assertTrue(exported['facts'][0]['verified_by_candidate'])
                         self.assertEqual(exported['facts'][0]['source_note'], 'Private fictional project note')
-                        page.goto(f'http://127.0.0.1:{servers[1][3]}')
+                        page.goto(f'http://127.0.0.1:{servers[1][3]}/classic')
                         page.locator('#nav-profile').click()
                         expect(page.locator('#profile-screen')).to_have_attribute('aria-busy', 'false')
                         page.get_by_text('Export or import career profile').click()

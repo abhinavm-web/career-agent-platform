@@ -50,7 +50,7 @@ class AIResponseLimitBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai._transport', side_effect=client), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-ai').click()
                         expect(page.locator('#ai-test-route')).to_be_enabled()
                         page.locator('#ai-test-route').click()

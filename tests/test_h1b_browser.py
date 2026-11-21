@@ -61,7 +61,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         open_h1b_admin(page)
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
@@ -104,7 +104,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         open_h1b_admin(page)
                         page.locator('#h1b-query').fill('Fictional Employer')
@@ -172,7 +172,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with patch('career_agent.h1b.H1BResearch.refresh_dol', new=fake_refresh), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         open_h1b_admin(page)
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
@@ -182,7 +182,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-refresh-status')).to_be_focused()
                         expect(page.locator('#h1b-refresh-status')).to_contain_text('2,000', timeout=8000)
                         expect(page.locator('#h1b-refresh-announcement')).to_contain_text('2,000')
-                        observer = browser.new_page(); observer.goto(f'http://127.0.0.1:{port}')
+                        observer = browser.new_page(); observer.goto(f'http://127.0.0.1:{port}/classic')
                         open_h1b_admin(observer)
                         expect(observer.locator('#h1b-active-import')).to_contain_text('validating workbook rows')
                         expect(observer.locator('#h1b-active-import')).to_contain_text('not a completed import')
@@ -242,7 +242,7 @@ class H1BBrowserTests(unittest.TestCase):
                               return realFetch(url, options);
                             };
                         ''')
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Fictional role')
                         page.get_by_role('button', name='View Fictional role at Fictional Co').click()
@@ -300,7 +300,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#visible-count')).to_have_text('505 opportunities', timeout=30000)
                         page.locator('#search').fill('Rare oldest role')
@@ -341,7 +341,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with patch('career_agent.posting_checks.PostingChecks.latest', side_effect=almost_stale), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Listed at check')
                         page.get_by_role('button', name='View Role at Fictional Co').click()
@@ -395,7 +395,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with patch('career_agent.posting_checks.PostingChecks.latest', return_value=observation), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Listed at check')
                         results = open_sponsorship(page, 'Role', 'Fictional Co')
@@ -431,7 +431,7 @@ class H1BBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#profile-prompt')).to_be_visible()
                         page.get_by_label('Sort opportunities', exact=True).select_option('recent')
@@ -509,7 +509,7 @@ class H1BBrowserTests(unittest.TestCase):
                         page = browser.new_page()
                         errors = []
                         page.on('pageerror', lambda error: errors.append(str(error)))
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         open_h1b_admin(page)
                         expect(page.get_by_role('heading', name='Data administration')).to_be_visible()

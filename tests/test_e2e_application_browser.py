@@ -64,7 +64,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                                 external_requests.append(route.request.url)
                                 route.abort()
                         page.route('**/*', local_only)
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#nav-profile').click()
                         page.once('dialog', lambda dialog: dialog.accept())
@@ -173,7 +173,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                             if server.started: break
                             time.sleep(0.05)
                         self.assertTrue(server.started)
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
                         expect(page.locator('#detail-panel')).to_contain_text('approved for manual submission', timeout=20000)
@@ -209,7 +209,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                             if server.started: break
                             time.sleep(0.05)
                         self.assertTrue(server.started)
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#count-submitted')).to_have_text('1')
                         page.get_by_role('button', name='View Data Analyst at Fictional Analytics').click()
@@ -255,7 +255,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#nav-profile').click()
                         page.locator('#career-name').fill('Fictional Candidate')
@@ -378,7 +378,7 @@ class ApplicationJourneyTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{restored_port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{restored_port}/classic')
                         page.locator('#nav-jobs').click()
                         page.locator('#nav-profile').click()
                         expect(page.locator('#career-facts-list')).to_contain_text('Built a fictional Python analytics dashboard.')

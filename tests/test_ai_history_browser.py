@@ -33,7 +33,7 @@ class AIHistoryBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai._transport', side_effect=lambda: httpx.Client(transport=httpx.MockTransport(handler))), sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-ai').click()
                         expect(page.locator('#ai-test-route')).to_be_enabled()
                         page.locator('#ai-test-consent').check(); page.locator('#ai-test-route').click()
@@ -62,7 +62,7 @@ class AIHistoryBrowserTests(unittest.TestCase):
                 with patch('career_agent.ai.routes', return_value=route), patch('career_agent.ai.complete', return_value='OK') as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
+                        page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-ai').click()
                         expect(page.locator('#ai-test-route')).to_be_enabled()
                         expect(page.locator('#ai-route')).to_have_attribute('aria-describedby', 'ai-destination ai-route-readiness')

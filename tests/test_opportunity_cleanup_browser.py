@@ -36,7 +36,7 @@ class OpportunityCleanupBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); errors = []; page.on('pageerror', lambda error: errors.append(str(error)))
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list > button')).to_have_count(2)
                         page.locator('#job-list > button').first.click()

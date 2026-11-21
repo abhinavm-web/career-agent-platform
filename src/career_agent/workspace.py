@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from .candidate import FactBank, VerifiedFact, resume_contact
+from .candidate import FactBank, SECTIONS, VerifiedFact, resume_contact
 from .models import CandidateProfile
 from .storage import Store
 
@@ -281,6 +281,43 @@ class CandidateWorkspace:
             current['facts'].append(_validate_facts([proposal])[0])
             return current
         return self._write(expected_revision, transform, 'experience_answer_staged')
+
+    def add_confirmed_resume(self, expected_revision, name, contact, lines, acknowledged,
+                             note='Confirmed by the candidate from their saved résumé'):
+        """Save the candidate's name and résumé lines they individually confirmed as true.
+
+        Lines already present (same wording) are skipped, so re-uploading is safe.
+        """
+        if acknowledged is not True:
+            raise ValueError('Confirm that every line you marked as true is accurate')
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 120:
+            raise ValueError('Enter your name')
+        if not isinstance(lines, list) or not lines:
+            raise ValueError('Confirm at least one line of your résumé')
+
+        def transform(current):
+            profile = dict(current['profile'])
+            profile['name'] = name.strip()
+            if not profile.get('resume_contact') and isinstance(contact, str):
+                profile['resume_contact'] = contact.strip()[:300]
+            known = {' '.join(f['statement'].split()).casefold() for f in current['facts']}
+            added = []
+            for item in lines:
+                if not isinstance(item, dict) or set(item) != {'text', 'section'} or item['section'] not in SECTIONS:
+                    raise ValueError('Each confirmed line needs text and a section')
+                key = ' '.join(str(item['text']).split()).casefold()
+                if key in known:
+                    continue
+                known.add(key)
+                added.append({'id': 'fact-' + uuid.uuid4().hex[:12], 'section': item['section'], 'statement': item['text'],
+                              'keywords': [], 'source_note': note,
+                              'verified_by_candidate': True})
+            if len(current['facts']) + len(added) > MAX_FACTS:
+                raise ValueError('Career fact limit reached')
+            current['profile'] = _validate_profile(profile)
+            current['facts'] = _validate_facts(current['facts'] + added)
+            return current
+        return self._write(expected_revision, transform, 'simple_resume_confirmed')
 
     def verify(self, expected_revision: int, fact_id: str, verified: bool,
                acknowledged: bool) -> dict[str, Any]:

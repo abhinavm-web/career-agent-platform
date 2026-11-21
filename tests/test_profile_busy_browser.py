@@ -49,7 +49,7 @@ class ProfileBusyBrowserTests(unittest.TestCase):
                               return realFetch(url, options);
                             };
                         ''')
-                        page.goto(f'http://127.0.0.1:{port}'); page.locator('#nav-profile').click()
+                        page.goto(f'http://127.0.0.1:{port}/classic'); page.locator('#nav-profile').click()
                         expect(page.get_by_role('button', name='Verify this fact')).to_be_enabled()
                         page.locator('#career-headline').fill('Updated fictional headline')
                         page.get_by_role('button', name='Save preferences').click()

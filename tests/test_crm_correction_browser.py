@@ -49,7 +49,7 @@ class CRMCorrectionBrowserTests(unittest.TestCase):
                               return realFetch(url, options);
                             };
                         ''')
-                        page.goto(f'http://127.0.0.1:{port}')
+                        page.goto(f'http://127.0.0.1:{port}/classic')
                         page.locator('#nav-tracker').click()
                         page.locator('#crm-jobs button').first.click()
                         detail = page.locator('#crm-detail')
