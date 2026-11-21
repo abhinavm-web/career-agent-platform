@@ -152,7 +152,7 @@ Existing --profile and --facts files are never modified automatically. If both a
  
 ## The simple app
 
-`career-agent serve` opens a deliberately small app at `http://127.0.0.1:8765/`: set up your résumé once (confirm each line is true), add a job, and see your original and recommended résumé side by side with a cover letter and Word downloads. The full workspace is at `/classic` (the **More tools** link). See [Dashboard](docs/DASHBOARD.md#the-simple-app-default).
+`career-agent serve` opens a deliberately small app at `http://127.0.0.1:8765/`: set up your résumé once (confirm each line is true), find a job (it searches for you; paste is the backup), and see your original and recommended résumé side by side with a cover letter and Word downloads. The full workspace is at `/classic` (the **More tools** link). See [Dashboard](docs/DASHBOARD.md#the-simple-app-default).
 
 ## Local application CRM (v0.5 preview)
 

@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from career_agent.models import Job
+
 RESUME = ("Alex Fictional\nalex@example.invalid | 555-123-4567\nEXPERIENCE\n"
           "• Led a fictional budget process for a team of four.\n• Built a fictional AI tool in Python for the front desk.\n"
           "Education\nB.S. Fictional Studies, Example University\nSkills\nPython, customer service, AWS")
@@ -33,7 +35,11 @@ class SimpleJourneyTests(unittest.TestCase):
                     if server.started: break
                     time.sleep(.05)
                 self.assertTrue(server.started)
+                found = [Job.from_mapping({'company': 'Example Clinic', 'title': 'Front Desk AI Assistant', 'location': 'Knoxville, TN',
+                    'job_url': 'https://example.invalid/jobs/front-desk',
+                    'description': 'Requirements\n- Experience with Python\n- Strong customer service skills\n- Budget awareness'})]
                 with patch('career_agent.ai.routes', return_value=route), \
+                        patch('career_agent.dashboard.discover_isolated', return_value=found) as discover, \
                         patch('career_agent.ai.complete', return_value=letter) as complete, sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
@@ -59,15 +65,25 @@ class SimpleJourneyTests(unittest.TestCase):
                         expect(page.get_by_role('heading', name='You said 3 of 4 lines are true')).to_be_visible()
                         page.get_by_role('button', name='Save and find a job').click()
 
-                        # Jobs: add one by pasting it in.
-                        expect(page.get_by_role('heading', name='Pick a job to apply for')).to_be_visible()
-                        page.get_by_role('button', name='Add a job').click()
-                        page.get_by_label('Job title').fill('Front Desk AI Assistant')
-                        page.get_by_label('Company').fill('Example Clinic')
-                        page.get_by_label('Link to the job posting').fill('https://example.invalid/jobs/front-desk')
-                        page.get_by_label('Paste the job description', exact=False).fill(
-                            'Requirements\n- Experience with Python\n- Strong customer service skills\n- Budget awareness')
-                        page.get_by_role('button', name='Save job').click()
+                        # Jobs: the app searches for you; nobody has to type a job in.
+                        expect(page.get_by_role('heading', name='Find a job to apply for')).to_be_visible()
+                        expect(page.get_by_role('button', name='Add a job')).to_have_count(0)
+                        find = page.get_by_role('button', name='Find jobs')
+                        expect(find).to_be_disabled()
+                        page.get_by_label('What kind of job?').fill('front desk')
+                        page.get_by_label('Where?').fill('Knoxville, TN')
+                        expect(find).to_be_disabled()                      # nothing is sent without the tick
+                        discover.assert_not_called()
+                        page.get_by_label('It is OK to search Indeed and ZipRecruiter', exact=False).check()
+                        find.click()
+                        expect(page.locator('#search-note')).to_contain_text('Found 1 job')
+                        self.assertEqual(discover.call_count, 1)
+                        self.assertEqual(discover.call_args.args[:2], ('front desk', 'Knoxville, TN'))
+                        expect(page.locator('.card .lead')).to_contain_text('front desk in Knoxville, TN')   # remembered
+                        expect(page.get_by_label('It is OK to search Indeed and ZipRecruiter', exact=False)).not_to_be_checked()  # one tick per search
+                        page.reload()
+                        expect(page.locator('.card .lead')).to_contain_text('front desk in Knoxville, TN')   # still remembered
+                        page.get_by_role('button', name='Front Desk AI Assistant').click()
 
                         # One page per job: original and recommended side by side, then the letter.
                         expect(page.get_by_role('heading', name='Front Desk AI Assistant')).to_be_visible()
@@ -114,6 +130,15 @@ class SimpleJourneyTests(unittest.TestCase):
                         stacked = papers.nth(0).bounding_box(), papers.nth(1).bounding_box()
                         self.assertLess(stacked[0]['y'], stacked[1]['y'])
                         self.assertTrue(page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+
+                        # Backup: paste a posting found elsewhere; title and company are guessed.
+                        page.locator('#nav-jobs').click()
+                        page.get_by_role('button', name='Found a job somewhere else? Paste it instead.').click()
+                        page.get_by_label('The job posting').fill('Library Helper\nAbout Example Library\nRequirements\n- Helping people find books\n- Organizing shelves')
+                        page.get_by_role('button', name='Use this job').click()
+                        expect(page.get_by_role('heading', name='Library Helper')).to_be_visible()
+                        expect(page.get_by_text('Example Library', exact=False).first).to_be_visible()
+                        expect(page.get_by_role('link', name='Open the job posting to apply')).to_have_count(0)   # no link was given
 
                         # Everything else is still one click away.
                         page.get_by_role('link', name='More tools').click()

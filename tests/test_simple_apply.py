@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from career_agent import ai
 from career_agent.models import Job
-from career_agent.simple_apply import check_ai_letter, parse_resume
+from career_agent.simple_apply import check_ai_letter, guess_job, parse_resume
 from career_agent.storage import Store
 
 HAS_WEB = importlib.util.find_spec("fastapi") is not None and importlib.util.find_spec("httpx") is not None
@@ -46,6 +46,12 @@ class ParseTests(unittest.TestCase):
     def test_contact_lines_and_short_fragments_are_never_offered_as_facts(self):
         lines = parse_resume('Sam\nsam@example.invalid\nExperience\nok\nhttps://example.invalid/sam\n')['lines']
         self.assertEqual(lines, [])
+
+    def test_guess_job_prefers_what_the_user_typed(self):
+        text = '# Senior Baker at Sunrise Bakery\nMake bread.'
+        self.assertEqual(guess_job(text)[:2], ('Senior Baker at Sunrise Bakery', 'Sunrise Bakery'))
+        self.assertEqual(guess_job(text, title='Baker', company='My Shop')[:2], ('Baker', 'My Shop'))
+        self.assertEqual(guess_job('Cook\nCook food.')[1], 'Company not listed')
 
     def test_ai_letter_cannot_add_numbers_or_placeholders(self):
         job = Job('Example Clinic', 'Front Desk', 'Town', 'https://example.invalid/j', 'Needs 2 years of customer service.')
@@ -180,6 +186,30 @@ class SimpleApiTests(unittest.TestCase):
         self.assertEqual([j['title'] for j in jobs], ['Front Desk AI Assistant'])
         self.assertEqual(self.call('GET', '/api/simple/jobs?q=zzz').json()['jobs'], [])
         self.assertEqual(len(self.call('GET', '/api/simple/jobs?q=clinic').json()['jobs']), 1)
+
+    def test_search_words_are_remembered_and_validated(self):
+        self.assertEqual(self.call('GET', '/api/simple/state').json()['search'], {'what': '', 'where': ''})
+        self.assertEqual(self.call('PUT', '/api/simple/search', {'what': '', 'where': 'Town'}).status_code, 422)
+        self.assertEqual(self.call('PUT', '/api/simple/search', {'what': 'baker', 'where': 'x' * 300}).status_code, 422)
+        saved = self.call('PUT', '/api/simple/search', {'what': '  customer service ', 'where': 'Knoxville, TN'})
+        self.assertEqual(saved.json()['search'], {'what': 'customer service', 'where': 'Knoxville, TN'})
+        self.assertEqual(self.call('GET', '/api/simple/state').json()['search']['where'], 'Knoxville, TN')
+
+    def test_pasted_job_guesses_title_and_company_and_hides_the_placeholder_link(self):
+        self.save_resume()
+        posting = 'Library Helper\nCompany: Example Library\nRequirements\n- Helping people find books\n- Organizing shelves'
+        bad = self.call('POST', '/api/simple/paste', {'text': 'too short', 'title': '', 'company': '', 'url': ''})
+        self.assertEqual(bad.status_code, 422)
+        bad_link = self.call('POST', '/api/simple/paste', {'text': posting, 'title': '', 'company': '', 'url': 'not a link'})
+        self.assertEqual(bad_link.status_code, 422)
+        made = self.call('POST', '/api/simple/paste', {'text': posting, 'title': '', 'company': '', 'url': ''})
+        self.assertEqual(made.status_code, 200)
+        view = self.call('GET', f'/api/jobs/{made.json()["job_id"]}/simple').json()
+        self.assertEqual((view['job']['title'], view['job']['company']), ('Library Helper', 'Example Library'))
+        self.assertEqual(view['job']['url'], '')
+        typed = self.call('POST', '/api/simple/paste', {'text': posting + ' more', 'title': 'Shelver', 'company': 'City Library', 'url': 'https://example.invalid/shelver'})
+        view = self.call('GET', f'/api/jobs/{typed.json()["job_id"]}/simple').json()
+        self.assertEqual((view['job']['title'], view['job']['company'], view['job']['url']), ('Shelver', 'City Library', 'https://example.invalid/shelver'))
 
     def test_word_downloads_are_real_documents(self):
         self.save_resume()

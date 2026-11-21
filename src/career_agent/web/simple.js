@@ -170,24 +170,77 @@
   /* --------------------------------------------------------------------- Jobs */
   async function viewJobs() {
     main.replaceChildren();
-    main.append(el("h1", "", "Pick a job to apply for"));
-    main.append(el("p", "lead", info.name ? "Hi " + info.name.split(" ")[0] + ". Choose a job and we will get your résumé and cover letter ready." : "Choose a job."));
-    const bar = el("div", "row");
-    const search = el("input"); search.type = "search"; search.placeholder = "Search jobs"; search.setAttribute("aria-label", "Search jobs");
-    const addToggle = btn("Add a job", "primary");
-    bar.append(search, addToggle);
-    const formHolder = el("div"), list = el("ul", "jobs");
-    main.append(bar, formHolder, list);
+    main.append(el("h1", "", "Find a job to apply for"));
+    main.append(el("p", "lead", info.name ? "Hi " + info.name.split(" ")[0] + ". Tell us what you are looking for. Tap a job and your résumé and cover letter are ready." : "Tell us what you are looking for."));
+    const searchHolder = el("div", "card"), pasteHolder = el("div"), list = el("ul", "jobs");
+    const listTitle = el("h2", "", "Jobs we found");
+    main.append(searchHolder, listTitle, list, pasteHolder);
+    let editing = !info.search.what;
 
-    async function load() {
-      const data = await api("/api/simple/jobs?q=" + encodeURIComponent(search.value));
-      list.replaceChildren();
-      if (!data.jobs.length) {
-        const empty = el("li", "card");
-        empty.append(el("strong", "", search.value ? "No jobs match that search." : "You have no jobs yet."),
-          el("p", "muted", "Found a job you like? Choose Add a job and paste it in."));
-        list.append(empty); return;
+    function renderSearch() {
+      searchHolder.replaceChildren();
+      const what = el("input"), where = el("input");
+      for (const [input, value, hint] of [[what, info.search.what, "Example: customer service"], [where, info.search.where, "Example: Knoxville, TN"]]) {
+        input.type = "text"; input.maxLength = 200; input.value = value; input.placeholder = hint;
       }
+      const status = el("p", "muted"); status.setAttribute("role", "status");
+      const consent = el("input"); consent.type = "checkbox";
+      const consentLabel = el("label", "check");
+      const consentText = document.createTextNode("");
+      consentLabel.append(consent, consentText);
+      const find = btn("Find jobs", "primary"); find.disabled = true;
+      const words = () => (editing ? what.value.trim() : info.search.what) + " in " + (editing ? where.value.trim() : info.search.where);
+      const sync = () => {
+        const typed = editing ? what.value.trim() && where.value.trim() : true;
+        consentText.nodeValue = "It is OK to search Indeed and ZipRecruiter for " + (typed ? "“" + words() + "”" : "the words above") + ". Only these words are sent. My résumé is never sent.";
+        find.disabled = !consent.checked || !(editing ? what.value.trim() && where.value.trim() : true);
+      };
+      if (editing) {
+        searchHolder.append(el("h2", "", "What job do you want?"), field("What kind of job?", what), field("Where?", where));
+        what.addEventListener("input", sync); where.addEventListener("input", sync);
+      } else {
+        const summary = el("p", "lead");
+        summary.append(document.createTextNode("Looking for "), el("strong", "", info.search.what), document.createTextNode(" in "), el("strong", "", info.search.where), document.createTextNode(". "));
+        const change = el("button", "link", "Change"); change.type = "button";
+        change.addEventListener("click", () => { editing = true; renderSearch(); });
+        summary.append(change); searchHolder.append(summary);
+      }
+      consent.addEventListener("change", sync);
+      find.addEventListener("click", async () => {
+        find.disabled = true; consent.disabled = true; status.className = "muted";
+        status.textContent = "Searching job sites. This can take up to two minutes…";
+        try {
+          if (editing) {
+            const saved = await api("/api/simple/search", "PUT", {what: what.value, where: where.value});
+            info.search = saved.search; editing = false;
+          }
+          const result = await api("/api/discover", "POST", {query: info.search.what, location: info.search.where, results: 10,
+            sites: ["indeed", "zip_recruiter"], acknowledged: true});
+          renderSearch();
+          const note = document.getElementById("search-note");
+          note.className = "muted";
+          note.textContent = result.found ? "Found " + result.found + " job" + (result.found === 1 ? "" : "s") + (result.new ? ", " + result.new + " new." : ", all already on your list.")
+            : "No jobs came back. Try different words, or paste a job below.";
+          say(note.textContent); await loadList();
+        } catch (e) {
+          renderSearch();
+          const note = document.getElementById("search-note");
+          note.className = "error";
+          note.textContent = e.status === 503 ? "Job search is not set up on this computer yet. You can still paste a job below." : e.message;
+          if (e.status === 503) openPaste();
+        }
+      });
+      const row = el("div", "row"); row.append(find);
+      const note = el("p", "muted"); note.id = "search-note"; note.setAttribute("role", "status");
+      searchHolder.append(consentLabel, row, note, status);
+      sync();
+    }
+
+    async function loadList() {
+      const data = await api("/api/simple/jobs");
+      list.replaceChildren();
+      listTitle.hidden = false;
+      if (!data.jobs.length) { listTitle.hidden = true; return; }
       for (const job of data.jobs) {
         const item = el("li"), open = el("button", "job"); open.type = "button";
         open.append(el("strong", "", job.title), el("span", "muted", [job.company, job.location].filter(Boolean).join(" · ")));
@@ -195,33 +248,33 @@
         item.append(open); list.append(item);
       }
     }
-    let timer = null;
-    search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => load().catch(() => {}), 250); });
 
-    addToggle.addEventListener("click", () => {
-      if (formHolder.firstChild) { formHolder.replaceChildren(); return; }
+    function openPaste() {
+      if (pasteHolder.firstChild) { pasteHolder.firstChild.scrollIntoView?.({block: "center"}); return; }
       const card = el("div", "card");
-      card.append(el("h2", "", "Add a job"));
+      card.append(el("h2", "", "Paste a job instead"), el("p", "muted", "Found a job somewhere else? Copy the whole posting and paste it here."));
+      const text = el("textarea"); text.maxLength = 50000;
+      card.append(field("The job posting", text));
       const inputs = {};
-      for (const [key, label, type] of [["title", "Job title", "text"], ["company", "Company", "text"], ["location", "Where is it? (optional)", "text"], ["job_url", "Link to the job posting", "url"]]) {
+      for (const [key, label, type] of [["title", "Job title (optional, we will guess)", "text"], ["company", "Company (optional, we will guess)", "text"], ["url", "Link to the posting (optional)", "url"]]) {
         inputs[key] = el("input"); inputs[key].type = type; inputs[key].maxLength = 500; card.append(field(label, inputs[key]));
       }
-      inputs.description = el("textarea"); inputs.description.maxLength = 50000;
-      card.append(field("Paste the job description (this helps us match your résumé)", inputs.description));
       const status = el("p", "error"); status.setAttribute("role", "alert");
-      const save = btn("Save job", "primary", async () => {
+      const save = btn("Use this job", "primary", async () => {
         status.textContent = ""; save.disabled = true;
         try {
-          const result = await api("/api/jobs", "POST", {title: inputs.title.value, company: inputs.company.value, location: inputs.location.value,
-            job_url: inputs.job_url.value, description: inputs.description.value});
+          const result = await api("/api/simple/paste", "POST", {text: text.value, title: inputs.title.value, company: inputs.company.value, url: inputs.url.value});
           location.hash = "#/job/" + result.job_id;
         } catch (e) { status.textContent = e.message; save.disabled = false; }
       });
-      const row = el("div", "row"); row.append(save, btn("Cancel", "", () => formHolder.replaceChildren()));
-      card.append(status, row); formHolder.append(card); inputs.title.focus();
-    });
-    await load();
-    main.append(el("p", "note", "Want to search job websites? Open More tools, then Opportunity board, then Find jobs."));
+      const row = el("div", "row"); row.append(save, btn("Cancel", "", () => pasteHolder.replaceChildren()));
+      card.append(status, row); pasteHolder.append(card); text.focus();
+    }
+    const pasteLink = el("button", "link", "Found a job somewhere else? Paste it instead."); pasteLink.type = "button";
+    pasteLink.addEventListener("click", openPaste);
+    main.insertBefore(el("p", "note"), pasteHolder).append(pasteLink);
+    renderSearch();
+    await loadList();
   }
 
   /* ------------------------------------------------------------------ One job */
@@ -273,6 +326,11 @@
     const back = el("a", "link", "← All jobs"); back.href = "#/jobs";
     main.append(back, el("h1", "", job.title), el("p", "lead", [job.company, job.location].filter(Boolean).join(" · ")));
 
+    if (!job.has_description) {
+      const warn = el("div", "ai-box");
+      warn.append(el("strong", "", "This listing came without details."), el("p", "note", "We could not match your résumé to it. Open the posting, copy its text, then go back to Jobs and use “Paste it instead”."));
+      main.append(warn);
+    }
     main.append(el("h2", "", "1. Your résumé"),
       el("p", "lead", data.added_count ? "Left is your original. Right is the version we recommend for this job. " + data.added_count + " line" + (data.added_count === 1 ? " was" : "s were") + " added because they match the job (shown in green)."
         : "Left is your original. Right is the version we recommend for this job. Nothing needed to be added."));

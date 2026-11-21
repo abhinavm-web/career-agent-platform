@@ -1481,6 +1481,44 @@ def create_app(config: DashboardConfig) -> FastAPI:
         facts = [fact for fact in workspace['facts'] if fact['verified_by_candidate']]
         return workspace, facts
 
+    def saved_search():
+        with Store(config.db_path) as store:
+            rows = dict(store.connection.execute("SELECT key, value FROM simple_settings WHERE key IN ('search_what','search_where')").fetchall())
+        return {'what': rows.get('search_what', ''), 'where': rows.get('search_where', '')}
+
+    @app.put('/api/simple/search')
+    async def simple_save_search(request: Request):
+        data = await request.json()
+        if not isinstance(data, dict) or set(data) != {'what', 'where'}:
+            raise ValueError('Say what kind of job and where')
+        what, where = (data[k].strip() if isinstance(data[k], str) else '' for k in ('what', 'where'))
+        if not 1 <= len(what) <= 200 or not 1 <= len(where) <= 240:
+            raise ValueError('Type what kind of job you want and where (for example: customer service, Knoxville TN)')
+        with Store(config.db_path) as store, store.connection:
+            store.connection.executemany('INSERT INTO simple_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+                                         [('search_what', what), ('search_where', where)])
+        return {'search': {'what': what, 'where': where}}
+
+    @app.post('/api/simple/paste')
+    async def simple_paste_job(request: Request):
+        from .simple_apply import guess_job
+        data = await request.json()
+        if (not isinstance(data, dict) or set(data) != {'text', 'title', 'company', 'url'}
+                or not all(isinstance(v, str) for v in data.values())):
+            raise ValueError('Paste the job posting')
+        if len(data['text'].strip()) < 20 or len(data['text']) > 50000:
+            raise ValueError('Paste the whole job posting (at least a few sentences)')
+        title, company, url = guess_job(data['text'], data['title'], data['company'], data['url'])
+        try:
+            job = Job.from_mapping({'title': title, 'company': company, 'job_url': url, 'description': data['text'].strip()}, source='pasted')
+        except ValueError as error:
+            raise ValueError('That link does not look right. Leave it empty or paste the full address starting with https://') from error
+        if len(job.title) > 200 or len(job.company) > 200:
+            raise ValueError('The title or company is too long')
+        with Store(config.db_path) as store:
+            store.add_jobs([job])
+        return {'job_id': job.id}
+
     def ai_configured():
         try:
             return bool(ai.routes())
@@ -1495,7 +1533,7 @@ def create_app(config: DashboardConfig) -> FastAPI:
         workspace, facts = simple_profile_and_facts()
         return {'resume_saved': bool(original['text']) and bool(facts), 'name': workspace['profile']['name'],
                 'fact_count': len(facts), 'workspace_revision': workspace['revision'],
-                'resume_revision': original['revision'], 'ai_available': ai_configured()}
+                'resume_revision': original['revision'], 'ai_available': ai_configured(), 'search': saved_search()}
 
     @app.post('/api/simple/parse')
     async def simple_parse(request: Request):
@@ -1565,8 +1603,9 @@ def create_app(config: DashboardConfig) -> FastAPI:
 
     @app.get('/api/jobs/{job_id}/simple')
     def simple_application(job_id: str):
+        from .simple_apply import public_url
         job, _facts, documents = simple_documents(job_id)
-        return {'job': {'id': job.id, 'title': job.title, 'company': job.company, 'location': job.location, 'url': job.url,
+        return {'job': {'id': job.id, 'title': job.title, 'company': job.company, 'location': job.location, 'url': public_url(job.url),
                         'has_description': bool(job.description.strip())}, **documents}
 
     @app.get('/api/jobs/{job_id}/simple/resume.docx')

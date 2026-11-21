@@ -7,6 +7,7 @@ numbers that appear in neither the confirmed lines nor the posting.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 
@@ -120,6 +121,24 @@ def cover_letter(name, job, sections):
                                  'Thank you for your time and consideration.'},
         {'type': 'text', 'text': 'Sincerely,'}, {'type': 'text', 'text': name or 'Your name'}])
     return {'paragraphs': paragraphs, 'written_by': 'template'}
+
+
+def guess_job(text, title='', company='', url=''):
+    """Work out a title, company and link from pasted posting text; anything typed wins."""
+    lines = [re.sub(r'^[#*\s]+|[*\s]+$', '', line) for line in text.splitlines() if line.strip()]
+    title = title.strip() or (lines[0][:120] if lines else '')
+    if not company.strip():
+        found = re.search(r'(?im)^\W*(?:company|employer|organization)\s*[:\-]\s*(.{2,80})$', text)
+        at = re.search(r'\bat\s+([A-Z][\w&.\' -]{1,60})', lines[0]) if lines else None
+        about = re.search(r'(?m)^\W*About\s+([A-Z][\w&.\' -]{1,60})\W*$', text)
+        company = next((m.group(1).strip() for m in (found, at, about) if m), 'Company not listed')
+    link = url.strip() or 'https://pasted.invalid/' + hashlib.sha256(text.encode()).hexdigest()[:16]
+    return title, company.strip(), link
+
+
+def public_url(url):
+    """Hide the placeholder link used for pasted postings that came without one."""
+    return '' if '//pasted.invalid/' in url else url
 
 
 def build(original_text, profile, job, facts, workspace_revision=0):
