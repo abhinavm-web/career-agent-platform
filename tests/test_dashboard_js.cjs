@@ -27,7 +27,14 @@ class Element {
     this.checked = false;
     this.handlers = {};
     this.classList = {
-      toggle: (_value, _force) => {},
+      contains: (name) => this.className.split(/\s+/).includes(name),
+      toggle: (name, force) => {
+        const names = new Set(this.className.split(/\s+/).filter(Boolean));
+        const add = force ?? !names.has(name);
+        if (add) names.add(name); else names.delete(name);
+        this.className = [...names].join(" ");
+        return add;
+      },
     };
     this._text = "";
   }

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,7 +42,7 @@ class TailoringWarningsBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-ai').click(); expect(page.locator('#ai-tailor')).to_be_enabled()
+                        open_tool(page, 'AI analysis'); expect(page.locator('#ai-tailor')).to_be_enabled()
                         page.locator('#ai-consent').check(); page.locator('#ai-tailor').click()
                         expect(page.locator('#ai-results')).to_contain_text('Review warning: New numeric or percentage text')
                         expect(page.locator('#ai-status')).to_contain_text('absence of warnings do not prove')

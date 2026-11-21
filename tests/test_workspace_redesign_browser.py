@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 
 
@@ -38,11 +39,19 @@ class WorkspaceRedesignTests(unittest.TestCase):
                         for viewport in ({'width': 1440, 'height': 900}, {'width': 390, 'height': 844}, {'width': 320, 'height': 720}):
                             page = browser.new_page(viewport=viewport)
                             page.goto(f'http://127.0.0.1:{port}')
-                            expect(page.get_by_role('heading', name='Search overview')).to_be_visible()
+                            expect(page.get_by_role('heading', name='My job search')).to_be_visible()
                             expect(page.locator('#home-recommendations')).to_contain_text('Fictional Analyst')
+                            page.get_by_role('button', name='My applications', exact=True).click()
+                            expect(page.locator('#daily-results')).to_have_text('0 recorded')
+                            page.get_by_role('button', name='Roles to review', exact=True).click()
+                            page.locator('#home-recommendations').get_by_role('button', name='Prepare application').click()
+                            expect(page.locator('#job-list')).to_be_hidden()
+                            expect(page.locator('#job-pane-application')).to_be_visible()
+                            page.get_by_role('button', name='← My job search').click()
                             page.get_by_role('button', name='Explore opportunities').click()
                             expect(page.get_by_role('button', name='View Fictional Analyst at Fictional Co')).to_be_visible()
                             page.get_by_role('button', name='View Fictional Analyst at Fictional Co').click()
+                            page.get_by_role('tab', name='Overview', exact=True).click()
                             expect(page.get_by_role('tab', name='Overview')).to_have_attribute('aria-selected', 'true')
                             expect(page.get_by_role('button', name='Check live availability')).to_be_visible()
                             page.get_by_role('button', name='Check live availability').click()
@@ -79,7 +88,10 @@ class WorkspaceRedesignTests(unittest.TestCase):
                             def navigate(label):
                                 if page.locator('#menu-toggle').is_visible():
                                     page.locator('#menu-toggle').click()
-                                page.get_by_role('button', name=label, exact=True).click()
+                                if label == 'Settings & data':
+                                    open_tool(page, label)
+                                else:
+                                    page.get_by_role('button', name=label, exact=True).click()
 
                             navigate('Application tracker')
                             page.get_by_label('Layout').select_option('board')

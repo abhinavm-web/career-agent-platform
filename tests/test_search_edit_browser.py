@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -35,11 +36,11 @@ class SearchEditBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-automation').click()
+                        open_tool(page, 'Saved searches')
                         page.get_by_role('button', name='Create separate paused source searches').click()
                         expect(page.locator('#automation-status')).to_contain_text('Separate searches created paused')
                         expect(page.locator('#automation-searches section')).to_have_count(3)
-                        page.reload(); page.locator('#nav-automation').click()
+                        page.reload(); open_tool(page, 'Saved searches')
                         expect(page.locator('#automation-searches section')).to_have_count(3)
                         self.assertTrue(all(not row['enabled'] for row in auto.list()['schedules']))
                         fetch.assert_not_called()
@@ -72,7 +73,7 @@ class SearchEditBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-automation').click()
+                        open_tool(page, 'Saved searches')
                         card = page.locator('#automation-searches section').first
                         expect(card).to_contain_text('paused')
                         card.get_by_text('Edit paused search').click()
@@ -87,7 +88,7 @@ class SearchEditBrowserTests(unittest.TestCase):
                         card.get_by_role('button', name='Save paused search').click()
                         expect(page.locator('#automation-searches')).to_contain_text('Fictional data engineer')
                         expect(page.locator('#automation-searches')).to_contain_text('linkedin')
-                        page.reload(); page.locator('#nav-automation').click()
+                        page.reload(); open_tool(page, 'Saved searches')
                         expect(page.locator('#automation-searches')).to_contain_text('Fictional data engineer')
                         row = auto.list()['schedules'][0]
                         self.assertEqual(row['id'], sid)

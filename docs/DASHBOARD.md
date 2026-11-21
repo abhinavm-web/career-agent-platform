@@ -20,6 +20,8 @@ All private candidate files should be outside the public repository or under a g
 
 ### Daily application workflow
 
+**Home → My job search** opens with up to three roles. Existing drafts appear first. **Prepare application** or **Continue application** opens the selected role directly, with the résumé review, screening answers and submission options together. **My applications** searches recorded outside applications, submitted roles and pending deliveries by employer or title. Select an entry for its tracker history. H-1B research, AI and other administration are under **More tools**.
+
 In **Application tracker → Import outside applications**, choose the CSV exported from your spreadsheet. The tracker keeps the original application date, employer, role, channel, status and evidence, including approximate dates and unspecified roles. Choose **Application source → Outside applications** to see that history or **All sources** to see it alongside saved opportunities. Outside records support contacts, stage changes and follow-ups. Reimport recognizes the same company, role, date, channel and evidence, even if the status changed. Editing those identifying fields creates a separate entry.
 
 1. Open **Opportunities** and select a role. Read the linked career fact, requirement to verify, posting date, availability check and sponsorship evidence. **Fit** and **Sponsorship** show the underlying details.

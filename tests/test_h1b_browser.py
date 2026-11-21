@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -49,7 +50,7 @@ class H1BBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-jobs').click()
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
                         page.locator('#h1b-captured').fill('2025-06-01')
                         upload = page.locator('#h1b-file')
@@ -92,7 +93,7 @@ class H1BBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-jobs').click()
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         page.locator('#h1b-query').fill('Fictional Employer')
                         page.get_by_role('button', name='Search company records and jobs').click()
                         results = page.locator('#h1b-results')
@@ -161,7 +162,7 @@ class H1BBrowserTests(unittest.TestCase):
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-jobs').click()
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         page.get_by_text('Import public DOL LCA records', exact=True).click()
                         page.locator('#h1b-refresh-url').fill('https://www.dol.gov/media/LCA_Disclosure_Data_FY2026_Q3.xlsx')
                         page.locator('#h1b-refresh-consent').check()
@@ -170,7 +171,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-refresh-status')).to_contain_text('2,000', timeout=8000)
                         expect(page.locator('#h1b-refresh-announcement')).to_contain_text('2,000')
                         observer = browser.new_page(); observer.goto(f'http://127.0.0.1:{port}')
-                        observer.locator('#nav-h1b').click()
+                        open_tool(observer, 'H-1B research')
                         expect(observer.locator('#h1b-active-import')).to_contain_text('validating workbook rows')
                         expect(observer.locator('#h1b-active-import')).to_contain_text('not a completed import')
                         advance.set()
@@ -293,7 +294,7 @@ class H1BBrowserTests(unittest.TestCase):
                         page.locator('#search').fill('Rare oldest role')
                         expect(page.locator('#visible-count')).to_have_text('1 opportunity')
                         expect(page.locator('#job-list')).to_contain_text('Rare oldest role')
-                        page.locator('#nav-ai').click()
+                        open_tool(page, 'AI analysis')
                         expect(page.locator('#ai-job option')).to_have_count(505, timeout=30000)
                         expect(page.locator('#ai-job')).to_contain_text('Rare oldest role')
                     finally:
@@ -340,14 +341,14 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#job-list')).to_contain_text('Check is stale', timeout=6000)
                         expect(page.locator('#detail-panel')).to_contain_text('Check is stale')
                         expect(page.locator('#detail-panel')).to_contain_text('Fictional check failed')
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         result = page.locator('#h1b-opportunities-results')
                         expect(result).to_contain_text('listed')
                         expect(result).to_contain_text('STALE OBSERVATION', timeout=6000)
                         expect(result).to_contain_text('unknown')
                         for invalid in ('not-a-date', (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()):
                             scenario['checked_at'] = invalid
-                            page.get_by_role('button', name='H-1B research', exact=True).click()
+                            open_tool(page, 'H-1B research')
                             expect(result).to_contain_text(invalid)
                             expect(result).to_contain_text('STALE OBSERVATION')
                             expect(result).to_contain_text('unknown')
@@ -386,7 +387,7 @@ class H1BBrowserTests(unittest.TestCase):
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Listed at check')
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         results = page.locator('#h1b-opportunities-results')
                         expect(results).to_contain_text('listed')
                         expect(results).to_contain_text('deadline passed; availability unknown', timeout=14000)
@@ -500,7 +501,7 @@ class H1BBrowserTests(unittest.TestCase):
                         page.on('pageerror', lambda error: errors.append(str(error)))
                         page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-jobs').click()
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         expect(page.get_by_role('heading', name='Data administration')).to_be_visible()
                         release = {'source_url': 'https://www.dol.gov/agencies/eta/foreign-labor/performance',
                                    'checked_at': '2026-08-15T12:00:00+00:00', 'fiscal_year': 2026, 'quarter': 3,
@@ -531,7 +532,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(transfer).to_contain_text('Policy note saved')
                         expect(transfer).to_contain_text('<script>throw new Error("unsafe")</script> Only if approved.')
                         page.reload()
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         expect(page.locator('#h1b-opportunities-status')).to_contain_text('2 matching opportunities')
                         transfer = page.locator('#h1b-opportunities-results section').filter(has=page.get_by_role('heading', name='Transfer role · Example Inc.')).first
                         transfer.get_by_text('Recruiter or employer policy notes', exact=True).click()
@@ -564,7 +565,7 @@ class H1BBrowserTests(unittest.TestCase):
                         expect(page.locator('#h1b-opportunities-results')).not_to_contain_text('Transfer role')
                         page.get_by_role('button', name='Find more jobs with JobSpy').click()
                         expect(page.locator('#discovery-panel')).to_have_attribute('open', '')
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         page.locator('#h1b-opportunities-category').select_option('all')
                         page.get_by_role('button', name='Find opportunities', exact=True).click()
                         expect(page.locator('#h1b-opportunities-status')).to_contain_text('2 matching opportunities')
@@ -657,12 +658,12 @@ class H1BBrowserTests(unittest.TestCase):
                         page.get_by_role('button', name='Search company records and jobs').click()
                         expect(page.locator('#h1b-results')).to_contain_text('No employer records found')
                         page.reload()
-                        page.get_by_role('button', name='H-1B research', exact=True).click()
+                        open_tool(page, 'H-1B research')
                         expect(page.locator('#h1b-coverage')).to_contain_text('Recent DOL import history')
                         expect(page.locator('#h1b-need')).to_have_value('new')
                         expect(page.locator('#h1b-unknown')).not_to_be_checked()
                         with patch('career_agent.ai.routes', return_value={'local': {'provider': 'ollama', 'model': 'fictional', 'base_url': 'http://127.0.0.1:11434/v1'}}), patch('career_agent.ai.complete', return_value=json.dumps({'requirements': [{'quote': 'Python skills.', 'fact_ids': ['experience-01'], 'reason': '<script>unsafe()</script>'}]})) as complete:
-                            page.get_by_role('button', name='AI analysis', exact=True).click()
+                            open_tool(page, 'AI analysis')
                             expect(page.locator('#ai-run')).to_be_enabled()
                             options = page.locator('#ai-job option').all()
                             selected = next(option.get_attribute('value') for option in options if 'Unknown role' in option.inner_text())
@@ -676,7 +677,7 @@ class H1BBrowserTests(unittest.TestCase):
                             expect(page.locator('#ai-consent')).not_to_be_checked()
                             self.assertNotIn('Private fictional evidence', complete.call_args.args[1])
                             page.get_by_role('button', name='Application tracker', exact=True).click()
-                            page.get_by_role('button', name='AI analysis', exact=True).click()
+                            open_tool(page, 'AI analysis')
                             expect(page.locator('#ai-run')).to_be_enabled()
                             expect(page.locator('#ai-route')).to_have_value('local')
                             expect(page.locator('#ai-job')).to_have_value(selected)
@@ -713,7 +714,7 @@ class H1BBrowserTests(unittest.TestCase):
                                 expect(page.locator('#ai-status')).to_contain_text('Provider unavailable')
                                 expect(page.locator('#ai-results')).to_be_empty()
                         with patch('career_agent.automation.fetch', return_value=[]):
-                            page.get_by_role('button', name='Saved searches', exact=True).click()
+                            open_tool(page, 'Saved searches')
                             page.locator('#schedule-query').fill('Fictional AI lead')
                             page.locator('#schedule-consent').check()
                             page.locator('#schedule-save').click()
@@ -721,7 +722,7 @@ class H1BBrowserTests(unittest.TestCase):
                             page.locator('#automation-searches').get_by_role('button', name='Pause', exact=True).click()
                             expect(page.locator('#automation-searches')).to_contain_text('paused')
                             page.reload()
-                            page.get_by_role('button', name='Saved searches', exact=True).click()
+                            open_tool(page, 'Saved searches')
                             expect(page.locator('#automation-searches')).to_contain_text('paused')
                             page.get_by_role('button', name='Remove saved search', exact=True).click()
                             expect(page.locator('#automation-searches')).to_be_empty()

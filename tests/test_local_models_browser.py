@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,7 +42,7 @@ class LocalModelsBrowserTests(unittest.TestCase):
                     browser = p.chromium.launch()
                     try:
                         page = browser.new_page(); page.goto(f'http://127.0.0.1:{port}')
-                        page.locator('#nav-ai').click()
+                        open_tool(page, 'AI analysis')
                         expect(page.locator('#ai-local-models')).to_be_enabled()
                         self.assertEqual(requests, [])
                         page.get_by_text('Check local model IDs', exact=True).first.click()

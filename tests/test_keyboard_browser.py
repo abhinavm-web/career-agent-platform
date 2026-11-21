@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from workspace_navigation import open_tool
 from pathlib import Path
 
 
@@ -33,7 +34,7 @@ class KeyboardBrowserTests(unittest.TestCase):
                         expect(page.get_by_role('link', name='Skip to workspace')).to_be_focused()
                         page.keyboard.press('Enter')
                         expect(page.locator('#workspace')).to_be_focused()
-                        page.locator('#nav-h1b').click()
+                        open_tool(page, 'H-1B research')
                         expect(page.locator('#h1b-screen h2')).to_be_focused()
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#jobs-screen h2')).to_be_focused()
