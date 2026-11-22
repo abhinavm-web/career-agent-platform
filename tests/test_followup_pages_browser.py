@@ -22,7 +22,8 @@ class FollowupPagesBrowserTests(unittest.TestCase):
             job = Job('Fictional Co', 'Engineer', 'Boston', 'https://example.invalid/role')
             with Store(db) as store:
                 store.add_jobs([job]); crm = ApplicationCRM(store)
-                tasks = [crm.add_followup(job.id, f'Task {i:03d}', '2027-12-01') for i in range(105)]
+                contact = crm.add_contact(job.id, 'Fictional recruiter')
+                tasks = [crm.add_followup(job.id, f'Task {i:03d}', '2027-12-01', contact['contact_id'] if i == 0 else None) for i in range(105)]
             app = create_app(DashboardConfig(db_path=db, packet_dir=root / 'packets'))
             sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
             server = uvicorn.Server(uvicorn.Config(app, log_level='error'))
@@ -35,7 +36,7 @@ class FollowupPagesBrowserTests(unittest.TestCase):
                 with sync_playwright() as p:
                     browser = p.chromium.launch()
                     try:
-                        page = browser.new_page(); page.on('dialog', lambda dialog: dialog.accept())
+                        page = browser.new_page()
                         page.goto(f'http://127.0.0.1:{port}')
                         page.locator('#nav-jobs').click()
                         expect(page.locator('#job-list')).to_contain_text('Engineer')
@@ -47,6 +48,7 @@ class FollowupPagesBrowserTests(unittest.TestCase):
                         summary.get_by_role('button', name='Next follow-ups', exact=True).click()
                         expect(summary).to_contain_text('Open follow-ups 21–40 of 105')
                         task = summary.locator('.crm-record').filter(has_text='Task 020')
+                        page.once('dialog', lambda dialog: dialog.accept())
                         task.get_by_role('button', name='Mark completed').click()
                         expect(summary).to_contain_text('Showing the first 6 of 104 open follow-ups.')
                         with Store(db) as store:
@@ -55,11 +57,26 @@ class FollowupPagesBrowserTests(unittest.TestCase):
                         page.locator('#crm-jobs button').first.click()
                         detail = page.locator('#crm-detail')
                         expect(detail).to_contain_text('Showing 1–100 of 105 follow-ups')
+                        page.once('dialog', lambda dialog: dialog.accept())
                         detail.get_by_role('button', name='Next job follow-ups').click()
                         expect(detail).to_contain_text('Showing 101–105 of 105 follow-ups')
                         expect(detail).to_contain_text('Completed')
+                        page.once('dialog', lambda dialog: dialog.accept())
                         detail.get_by_role('button', name='Previous job follow-ups').click()
                         expect(detail).to_contain_text('Showing 1–100 of 105 follow-ups')
+                        expect(detail).to_contain_text('Fictional recruiter')
+                        page.once('dialog', lambda dialog: dialog.dismiss())
+                        detail.get_by_role('button', name='Remove contact').click()
+                        expect(detail).to_contain_text('Fictional recruiter')
+                        page.once('dialog', lambda dialog: dialog.accept())
+                        detail.get_by_role('button', name='Remove contact').click()
+                        expect(detail).not_to_contain_text('Fictional recruiter')
+                        with Store(db) as store:
+                            crm = ApplicationCRM(store)
+                            self.assertEqual(crm.contacts(job.id), [])
+                            saved = next(task for task in crm.followups(job.id) if task['followup_id'] == tasks[0]['followup_id'])
+                            self.assertIsNone(saved['contact_id'])
+                            self.assertEqual(saved['title'], 'Task 000')
                     finally: browser.close()
             finally:
                 server.should_exit = True; thread.join(timeout=10); sock.close()
